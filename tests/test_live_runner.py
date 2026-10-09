@@ -4094,6 +4094,254 @@ def test_restore_artifacts_round_trips_config_and_preserves_result_rows(tmp_path
     assert json.loads(results_path.read_text())["results"] == [{"status": "PASS"}]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fallback", [False, True])
+async def test_subset_preserves_destination_pending_scratch_recovery(
+    monkeypatch, tmp_path, fallback
+):
+    """A read-only subset cannot erase the only evidence of unconfirmed restoration."""
+    import live_test_recovery as recovery
+
+    _isolate_runner(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    config = runner.LiveTestConfig()
+    hmc_config = _live_hmc_config()
+    artifacts = runner.LiveTestArtifacts(
+        vios_uuid="vios-1", storage_volume_group_name="hpvg1234abcd"
+    )
+    destination = tmp_path / "test-results-storage.json"
+    destination.write_text(json.dumps(_result_document(config, hmc_config, artifacts)))
+    if fallback:
+        (tmp_path / "test-results-vmedia.json").write_text(
+            json.dumps(_result_document(config, hmc_config))
+        )
+
+    async def read_only(_client, state):
+        state.record(3, "hmc_list_volume_groups", "PASS", [])
+
+    monkeypatch.setitem(runner.SUBTASKS, 3, read_only)
+    assert (
+        await runner.main(3, str(destination), config=config, hmc_config=hmc_config)
+        == 0
+    )
+    saved = json.loads(destination.read_text())
+    assert saved["run"]["subtasks"] == [3]
+    assert saved["artifacts"]["storage_volume_group_name"] == "hpvg1234abcd"
+    inputs = recovery.lpar_inputs_from_document(saved, [3])
+    assert inputs is not None and inputs.scratch_vg_ran
+    calls = []
+
+    async def no_group(tool, **kwargs):
+        calls.append((tool, kwargs))
+        return "PASS", []
+
+    finding = await recovery._run_volume_group_left(no_group, inputs)
+    assert (
+        finding is not None and finding.what == "scratch group restoration unconfirmed"
+    )
+    assert [tool for tool, _ in calls] == ["hmc_list_volume_groups"]
+
+
+@pytest.mark.parametrize("mismatch", ["settings", "hmc"])
+def test_subset_rejection_preserves_destination_for_recovery(
+    monkeypatch, tmp_path, capsys, mismatch
+):
+    import asyncio
+
+    import live_test_recovery as recovery
+
+    _isolate_runner(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    config = runner.LiveTestConfig(
+        scratch_pv_name="hdisk9", scratch_vg_name="hpvg1234abcd"
+    )
+    hmc_config = _live_hmc_config()
+    document = _result_document(
+        config,
+        hmc_config,
+        runner.LiveTestArtifacts(
+            vios_uuid="vios-1", storage_volume_group_name="hpvg1234abcd"
+        ),
+    )
+    document["run"] = {"subtasks": [42]}
+    if mismatch == "settings":
+        config = dataclasses.replace(config, scratch_pv_name="", scratch_vg_name="")
+    else:
+        document["hmc"]["user"] = "other"
+    destination = tmp_path / "test-results-storage.json"
+    destination.write_text(json.dumps(document))
+    original = destination.read_bytes()
+    dispatched = []
+
+    async def read_only(_client, _state):
+        dispatched.append(3)
+
+    monkeypatch.setitem(runner.SUBTASKS, 3, read_only)
+    assert (
+        asyncio.run(
+            runner.main(3, str(destination), config=config, hmc_config=hmc_config)
+        )
+        == 1
+    )
+    assert dispatched == []
+    assert destination.read_bytes() == original
+    capsys.readouterr()
+    monkeypatch.setattr(recovery.runner, "_bootstrap_config", lambda: False)
+    assert recovery.main(["--results", str(destination)]) == 2
+    assert "CLEAN" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("existing", [True, False])
+def test_default_interruption_then_real_subset_preserves_recovery(
+    monkeypatch, tmp_path, capsys, existing
+):
+    import asyncio
+
+    import live_test_recovery as recovery
+
+    monkeypatch.chdir(tmp_path)
+    config = runner.LiveTestConfig(
+        system_name="sys-A",
+        vdisk_volume_group_name="data-A",
+        scratch_pv_name="hdisk9",
+        scratch_vg_name="hpvg1234abcd",
+    )
+    hmc_config = _live_hmc_config()
+    document = _result_document(
+        config,
+        hmc_config,
+        runner.LiveTestArtifacts(
+            vios_uuid="vios-A",
+            vios_partition_id=1,
+            storage_volume_group_name="hpvg1234abcd",
+        ),
+    )
+    document["run"] = {"subtasks": [42], "group": "storage", "partial": False}
+    destination = tmp_path / "test-results-storage.json"
+    if existing:
+        destination.write_text(json.dumps(document))
+    (tmp_path / "test-results-vmedia.json").write_text(json.dumps(document))
+    parsed = runner._parse_arguments(["--results-file", str(destination)])
+    assert parsed.subtask is None and parsed.group is None
+    interrupted = True
+    recovering = False
+    calls = []
+
+    class BoundaryClient(Client):
+        async def list_tools(self):
+            if interrupted:
+                raise RuntimeError("schema transport interrupted")
+            return await super().list_tools()
+
+        async def call_tool(self, name, arguments=None, **kwargs):
+            calls.append(name)
+            assert name in {
+                "hmc_list_clusters",
+                "hmc_list_shared_storage_pools",
+                "hmc_list_io_slots",
+                "hmc_list_memory_pools",
+                "hmc_get_shared_storage_pool",
+                "hmc_list_volume_groups",
+                "hmc_run_command",
+            }
+            if name == "hmc_list_volume_groups":
+                data = [] if recovering else [{"name": "data-A", "uuid": "vg-A"}]
+            elif name == "hmc_run_command":
+                assert arguments["cmd"].endswith("-c lsvg")
+                data = "data-A\n"
+            else:
+                data = "" if name == "hmc_get_shared_storage_pool" else []
+            return SimpleNamespace(data=data)
+
+    monkeypatch.setattr(runner, "Client", BoundaryClient)
+    monkeypatch.setattr(recovery.runner, "Client", BoundaryClient)
+    with pytest.raises(RuntimeError, match="schema transport interrupted"):
+        asyncio.run(
+            runner.main(
+                results_path=str(destination), config=config, hmc_config=hmc_config
+            )
+        )
+    partial = json.loads(destination.read_text())
+    assert partial["run"]["partial"] is True and calls == []
+    marker = "hpvg1234abcd" if existing else None
+    assert partial["artifacts"]["storage_volume_group_name"] == marker
+    assert partial["artifacts"]["vios_uuid"] == ("vios-A" if existing else None)
+    interrupted = False
+    assert (
+        asyncio.run(
+            runner.main(3, str(destination), config=config, hmc_config=hmc_config)
+        )
+        == 0
+    )
+    saved = json.loads(destination.read_text())
+    assert saved["run"]["subtasks"] == [3] and saved["run"]["partial"] is False
+    assert saved["artifacts"]["storage_volume_group_name"] == marker
+    capsys.readouterr()
+    monkeypatch.setattr(recovery.runner, "_bootstrap_config", lambda: True)
+    recovering = True
+    assert recovery.main(["--results", str(destination)]) == (1 if existing else 0)
+    output = capsys.readouterr().out
+    if existing:
+        assert (
+            "scratch group restoration unconfirmed" in output and "CLEAN" not in output
+        )
+        assert calls[-1] == "hmc_list_volume_groups"
+    else:
+        assert "CLEAN" in output
+
+
+@pytest.mark.parametrize("mismatch", ["settings", "hmc", "json", "artifact"])
+def test_default_rejection_preserves_destination_before_client(
+    monkeypatch, tmp_path, capsys, mismatch
+):
+    import asyncio
+
+    import live_test_recovery as recovery
+
+    monkeypatch.chdir(tmp_path)
+    config = runner.LiveTestConfig(
+        scratch_pv_name="hdisk9", scratch_vg_name="hpvg1234abcd"
+    )
+    hmc_config = _live_hmc_config()
+    document = _result_document(
+        config,
+        hmc_config,
+        runner.LiveTestArtifacts(
+            vios_uuid="vios-A", storage_volume_group_name="hpvg1234abcd"
+        ),
+    )
+    document["run"] = {"subtasks": [42]}
+    if mismatch == "settings":
+        config = dataclasses.replace(config, scratch_pv_name="", scratch_vg_name="")
+    elif mismatch == "hmc":
+        document["hmc"]["user"] = "other"
+    elif mismatch == "artifact":
+        document["artifacts"]["storage_volume_group_name"] = 42
+    destination = tmp_path / "test-results-storage.json"
+    destination.write_text("{" if mismatch == "json" else json.dumps(document))
+    original = destination.read_bytes()
+    entered = []
+
+    def no_client(_server):
+        entered.append(True)
+        raise AssertionError("incompatible destination reached client setup")
+
+    monkeypatch.setattr(runner, "Client", no_client)
+    assert (
+        asyncio.run(
+            runner.main(
+                results_path=str(destination), config=config, hmc_config=hmc_config
+            )
+        )
+        == 1
+    )
+    assert entered == [] and destination.read_bytes() == original
+    capsys.readouterr()
+    monkeypatch.setattr(recovery.runner, "_bootstrap_config", lambda: False)
+    assert recovery.main(["--results", str(destination)]) == 2
+    assert "CLEAN" not in capsys.readouterr().out
+
+
 def test_restore_artifacts_accepts_a_document_carrying_the_run_block(tmp_path):
     """The runner writes `run`; the guard that reads its own output must admit it."""
     config = runner.LiveTestConfig()
@@ -7677,6 +7925,98 @@ async def test_partial_results_write_failure_does_not_mask_the_run_failure(
 
     assert raised.value is error
     assert "Could not write partial results: disk full" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--detach-probe"],
+        ["--group", "storage", "--detach-probe"],
+        ["41", "--detach-probe"],
+    ],
+)
+def test_detach_probe_requires_explicit_lpar_power_group(argv):
+    with pytest.raises(SystemExit):
+        runner._parse_arguments(argv)
+
+
+def test_detach_probe_selection_and_provenance():
+    args = runner._parse_arguments(["--group", "lpar-power", "--detach-probe"])
+    assert args.detach_probe and args.group == "lpar-power"
+    assert (
+        runner._run_provenance(
+            [41], args.group, None, "(not set)", False, detach_probe=True
+        )["detach_probe"]
+        is True
+    )
+    assert "detach_probe" not in runner._run_provenance(
+        [41], args.group, None, "(not set)", False
+    )
+
+
+@pytest.mark.asyncio
+async def test_direct_detach_probe_refuses_bad_selection_before_configuration(
+    monkeypatch,
+):
+    def forbidden():
+        raise AssertionError("configuration accessed for invalid probe selection")
+
+    monkeypatch.setattr(runner.LiveTestConfig, "from_env_file", forbidden)
+    assert await runner.main(group="storage", detach_probe=True) == 1
+    assert (
+        await runner.main(subtask_filter=41, group="lpar-power", detach_probe=True) == 1
+    )
+
+
+@pytest.mark.asyncio
+async def test_detach_probe_dispatches_only_the_probe_and_stamps_private_results(
+    monkeypatch, tmp_path
+):
+    _isolate_runner(monkeypatch)
+    seen = []
+
+    async def probe(_client, state):
+        seen.append("probe")
+        state.record(41, "bounded probe", "PASS", {})
+
+    async def broad(_client, _state):
+        raise AssertionError("broad ST41 arm dispatched")
+
+    monkeypatch.setattr(runner, "exercise_detach_probe", probe, raising=False)
+    monkeypatch.setattr(runner, "SUBTASKS", {41: broad})
+    path = tmp_path / "results.json"
+    assert (
+        await runner.main(
+            group="lpar-power",
+            detach_probe=True,
+            results_path=str(path),
+            config=runner.LiveTestConfig(),
+        )
+        == 0
+    )
+    assert seen == ["probe"]
+    assert json.loads(path.read_text())["run"]["detach_probe"] is True
+
+
+def test_scratch_settings_are_optional_and_dotenv_only(tmp_path, monkeypatch):
+    example = Path(__file__).parents[1] / ".env.example"
+    text = example.read_text()
+    path = tmp_path / ".env"
+    path.write_text(text)
+    monkeypatch.setenv("LIVE_TEST_SCRATCH_PV_NAME", "hdisk8")
+    monkeypatch.setenv("LIVE_TEST_SCRATCH_VG_NAME", "hpvg88888888")
+    config = runner.LiveTestConfig.from_env_file(path)
+    assert (config.scratch_pv_name, config.scratch_vg_name) == ("", "")
+    path.write_text(
+        text
+        + "\nLIVE_TEST_SCRATCH_PV_NAME=hdisk9\n"
+        + "LIVE_TEST_SCRATCH_VG_NAME=hpvg00000009\n"
+    )
+    config = runner.LiveTestConfig.from_env_file(path)
+    assert (config.scratch_pv_name, config.scratch_vg_name) == (
+        "hdisk9",
+        "hpvg00000009",
+    )
 
 
 @pytest.mark.parametrize("value", ["7", b"7", 7.9])

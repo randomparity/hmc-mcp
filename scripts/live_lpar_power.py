@@ -16,8 +16,8 @@ different one. Results go to `test-results-lpar-power.json`.
 **This mutates a managed system.** Run `scripts/live_test_preflight.py
 --group lpar-power` first to see what it will touch.
 
-Takes no options: everything else about a run is configuration, and the
-runner itself is there for an invocation this does not cover.
+Pass --detach-probe for the bounded mapping/RMC comparison on one owned scratch
+partition and one 1 GiB volume; all other run inputs remain configuration.
 """
 
 from __future__ import annotations
@@ -42,13 +42,19 @@ def main(argv: list[str] | None = None) -> int:
     the former. Calling `main` directly would run uncredentialled and write
     every arm's results over `test-results-round2.json`.
     """
-    # Parsed even though there are no options: without this, `--help` would be
-    # ignored and the wrapper would start mutating a managed system instead of
-    # explaining itself.
-    argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    ).parse_args(argv)
-    return live_test_runner._run_from_arguments(["--group", GROUP])
+    )
+    parser.add_argument(
+        "--detach-probe",
+        action="store_true",
+        help="run the bounded mapping/RMC comparison only",
+    )
+    args = parser.parse_args(argv)
+    dispatched = ["--group", GROUP]
+    if args.detach_probe:
+        dispatched.append("--detach-probe")
+    return live_test_runner._run_from_arguments(dispatched)
 
 
 if __name__ == "__main__":
