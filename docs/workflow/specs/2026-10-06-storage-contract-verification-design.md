@@ -233,3 +233,86 @@ Recovery exited 0 (CLEAN). The before and after read-only snapshots were byte-id
 | `cluster.get_pool` | passed (absent-pool branch only; a positive read is the gap above) |
 | `cluster.list`, `cluster.list_pools` | unevidenced: the HMC manages no cluster or pool |
 | `storage.create_volume_group`, `cluster.create_logical_unit`, `cluster.delete_logical_unit` | unevidenced (gaps above) |
+
+## ST42 scratch volume-group extension (#1370, 2026-10-08)
+
+Expected implementation size is 950–1150 changed lines (M250 unchanged). Actual
+implementation is 1007 lines: required truthful-failure and destination-preservation
+regressions corrected the earlier 800–950 estimate without expanding the contract.
+
+The operator approved one create/delete on one released physical volume on
+2026-10-07 and explicitly approved paired optional settings on 2026-10-08:
+`LIVE_TEST_SCRATCH_PV_NAME` and `LIVE_TEST_SCRATCH_VG_NAME`. Both default empty;
+ST42 SKIPs unless the PV matches `hdisk[0-9]+` and the group `hpvg[0-9a-f]{8}`.
+Preflight names both exact values without creating state. The operator chooses a
+fresh group name for the one run; that name is absent before creation. ST42 joins
+only the storage arm (`[0, 3, 40, 42]`), with no other arm changed.
+
+Ownership remains in the live harness: a new `storage_volume_group.py` composes
+existing `vios_command`, `volume_group_names`, and `volume_names`. Product create
+uses ADR 0136 unchanged; a product volume-group deletion operation is explicitly
+excluded and unowned. No new product API or dependencies. Existing result decoders explicitly default
+the new optional fields when reading pre-ST42 documents.
+
+1. Snapshot VIOS `lspv -field pvname pvid vgname -fmt :`,
+   `lspv -free -field pvname pvid size -fmt :`, and `lsvg`, plus REST group names.
+   Parsers require unique complete rows; free-mode exact `":"` also means empty.
+   REST/VIOS groups must agree; the PV must occur in both PV listings with the same
+   real PVID, positive free size and VG `None`; scratch group absent. Missing settings,
+   missing VIOS identity, previous outstanding artifact or valid refused preconditions
+   SKIP before mutation. Failed reads remain FAIL; malformed authoritative snapshots
+   record explicit validation FAIL without mutation. No disk selection, fallback or create retry.
+2. Save `artifacts.storage_volume_group_name` before one
+   `hmc_create_volume_group` using exactly `[scratch_pv_name]`. Re-read the
+   snapshot regardless of the call status. Unknown poststate records manual
+   recovery and stops. Absence in both group listings ends the scenario and
+   compares the snapshot; a failed create never becomes a passed observation.
+3. For a listed scratch group, cleanup requires the complete PV inventory to
+   differ only by the selected PV joining this group with its original PVID,
+   `lsvg -pv <group> -field pvname -fmt :` to name exactly that PV, and
+   `lsvg -lv <group>` to name no logical volumes. Only then execute plain
+   `reducevg <group> <pv>` through `viosvrcmd -m <system> --id <VIOS id> -c ...`.
+   No `-rmlv`, force flag, shell chain or root mode. Unknown membership, extra
+   PVs/LVs, or changed identity refuses cleanup with manual recovery.
+4. Re-read all snapshot components. Cleanup passes only when REST and VIOS
+   prove absence and the complete before/after snapshots match, including the
+   raw lspv/free/lsvg strings. Clear the artifact only on that proof. Otherwise
+   keep it and report manual recovery; never retry creation or guess a repair.
+5. Record `storage.create_volume_group`, scenario `st42-scratch-volume-group`,
+   with assertions `create-accepted`, `rest-group-listed`, `vios-group-listed`,
+   `selected-pv-only`; cleanup is `passed` only on proven baseline restoration.
+   Disabled/refused guard rows do not promote. Read-only recovery runs when ST42
+   was dispatched or its artifact is pending, including after subset reruns. It
+   reports every `hpvg<8 hex>` REST group on its VIOS and any pending unconfirmed
+   restoration even when the REST group is absent, without deletion or repair.
+   Every invocation restores its destination before client setup; only selected runs
+   borrow legacy fallbacks. No-existing default runs stay fresh. Strict configuration,
+   HMC or document rejection returns 1 before client/dispatch/writes, preserving bytes;
+   incompatible runs require a separately named file. Actual default interruption-to-ST3
+   recovery, compatible subsets, disabled paired settings, HMC mismatch and malformed
+   document regressions ensure uncertainty cannot be erased or falsely reported CLEAN.
+
+The existing failure model extends to physical-volume identities and all groups.
+Deployment remains the single-operator admitted V10R3/POWER9 lab window. Failed or
+interrupted writes may leave residue; unknown state stops, and recovery reports
+it. Metadata damage requires operator recovery, never an automatic repair.
+Concurrent writers remain an accepted lab-window limitation. Local configuration
+and results are untrusted command inputs: PV/group closed patterns, a plain
+non-option system name, and a positive integer VIOS ID bound every command.
+
+Offline tests cover every selection/identity/name guard, malformed listings,
+failed/partial create, unsafe/unknown cleanup, snapshots, artifact lifetime,
+nonpromoting SKIPs, configuration isolation, registry, preflight and recovery.
+A controlled free-guard fault must fail its test before restoration. The live run
+requires a separate campaign slot naming the pushed exact head and fresh proof
+that the historically authorized PV still has the same PVID/size and is free.
+Preflight → named storage arm → recovery always; the one create allowance
+does not imply a second attempt. Capture raw snapshots privately; use the stamped
+evidence generator and canonical maturity/projection/tool-document generators.
+
+Primary CLI sources: local `docs/refs/hmc-commands-p10/commands/viosvrcmd.md:29`;
+[IBM POWER9 lspv](https://www.ibm.com/docs/en/power9/9223-42S?topic=commands-lspv-command),
+[lsvg](https://www.ibm.com/docs/en/power9/9223-22H?topic=commands-lsvg-command),
+and [reducevg](https://www.ibm.com/docs/en/power9/9223-22H?topic=commands-reducevg-command).
+The local corpus has no reducevg entry; IBM documents deletion when the last PV
+is removed, without the data-deleting `-rmlv` flag.

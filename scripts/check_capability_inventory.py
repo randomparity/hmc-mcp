@@ -940,16 +940,13 @@ def _handler_module(handler: str) -> str:
 
 def _stale_reason(
     observation: Mapping[str, object],
-    repo_root: Path,
-    handler: str,
+    fingerprint: str,
     now: datetime,
     *,
     age_staleness: bool,
 ) -> str | None:
     """Which staleness trigger fired, most specific first, or None."""
-    if observation.get("closure_fingerprint") != closure_fingerprint(
-        repo_root, _handler_module(handler)
-    ):
+    if observation.get("closure_fingerprint") != fingerprint:
         return "closure-changed"
     try:
         observed = datetime.fromisoformat(str(observation.get("observed_at")))
@@ -967,6 +964,7 @@ def derive_states(
     now: datetime,
     *,
     age_staleness: bool = True,
+    _fingerprints: dict[tuple[Path, str], str] | None = None,
 ) -> dict[str, OperationState]:
     """Derive every operation's verification state; never stored, never an error."""
     by_operation = {
@@ -974,6 +972,8 @@ def derive_states(
         for record in records
         if isinstance(record.get("operation"), str)
     }
+    # Standalone calls are fresh; main shares this only across its two derivations.
+    fingerprints = {} if _fingerprints is None else _fingerprints
     states: dict[str, OperationState] = {}
     for tool in registry:
         record = by_operation.get(tool.operation)
@@ -999,10 +999,12 @@ def derive_states(
         # An operation carries at most one live observation, because re-validation
         # replaces it; ordering by time keeps a hand-edited catalog deterministic.
         latest = max(observations, key=lambda item: str(item.get("observed_at")))
+        key = (repo_root, _handler_module(tool.handler))
+        if key not in fingerprints:
+            fingerprints[key] = closure_fingerprint(*key)
         reason = _stale_reason(
             latest,
-            repo_root,
-            tool.handler,
+            fingerprints[key],
             now,
             age_staleness=age_staleness,
         )
@@ -1022,6 +1024,8 @@ def render_runtime_projection(
     registry: Collection[RegistryTool],
     repo_root: Path,
     now: datetime,
+    *,
+    _fingerprints: dict[tuple[Path, str], str] | None = None,
 ) -> str:
     """Render the sparse, generated package projection as canonical JSON."""
     recorded = {
@@ -1029,7 +1033,14 @@ def render_runtime_projection(
         for record in records
         if isinstance(record.get("operation"), str)
     }
-    states = derive_states(records, registry, repo_root, now, age_staleness=False)
+    states = derive_states(
+        records,
+        registry,
+        repo_root,
+        now,
+        age_staleness=False,
+        _fingerprints=_fingerprints,
+    )
     operations = [
         {
             "operation": operation,
@@ -1100,8 +1111,11 @@ def _process_runtime_projection(
     records: Sequence[Mapping[str, object]],
     registry: Collection[RegistryTool],
     output: Path | None,
+    fingerprints: dict[tuple[Path, str], str],
 ) -> list[str]:
-    rendered = render_runtime_projection(records, registry, ROOT, datetime.now(UTC))
+    rendered = render_runtime_projection(
+        records, registry, ROOT, datetime.now(UTC), _fingerprints=fingerprints
+    )
     if output is None:
         return _check_runtime_projection(DEFAULT_RUNTIME_PROJECTION, rendered)
     try:
@@ -1371,11 +1385,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             errors.append("duplicate --source corpus ID")
         errors.extend(verify_corpora(args.inventory, sources))
     maturity_records: list[dict[str, object]] = []
+    fingerprints: dict[tuple[Path, str], str] = {}
     if not errors:
         maturity_records = _maturity_records(args.inventory)
         errors.extend(
             _process_runtime_projection(
-                maturity_records, registry, args.write_runtime_projection
+                maturity_records, registry, args.write_runtime_projection, fingerprints
             )
         )
     for error in errors:
@@ -1390,6 +1405,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             registry,
             ROOT,
             datetime.now(UTC),
+            _fingerprints=fingerprints,
         )
         return verification_report(states, fail_on_stale=args.fail_on_stale)
     print(

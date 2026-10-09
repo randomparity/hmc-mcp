@@ -60,7 +60,14 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import live_test_runner as runner
-from live_test import lpar_config, lpar_power, network, storage_lifecycle, vios_backup
+from live_test import (
+    lpar_config,
+    lpar_power,
+    network,
+    storage_lifecycle,
+    storage_volume_group,
+    vios_backup,
+)
 from live_test.pcie import (
     _DEFAULT_DEDICATED_PROFILE,
     _io_slots_contains,
@@ -135,7 +142,9 @@ _VMEDIA_SUBTASKS = frozenset(range(16, 23))
 _USERS_SUBTASK = 11
 #: The storage arm (#1348): ST40's volume and mapping are read back by name prefix;
 #: ST0 and ST3 only read.
-_STORAGE_SUBTASKS = frozenset({0, 3, storage_lifecycle.SUBTASK})
+_STORAGE_SUBTASKS = frozenset(
+    {0, 3, storage_lifecycle.SUBTASK, storage_volume_group.SUBTASK}
+)
 _WITNESSED_SUBTASKS = (
     _VMEDIA_SUBTASKS
     | _STORAGE_SUBTASKS
@@ -336,7 +345,9 @@ async def check_lpar_config(call, inputs: LparConfigInputs) -> list[Finding]:
                 detail=(
                     f"an lpar-config scratch partition is still defined "
                     f"({states[name]}); its description should carry caller token "
-                    f"{lpar_config.TOKEN_PREFIX}<the name's 8 hex>"
+                    f"{lpar_config.TOKEN_PREFIX}<the name's 8 hex>. Before removal, inspect "
+                    "all scratch profile io_slots and dedicated-slot ownership; restore "
+                    "any run-added slot only after confirming the saved baseline"
                 ),
                 remedy=f"{shutdown}rmsyscfg -r lpar -m {system} -n {quoted}",
             )
@@ -1012,6 +1023,8 @@ class LparResidueInputs:
     boot_written: bool
     boot_baseline: str | None
     storage_ran: bool = False
+    scratch_vg_ran: bool = False
+    scratch_vg_pending: str | None = None
     volume_group: str = ""
 
     @property
@@ -1019,6 +1032,7 @@ class LparResidueInputs:
         return (
             self.vmedia_ran
             or self.storage_ran
+            or self.scratch_vg_ran
             or self.provisioned
             or self.repository_owned
             or self.powered_on
@@ -1109,6 +1123,9 @@ def lpar_inputs_from_document(
         or bool(_calls(document, {20, 22}, {"hmc_set_lpar_boot_order"})),
         boot_baseline=_boot_baseline(document, saved_boot),
         storage_ran=storage_lifecycle.SUBTASK in subtasks,
+        scratch_vg_ran=storage_volume_group.SUBTASK in subtasks
+        or artifacts.get("storage_volume_group_name") is not None,
+        scratch_vg_pending=artifacts.get("storage_volume_group_name"),
         volume_group=str(config.get("vdisk_volume_group_name") or ""),
     )
     return inputs if inputs.applies else None
@@ -1429,6 +1446,38 @@ async def _boot_string_drift(call, inputs: LparResidueInputs) -> Finding | None:
     )
 
 
+async def _run_volume_group_left(call, inputs: LparResidueInputs) -> Finding | None:
+    if not inputs.scratch_vg_ran:
+        return None
+    pending = inputs.scratch_vg_pending
+    if pending is not None and not storage_volume_group.is_run_group(pending):
+        raise StateUnreadable("document records an invalid pending scratch group")
+    vios = _required(inputs.vios_uuid, "artifacts.vios_uuid", "scratch volume groups")
+    status, data = await call(
+        "hmc_list_volume_groups",
+        vios_name_or_uuid=vios,
+        system_name_or_uuid=inputs.system_name,
+    )
+    names = storage_volume_group.rest_group_names(data) if status == "PASS" else None
+    if names is None:
+        raise StateUnreadable("could not list scratch volume groups")
+    left = sorted(name for name in names if storage_volume_group.is_run_group(name))
+    if not left and pending is None:
+        return None
+    return Finding(
+        "run volume group left" if left else "scratch group restoration unconfirmed",
+        f"{', '.join(left) or pending} on VIOS {vios}; "
+        + (
+            f"baseline restoration for pending {pending} remains unconfirmed"
+            if pending
+            else "group remains listed"
+        ),
+        "compare the durable run and private before/after snapshots with independent "
+        "PV/group reads; follow ST42 cleanup guards before removal; do not retry create "
+        "or repair physical-volume metadata automatically",
+    )
+
+
 #: In the order an operator should clear them.
 _PARTITION_CHECKS = (
     _partition_running,
@@ -1436,6 +1485,7 @@ _PARTITION_CHECKS = (
     _run_media_left,
     _run_disk_mapping_left,
     _run_disk_left,
+    _run_volume_group_left,
     _unmapped_server_adapters,
     _repository_left,
     _boot_string_drift,

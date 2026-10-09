@@ -147,7 +147,7 @@ class _Probe:
             adapters.append(parsed)
         if self.run.p_uuid is None:
             adapters.append(frozenset())
-        return (mappings, *adapters)
+        return (mappings, adapters[0], adapters[1])
 
     async def context(self, label: str) -> dict[str, Any]:
         run = self.run

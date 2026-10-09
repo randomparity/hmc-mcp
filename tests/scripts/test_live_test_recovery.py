@@ -2073,3 +2073,44 @@ def test_the_guard_refuses_any_other_vios_command(command):
 def test_a_clean_storage_run_exits_zero(tmp_path, monkeypatch, capsys):
     assert _main(tmp_path, monkeypatch, _storage_document()) == (0, True)
     assert "CLEAN" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("subtasks,pending", [([42], None), ([0, 3], "hpvg1234abcd")])
+def test_st42_or_pending_group_applies_to_recovery(subtasks, pending):
+    document = _lpar_document(subtasks, storage_volume_group_name=pending)
+    inputs = recovery.lpar_inputs_from_document(document, subtasks)
+    assert inputs is not None and inputs.applies and inputs.scratch_vg_ran
+    assert inputs.scratch_vg_pending == pending
+
+
+@pytest.mark.parametrize(
+    "pending,names,expected",
+    [
+        (None, [], None),
+        (None, [{"name": "rootvg"}, {"name": "hpvg1234abcd"}], "run volume group left"),
+        ("hpvg1234abcd", [], "scratch group restoration unconfirmed"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_scratch_recovery_is_read_only_and_keeps_uncertainty(
+    pending, names, expected
+):
+    document = _lpar_document([42], storage_volume_group_name=pending)
+    inputs = recovery.lpar_inputs_from_document(document, [42])
+    seen = []
+    finding = await recovery._run_volume_group_left(
+        _caller({"hmc_list_volume_groups": names}, seen), inputs
+    )
+    assert (finding.what if finding else None) == expected
+    assert seen == ["hmc_list_volume_groups"]
+
+
+@pytest.mark.parametrize("pending,data", [("rootvg", []), (None, [{}]), (None, None)])
+@pytest.mark.asyncio
+async def test_scratch_recovery_refuses_invalid_or_unreadable_state(pending, data):
+    document = _lpar_document([42], storage_volume_group_name=pending)
+    inputs = recovery.lpar_inputs_from_document(document, [42])
+    with pytest.raises(recovery.StateUnreadable):
+        await recovery._run_volume_group_left(
+            _caller({"hmc_list_volume_groups": data}), inputs
+        )
