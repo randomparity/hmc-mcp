@@ -5,7 +5,7 @@
 Frozen scope: issue #1387, token `q1387-53c0b682`, scope comment 6065679326.
 Operator2026-10-07 chose option A and excluded backing-storage deletion (#1229).
 Operator2026-10-08 approved the fail-closed prerequisite and the necessary
-ADR 0192 consistency amendment. Root authorizes existing full ST41 routing only;
+ADR 0192 consistency; Operator2026-10-09 approved one adapter-refresh correction/review;
 execution still needs a separate exact pushed-head live-slot grant.
 One PR; non-trivial/full-spec; M/250 changed-line denominator; iterating review.
 
@@ -68,8 +68,8 @@ storage cleanup, ledger provenance and explicit intent with owner #1229.
   the original diagnostic; adapters and partition deletion are skipped. Missing,
   duplicate or retargeted fresh identity, missing ETag, 412, or transport/HMC failure
   is failure, even if an existing diagnostic readback suggests a side effect.
-- Recheck inactive state before adapter deletion. Preserve existing adapter ordering,
-  per-phase partial results, fail-fast/no rollback and final deletion semantics.
+- Recheck owner/inactive state and complete four-kind adapter UUID/type/uniqueness inventory;
+  delete only a fresh subset of original adapters. Complete Atom admission rejects hidden entry/resource descendants under metadata while retaining valid native metadata; read/identity errors stop and genuine DELETE errors fail.
 
 ## ST41 proof and cleanup
 
@@ -137,7 +137,7 @@ full local guards/hooks, bounded independent review and exact-head CI.
 The ignored implementation plan inventories focused behavior tests for exact plan,
 incomplete structure/identity, foreign/vFC retention, UUID case, order, ownership,
 partial mapping failure, fresh RMW retarget/ETag refusal, VIOS listing/detail failure,
-missing mapping collection, failed/unavailable partition readback and ST41 cancellation.
+missing mapping collection, adapter-refresh drift/hidden metadata entry/resource/partial404/cancellation and ST41 readback faults.
 Existing inspection tests protect its unchanged caller contract. Controlled faults
 remove target-client validation, preflight stop and mapping-error stop in turn and
 must fail meaningful safety tests before restoration. Prose is inspected against
@@ -147,8 +147,8 @@ MERGE-READY, alongside recovery and generated commit-stamped filtered evidence.
 
 ## Amended estimate and direct caller consequences
 
-The original estimate undercounted explicit ST41 proof-failure/cancellation tests and
-affected CLI fixtures. Preserve these safety cases under the same frozen C1–C6 scope.
+The prior1200–1400 estimate undercounted strict raw-reader, native/UUID and CLI safety fixtures;
+actual1782 support lines gives1700–1900 amended range. Same C1–C6 scope remains.
 Existing CLI confirmation and MCP description disclose the ordered mapping detach and
 backing-storage retention; regenerate their tool reference. No caller signature or
 execution behavior changes. The amended plan records the corrected size breakdown.

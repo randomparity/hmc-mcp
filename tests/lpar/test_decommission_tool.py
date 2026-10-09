@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import logging
 from contextlib import asynccontextmanager
 from typing import Any, get_type_hints
-from unittest.mock import AsyncMock, patch
-from xml.etree.ElementTree import fromstring
+from unittest.mock import AsyncMock, Mock, patch
+from xml.etree.ElementTree import Element, SubElement, fromstring, tostring
 
+import httpx
 import pytest
 from conftest import assert_only_these_client_methods_used
 
@@ -120,6 +122,31 @@ def _storage_detail() -> dict[str, object]:
     }
 
 
+def _adapter_feed(adapter_type: str, adapters: list[dict[str, object]]) -> str:
+    # Constructed/anonymized from captured collection200 Atom wrappers: metadata,
+    # native uom:etag and one typed resource. Empty204 is tested separately.
+    atom = "{http://www.w3.org/2005/Atom}"
+    uom = "{http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/}"
+    root = Element(atom + "feed")
+    SubElement(root, atom + "id").text = "urn:uuid:" + LPAR_UUID
+    SubElement(root, atom + "updated").text = "2026-10-09T00:00:00Z"
+    SubElement(root, atom + "link", rel="SELF", href="https://hmc.example.test/feed")
+    SubElement(root, atom + "generator").text = "synthetic"
+    for adapter in adapters:
+        entry = SubElement(root, atom + "entry")
+        if adapter.get("UUID") is not None:
+            SubElement(entry, atom + "id").text = str(adapter["UUID"])
+        SubElement(entry, atom + "title").text = adapter_type
+        SubElement(entry, atom + "published").text = "2026-10-09T00:00:00Z"
+        SubElement(entry, atom + "author")
+        SubElement(entry, uom + "etag").text = "synthetic-version"
+        content = SubElement(entry, atom + "content")
+        resource = SubElement(content, uom + adapter_type)
+        SubElement(SubElement(resource, uom + "Metadata"), uom + "Atom")
+        SubElement(resource, uom + "VirtualSlotNumber").text = "2"
+    return tostring(root, encoding="unicode")
+
+
 def _client(*, complete: bool = True) -> AsyncMock:
     hmc = AsyncMock()
     hmc.list_logical_partitions.return_value = [_lpar()]
@@ -131,21 +158,46 @@ def _client(*, complete: bool = True) -> AsyncMock:
     ) -> list[dict[str, object]]:
         adapters = {
             "ClientNetworkAdapter": [
-                _adapter("ClientNetworkAdapter", "cna-2"),
-                _adapter("ClientNetworkAdapter", "cna-1"),
+                _adapter(
+                    "ClientNetworkAdapter", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2"
+                ),
+                _adapter(
+                    "ClientNetworkAdapter", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1"
+                ),
             ],
             "VirtualSCSIClientAdapter": [
-                _adapter("VirtualSCSIClientAdapter", "vscsi-2"),
-                _adapter("VirtualSCSIClientAdapter", "vscsi-1"),
+                _adapter(
+                    "VirtualSCSIClientAdapter", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2"
+                ),
+                _adapter(
+                    "VirtualSCSIClientAdapter", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1"
+                ),
             ],
             "VirtualFibreChannelClientAdapter": [
-                _adapter("VirtualFibreChannelClientAdapter", "vfc-2")
+                _adapter(
+                    "VirtualFibreChannelClientAdapter",
+                    "cccccccc-cccc-cccc-cccc-ccccccccccc2",
+                )
             ],
-            "VirtualNICDedicated": [_adapter("VirtualNICDedicated", "vnic-2")],
+            "VirtualNICDedicated": [
+                _adapter("VirtualNICDedicated", "dddddddd-dddd-dddd-dddd-ddddddddddd2")
+            ],
         }
         return adapters[adapter_type]
 
     hmc.list_adapters.side_effect = list_adapters
+    hmc._uom_headers = Mock(side_effect=lambda kind: {"Accept": kind})
+
+    async def adapter_request(method, path, *, headers, uuid_path_arguments):
+        assert method == "GET" and uuid_path_arguments == {
+            "parent_uuid": path.split("/")[-2]
+        }
+        kind = path.rsplit("/", 1)[1]
+        assert headers == {"Accept": kind}
+        entries = await hmc.list_adapters(uuid_path_arguments["parent_uuid"], kind)
+        return httpx.Response(200, text=_adapter_feed(kind, entries))
+
+    hmc._request_with_uuid_path_arguments.side_effect = adapter_request
     hmc.list_vios.return_value = [
         {"UUID": VIOS_UUID, "Resource": {"PartitionName": "vios1"}}
     ]
@@ -332,9 +384,7 @@ async def test_decommission_refuses_incomplete_adapter_inventory(
 
     with pytest.raises(
         ValueError,
-        match=(
-            "Cannot safely decommission LPAR .*ClientNetworkAdapter.*missing its UUID"
-        ),
+        match=("Incomplete ClientNetworkAdapter inventory: missing its UUID"),
     ):
         await decommission_lpar(hmc, "system-a", "aix-prod")
 
@@ -405,7 +455,7 @@ async def test_decommission_refuses_when_vios_storage_detail_is_unavailable(
         _lpar_uuid: str, adapter_type: str
     ) -> list[dict[str, object]]:
         if adapter_type == "ClientNetworkAdapter":
-            return [_adapter(adapter_type, "adapter-1")]
+            return [_adapter(adapter_type, "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee1")]
         return []
 
     hmc.list_adapters.side_effect = list_adapters
@@ -482,12 +532,30 @@ async def test_decommission_dry_run_inventories_without_mutating(
                 "status": "dry_run",
                 "result": {
                     "adapters": (
-                        {"type": "ClientNetworkAdapter", "uuid": "cna-1"},
-                        {"type": "ClientNetworkAdapter", "uuid": "cna-2"},
-                        {"type": "VirtualSCSIClientAdapter", "uuid": "vscsi-1"},
-                        {"type": "VirtualSCSIClientAdapter", "uuid": "vscsi-2"},
-                        {"type": "VirtualFibreChannelClientAdapter", "uuid": "vfc-2"},
-                        {"type": "VirtualNICDedicated", "uuid": "vnic-2"},
+                        {
+                            "type": "ClientNetworkAdapter",
+                            "uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1",
+                        },
+                        {
+                            "type": "ClientNetworkAdapter",
+                            "uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2",
+                        },
+                        {
+                            "type": "VirtualSCSIClientAdapter",
+                            "uuid": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1",
+                        },
+                        {
+                            "type": "VirtualSCSIClientAdapter",
+                            "uuid": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2",
+                        },
+                        {
+                            "type": "VirtualFibreChannelClientAdapter",
+                            "uuid": "cccccccc-cccc-cccc-cccc-ccccccccccc2",
+                        },
+                        {
+                            "type": "VirtualNICDedicated",
+                            "uuid": "dddddddd-dddd-dddd-dddd-ddddddddddd2",
+                        },
                     )
                 },
             },
@@ -510,12 +578,30 @@ async def test_decommission_dry_run_inventories_without_mutating(
             "state": "running",
             "owner": None,
             "adapters": (
-                {"type": "ClientNetworkAdapter", "uuid": "cna-1"},
-                {"type": "ClientNetworkAdapter", "uuid": "cna-2"},
-                {"type": "VirtualSCSIClientAdapter", "uuid": "vscsi-1"},
-                {"type": "VirtualSCSIClientAdapter", "uuid": "vscsi-2"},
-                {"type": "VirtualFibreChannelClientAdapter", "uuid": "vfc-2"},
-                {"type": "VirtualNICDedicated", "uuid": "vnic-2"},
+                {
+                    "type": "ClientNetworkAdapter",
+                    "uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1",
+                },
+                {
+                    "type": "ClientNetworkAdapter",
+                    "uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2",
+                },
+                {
+                    "type": "VirtualSCSIClientAdapter",
+                    "uuid": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1",
+                },
+                {
+                    "type": "VirtualSCSIClientAdapter",
+                    "uuid": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2",
+                },
+                {
+                    "type": "VirtualFibreChannelClientAdapter",
+                    "uuid": "cccccccc-cccc-cccc-cccc-ccccccccccc2",
+                },
+                {
+                    "type": "VirtualNICDedicated",
+                    "uuid": "dddddddd-dddd-dddd-dddd-ddddddddddd2",
+                },
             ),
             "storage_mappings": (
                 {
@@ -615,6 +701,7 @@ async def test_decommission_override_reads_and_reports_both_ownership_snapshots(
             "[hmcpctl owner:bob created:2026-08-14]",
             "[hmcpctl owner:bob created:2026-08-14]",
             "[hmcpctl owner:bob created:2026-08-14]",
+            "[hmcpctl owner:bob created:2026-08-14]",
         )
     )
     monkeypatch.setattr(
@@ -627,7 +714,7 @@ async def test_decommission_override_reads_and_reports_both_ownership_snapshots(
 
     assert result.workflow_completed is True
     assert result.blast_radius["owner"] == "bob"
-    assert descriptions.await_count == 3
+    assert descriptions.await_count == 4
 
 
 @pytest.mark.asyncio
@@ -728,12 +815,30 @@ async def test_decommission_runs_power_off_adapter_delete_and_lpar_delete_in_ord
             "status": "ok",
             "result": {
                 "adapters": (
-                    {"type": "ClientNetworkAdapter", "uuid": "cna-1"},
-                    {"type": "ClientNetworkAdapter", "uuid": "cna-2"},
-                    {"type": "VirtualSCSIClientAdapter", "uuid": "vscsi-1"},
-                    {"type": "VirtualSCSIClientAdapter", "uuid": "vscsi-2"},
-                    {"type": "VirtualFibreChannelClientAdapter", "uuid": "vfc-2"},
-                    {"type": "VirtualNICDedicated", "uuid": "vnic-2"},
+                    {
+                        "type": "ClientNetworkAdapter",
+                        "uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1",
+                    },
+                    {
+                        "type": "ClientNetworkAdapter",
+                        "uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2",
+                    },
+                    {
+                        "type": "VirtualSCSIClientAdapter",
+                        "uuid": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1",
+                    },
+                    {
+                        "type": "VirtualSCSIClientAdapter",
+                        "uuid": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2",
+                    },
+                    {
+                        "type": "VirtualFibreChannelClientAdapter",
+                        "uuid": "cccccccc-cccc-cccc-cccc-ccccccccccc2",
+                    },
+                    {
+                        "type": "VirtualNICDedicated",
+                        "uuid": "dddddddd-dddd-dddd-dddd-ddddddddddd2",
+                    },
                 )
             },
         },
@@ -749,12 +854,13 @@ async def test_decommission_runs_power_off_adapter_delete_and_lpar_delete_in_ord
         "authorize:system-a:aix-prod:False",
         "get_state",
         "get_state",
-        "delete_adapter:ClientNetworkAdapter:cna-1",
-        "delete_adapter:ClientNetworkAdapter:cna-2",
-        "delete_adapter:VirtualSCSIClientAdapter:vscsi-1",
-        "delete_adapter:VirtualSCSIClientAdapter:vscsi-2",
-        "delete_adapter:VirtualFibreChannelClientAdapter:vfc-2",
-        "delete_adapter:VirtualNICDedicated:vnic-2",
+        "authorize:system-a:aix-prod:False",
+        "delete_adapter:ClientNetworkAdapter:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1",
+        "delete_adapter:ClientNetworkAdapter:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2",
+        "delete_adapter:VirtualSCSIClientAdapter:bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1",
+        "delete_adapter:VirtualSCSIClientAdapter:bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2",
+        "delete_adapter:VirtualFibreChannelClientAdapter:cccccccc-cccc-cccc-cccc-ccccccccccc2",
+        "delete_adapter:VirtualNICDedicated:dddddddd-dddd-dddd-dddd-ddddddddddd2",
         f"delete_lpar:{LPAR_UUID}",
     ]
 
@@ -772,7 +878,7 @@ async def test_decommission_marks_already_off_lpar_without_power_job(
         _lpar_uuid: str, adapter_type: str
     ) -> list[dict[str, object]]:
         if adapter_type == "ClientNetworkAdapter":
-            return [_adapter(adapter_type, "adapter-1")]
+            return [_adapter(adapter_type, "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee1")]
         return []
 
     hmc.list_adapters.side_effect = list_adapters
@@ -800,7 +906,8 @@ async def test_decommission_marks_already_off_lpar_without_power_job(
         "authorize:system-a:aix-prod:False",
         "get_state",
         "get_state",
-        "delete_adapter:ClientNetworkAdapter:adapter-1",
+        "authorize:system-a:aix-prod:False",
+        "delete_adapter:ClientNetworkAdapter:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee1",
         f"delete_lpar:{LPAR_UUID}",
     ]
 
@@ -965,7 +1072,7 @@ async def test_decommission_stops_after_first_adapter_failure(
         _lpar_uuid: str, adapter_type: str, adapter_uuid: str
     ) -> None:
         calls.append(f"delete_adapter:{adapter_type}:{adapter_uuid}")
-        if adapter_uuid == "vscsi-1":
+        if adapter_uuid == "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1":
             raise HMCError("adapter delete failed")
 
     hmc.delete_adapter.side_effect = delete_adapter
@@ -996,8 +1103,14 @@ async def test_decommission_stops_after_first_adapter_failure(
             "status": "error",
             "result": {
                 "adapters": (
-                    {"type": "ClientNetworkAdapter", "uuid": "cna-1"},
-                    {"type": "ClientNetworkAdapter", "uuid": "cna-2"},
+                    {
+                        "type": "ClientNetworkAdapter",
+                        "uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1",
+                    },
+                    {
+                        "type": "ClientNetworkAdapter",
+                        "uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2",
+                    },
                 ),
                 "error": "adapter delete failed",
             },
@@ -1010,9 +1123,10 @@ async def test_decommission_stops_after_first_adapter_failure(
         "authorize:system-a:aix-prod:False",
         "authorize:system-a:aix-prod:False",
         "authorize:system-a:aix-prod:False",
-        "delete_adapter:ClientNetworkAdapter:cna-1",
-        "delete_adapter:ClientNetworkAdapter:cna-2",
-        "delete_adapter:VirtualSCSIClientAdapter:vscsi-1",
+        "authorize:system-a:aix-prod:False",
+        "delete_adapter:ClientNetworkAdapter:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1",
+        "delete_adapter:ClientNetworkAdapter:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2",
+        "delete_adapter:VirtualSCSIClientAdapter:bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1",
     ]
     hmc.delete_logical_partition.assert_not_awaited()
 
@@ -1049,7 +1163,9 @@ async def test_decommission_dry_run_makes_no_unclassified_call(
             {
                 "list_logical_partitions",  # read: find the partition on the system
                 "get_logical_partition",  # read: its current state and attributes
-                "list_adapters",  # read: blast radius, four adapter kinds
+                "list_adapters",  # synthetic remote adapter service
+                "_request_with_uuid_path_arguments",  # GET: complete four-kind inventory
+                "_uom_headers",  # pure: typed read headers
                 "list_vios",  # read: every VIOS on the system
                 "get_vios_storage_detail",  # read: each VIOS's storage mappings
             }
@@ -1294,8 +1410,6 @@ async def test_decommission_mapping_error_retains_failure_and_skips_teardown(
 
 @pytest.mark.asyncio
 async def test_partial_mapping_detach_reports_success_then_stops(monkeypatch):
-    import copy
-
     hmc = _client()
     detail = _complete_storage_detail()
     mappings = detail["Resource"]["VirtualSCSIMappings"]["VirtualSCSIMapping"]
@@ -1511,3 +1625,315 @@ async def test_native_metadata_canonical_detaches_only_exact_own_mapping(
         VIOS_UUID, "vhost3/vtscsi2", LPAR_UUID
     )
     hmc.delete_virtual_disk.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mapping_removes_client", [True, False])
+async def test_decommission_refresh_uses_surviving_original_adapters(
+    monkeypatch, mapping_removes_client
+):
+    hmc = _client()
+    _patch_common(monkeypatch, [])
+    detached = False
+    uuid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1"
+
+    async def inventory(_parent, kind):
+        return (
+            [_adapter(kind, uuid)]
+            if kind == "VirtualSCSIClientAdapter"
+            and not (detached and mapping_removes_client)
+            else []
+        )
+
+    async def mapping(*_args):
+        nonlocal detached
+        detached = True
+
+    async def adapter(_parent, _kind, identity):
+        if mapping_removes_client and detached:
+            raise HMCError("stale adapter DELETE", 404, "REST000B")
+        assert identity == uuid
+
+    hmc.list_adapters.side_effect = inventory
+    hmc.delete_storage_mapping.side_effect = mapping
+    hmc.delete_adapter.side_effect = adapter
+    result = await decommission_lpar(hmc, "system-a", LPAR_UUID)
+    assert result.workflow_completed and result.resource_deleted
+    assert hmc.delete_adapter.await_count == (0 if mapping_removes_client else 1)
+    assert hmc.list_adapters.await_count == 8
+    assert result.blast_radius["adapters"] == (
+        {"type": "VirtualSCSIClientAdapter", "uuid": uuid},
+    )
+    hmc.delete_logical_partition.assert_awaited_once_with(LPAR_UUID)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "new",
+        "duplicate",
+        "case-alias",
+        "missing",
+        "invalid",
+        "read",
+        "empty200",
+        "nonempty204",
+        "unknown",
+        "wrong-type",
+        "pagination",
+        "content",
+        "owner",
+        "state",
+        "cancel",
+    ],
+)
+async def test_decommission_refresh_rejects_unverified_inventory(monkeypatch, fault):
+    hmc = _client()
+    _patch_common(monkeypatch, [])
+    detached = False
+    original_request = hmc._request_with_uuid_path_arguments.side_effect
+
+    async def mapping(*_args):
+        nonlocal detached
+        detached = True
+
+    async def request(method, path, **kwargs):
+        response = await original_request(method, path, **kwargs)
+        if not detached:
+            return response
+        if fault == "read":
+            raise HMCError("fresh inventory refused", 403, "synthetic")
+        if fault == "cancel":
+            raise asyncio.CancelledError
+        if fault == "empty200":
+            return httpx.Response(200)
+        if fault == "nonempty204":
+            return httpx.Response(204, text=response.text)
+        root = fromstring(response.text)
+        atom = "{http://www.w3.org/2005/Atom}"
+        uom = "{http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/}"
+        entry = root.find(atom + "entry")
+        if fault == "unknown":
+            SubElement(root, uom + "UnknownAdapter")
+        elif fault == "pagination":
+            SubElement(
+                root, atom + "link", rel="next", href="https://hmc.example.test/page2"
+            )
+        elif entry is not None:
+            identity = entry.find(atom + "id")
+            if fault == "new" and path.endswith("/ClientNetworkAdapter"):
+                identity.text = "ffffffff-ffff-ffff-ffff-ffffffffffff"
+            elif fault in ("duplicate", "case-alias"):
+                other = copy.deepcopy(entry)
+                if fault == "case-alias":
+                    other.find(atom + "id").text = identity.text.upper()
+                root.append(other)
+            elif fault == "missing":
+                entry.remove(identity)
+            elif fault == "invalid":
+                identity.text = "not-a-uuid"
+            elif fault == "wrong-type":
+                entry.find(atom + "content")[0].tag = uom + "ForeignAdapter"
+            elif fault == "content":
+                SubElement(entry.find(atom + "content"), uom + "ForeignAdapter")
+        return httpx.Response(200, text=tostring(root, encoding="unicode"))
+
+    hmc.delete_storage_mapping.side_effect = mapping
+    hmc._request_with_uuid_path_arguments.side_effect = request
+    if fault == "owner":
+
+        async def authorize(*_args, **_kwargs):
+            if detached:
+                raise PermissionError("ownership changed")
+
+        monkeypatch.setattr(
+            "hmcpctl.operations.lpar.decommission.authorize_decommission_lpar_ownership_snapshot",
+            authorize,
+        )
+    if fault == "state":
+        hmc.get_quick_property.side_effect = lambda *_args: (
+            "running" if detached else "not activated"
+        )
+    if fault == "cancel":
+        with pytest.raises(asyncio.CancelledError):
+            await decommission_lpar(hmc, "system-a", LPAR_UUID)
+    else:
+        result = await decommission_lpar(hmc, "system-a", LPAR_UUID)
+        assert not result.workflow_completed and not result.resource_deleted
+        assert (
+            result.steps[-2].status == "error" and result.steps[-1].status == "skipped"
+        )
+    hmc.delete_adapter.assert_not_awaited()
+    hmc.delete_logical_partition.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_decommission_mapping_failure_does_not_refresh(monkeypatch):
+    hmc = _client()
+    _patch_common(monkeypatch, [])
+    hmc.delete_storage_mapping.side_effect = HMCError(
+        "mapping refused", 500, "synthetic"
+    )
+    result = await decommission_lpar(hmc, "system-a", LPAR_UUID)
+    assert not result.workflow_completed
+    assert hmc.list_adapters.await_count == 4
+    hmc.delete_adapter.assert_not_awaited()
+    hmc.delete_logical_partition.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_decommission_refresh_genuine_partial_delete_error_stays_failed(
+    monkeypatch,
+):
+    hmc = _client()
+    _patch_common(monkeypatch, [])
+    hmc.delete_adapter.side_effect = [
+        None,
+        HMCError("genuine DELETE refused", 404, "REST000B"),
+    ]
+    result = await decommission_lpar(hmc, "system-a", LPAR_UUID)
+    assert not result.workflow_completed and not result.resource_deleted
+    assert result.steps[-2].status == "error" and result.steps[-1].status == "skipped"
+    assert len(result.steps[-2].result["adapters"]) == 1
+    assert "genuine DELETE refused" in result.steps[-2].result["error"]
+    assert hmc.delete_adapter.await_count == 2
+    hmc.delete_logical_partition.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fault",
+    ["malformed", "entry", "empty200", "nonempty204", "http", "identity", "collection"],
+)
+async def test_initial_raw_adapter_inventory_fails_before_first_mutation(
+    monkeypatch, fault
+):
+    hmc = _client()
+    _patch_common(monkeypatch, [])
+    xml = _adapter_feed(
+        "ClientNetworkAdapter",
+        [_adapter("ClientNetworkAdapter", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1")],
+    )
+    from xml.etree.ElementTree import fromstring
+
+    root = fromstring(xml)
+    if fault == "malformed":
+        response = httpx.Response(200, text="<feed")
+    elif fault == "entry":
+        response = httpx.Response(
+            200,
+            text=tostring(
+                root.find("{http://www.w3.org/2005/Atom}entry"), encoding="unicode"
+            ),
+        )
+    elif fault == "empty200":
+        response = httpx.Response(200)
+    elif fault == "nonempty204":
+        response = httpx.Response(204, text=xml)
+    elif fault == "http":
+        response = httpx.Response(500, text="synthetic transport failure")
+    else:
+        atom = "{http://www.w3.org/2005/Atom}"
+        if fault == "identity":
+            SubElement(
+                root.find(atom + "entry"), atom + "id"
+            ).text = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1"
+        else:
+            SubElement(root, "{urn:unknown}entry")
+        response = httpx.Response(200, text=tostring(root, encoding="unicode"))
+    hmc._request_with_uuid_path_arguments.return_value = response
+    hmc._request_with_uuid_path_arguments.side_effect = None
+    with pytest.raises((ValueError, HMCError)):
+        await decommission_lpar(hmc, "system-a", LPAR_UUID)
+    hmc.submit_job.assert_not_awaited()
+    hmc.delete_storage_mapping.assert_not_awaited()
+    hmc.delete_adapter.assert_not_awaited()
+    hmc.delete_logical_partition.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_exact_empty_204_adapter_feed_is_complete(monkeypatch):
+    hmc = _client()
+    _patch_common(monkeypatch, [])
+    hmc._request_with_uuid_path_arguments.side_effect = None
+    hmc._request_with_uuid_path_arguments.return_value = httpx.Response(204)
+    result = await decommission_lpar(hmc, "system-a", LPAR_UUID)
+    assert result.workflow_completed and result.resource_deleted
+    assert hmc._request_with_uuid_path_arguments.await_count == 8
+    hmc.delete_adapter.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("hidden", ["entry", "resource"])
+async def test_refresh_metadata_cannot_hide_existing_adapter(monkeypatch, hidden):
+    from xml.etree.ElementTree import fromstring
+
+    hmc = _client()
+    _patch_common(monkeypatch, [])
+    detached = False
+    identity = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1"
+
+    async def inventory(_parent, kind):
+        return [_adapter(kind, identity)] if kind == "VirtualSCSIClientAdapter" else []
+
+    async def detach(*_args):
+        nonlocal detached
+        detached = True
+
+    original_request = hmc._request_with_uuid_path_arguments.side_effect
+
+    async def request(method, path, **kwargs):
+        response = await original_request(method, path, **kwargs)
+        if detached and path.endswith("/VirtualSCSIClientAdapter"):
+            atom = "{http://www.w3.org/2005/Atom}"
+            root = fromstring(response.text)
+            entry = root.find(atom + "entry")
+            root.remove(entry)
+            metadata = SubElement(root, atom + "author")
+            metadata.append(
+                entry if hidden == "entry" else entry.find(atom + "content")[0]
+            )
+            return httpx.Response(200, text=tostring(root, encoding="unicode"))
+        return response
+
+    hmc.list_adapters.side_effect = inventory
+    hmc.delete_storage_mapping.side_effect = detach
+    hmc._request_with_uuid_path_arguments.side_effect = request
+    result = await decommission_lpar(hmc, "system-a", LPAR_UUID)
+    assert detached  # Actual canonical mapping phase was reached.
+    assert not result.workflow_completed and not result.resource_deleted
+    assert result.steps[2].status == "error" and result.steps[3].status == "skipped"
+    hmc.delete_adapter.assert_not_awaited()
+    hmc.delete_logical_partition.assert_not_awaited()
+    assert await inventory(LPAR_UUID, "VirtualSCSIClientAdapter") == [
+        _adapter("VirtualSCSIClientAdapter", identity)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_adapter_feed_preserves_native_metadata_and_person_fields(monkeypatch):
+    from xml.etree.ElementTree import fromstring
+
+    hmc = _client()
+    _patch_common(monkeypatch, [])
+    original_request = hmc._request_with_uuid_path_arguments.side_effect
+
+    async def request(method, path, **kwargs):
+        response = await original_request(method, path, **kwargs)
+        atom = "{http://www.w3.org/2005/Atom}"
+        root = fromstring(response.text)
+        SubElement(root, atom + "category", term="synthetic")
+        for parent in [root, *root.findall(atom + "entry")]:
+            author = parent.find(atom + "author")
+            if author is None:
+                author = SubElement(parent, atom + "author")
+            SubElement(author, atom + "name").text = "synthetic author"
+            SubElement(author, atom + "uri").text = "https://hmc.example.test/author"
+            SubElement(author, atom + "email").text = "synthetic@example.test"
+        return httpx.Response(200, text=tostring(root, encoding="unicode"))
+
+    hmc._request_with_uuid_path_arguments.side_effect = request
+    result = await decommission_lpar(hmc, "system-a", LPAR_UUID)
+    assert result.workflow_completed and result.resource_deleted
+    assert hmc.delete_adapter.await_count == 6

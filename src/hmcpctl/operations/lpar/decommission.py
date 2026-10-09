@@ -5,8 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from defusedxml import ElementTree as DET
+from defusedxml.common import DefusedXmlException
 from typing_extensions import TypedDict
 
+from hmcpctl.client.client_parse import _parse_feed
 from hmcpctl.client.client_storage import mapping_lpar_uuid, storage_mapping_id
 from hmcpctl.client.core import HMCClient
 from hmcpctl.operations.lpar.ownership import (
@@ -379,20 +382,121 @@ async def _partition_snapshot(
     return partition_name, partition_id, state
 
 
+_ATOM = "{http://www.w3.org/2005/Atom}"
+_UOM = "{http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/}"
+_FEED_FIELDS = frozenset(
+    [
+        "id",
+        "title",
+        "updated",
+        "link",
+        "generator",
+        "category",
+        "author",
+        "contributor",
+        "subtitle",
+        "rights",
+        "icon",
+        "logo",
+        "entry",
+    ]
+)
+_ENTRY_FIELDS = frozenset(
+    [
+        "id",
+        "title",
+        "updated",
+        "published",
+        "author",
+        "contributor",
+        "category",
+        "link",
+        "summary",
+        "rights",
+        "content",
+    ]
+)
+
+
+def _complete_adapter_feed(xml: str, adapter_type: AdapterType) -> list[dict[str, Any]]:
+    try:
+        root = DET.fromstring(xml)
+    except (DET.ParseError, DefusedXmlException) as exc:
+        raise ValueError(f"Incomplete {adapter_type} inventory: malformed XML") from exc
+    if root.tag != _ATOM + "feed":
+        raise ValueError(f"Incomplete {adapter_type} inventory: expected Atom feed")
+    metadata = [child for child in root if child.tag != _ATOM + "entry"]
+    for child in root:
+        if child.tag not in {_ATOM + name for name in _FEED_FIELDS}:
+            raise ValueError(f"Incomplete {adapter_type} inventory: unknown feed child")
+        if child.tag == _ATOM + "entry":
+            metadata.extend(item for item in child if item.tag != _ATOM + "content")
+            if any(
+                item.tag
+                not in {_ATOM + name for name in _ENTRY_FIELDS} | {_UOM + "etag"}
+                for item in child
+            ):
+                raise ValueError(
+                    f"Incomplete {adapter_type} inventory: unknown entry child"
+                )
+            identities = child.findall(_ATOM + "id")
+            contents = child.findall(_ATOM + "content")
+            if len(identities) != 1 or not is_uuid(identities[0].text or ""):
+                raise ValueError(
+                    f"Incomplete {adapter_type} inventory: missing its UUID or invalid UUID"
+                )
+            if (
+                len(contents) != 1
+                or len(contents[0]) != 1
+                or contents[0][0].tag != _UOM + adapter_type
+            ):
+                raise ValueError(
+                    f"Incomplete {adapter_type} inventory: invalid resource content"
+                )
+    # Native Atom person fields are metadata, never another resource/entry container.
+    person_fields = {_ATOM + name for name in ("name", "uri", "email")}
+    if any(
+        descendant.tag not in person_fields
+        for item in metadata
+        for descendant in item.iter()
+        if descendant is not item
+    ):
+        raise ValueError(
+            f"Incomplete {adapter_type} inventory: unsupported metadata descendants"
+        )
+    if any(link.get("rel") == "next" for link in root.iter(_ATOM + "link")):
+        raise ValueError(f"Incomplete {adapter_type} inventory: paginated feed")
+    return _parse_feed(xml, f"{adapter_type} inventory")
+
+
 async def _inventory_adapters(
     hmc: HMCClient, lpar_uuid: str
 ) -> tuple[DecommissionAdapterRecord, ...]:
     adapters: list[DecommissionAdapterRecord] = []
+    identities: set[str] = set()
     for adapter_type in _ADAPTER_ORDER:
-        entries = await hmc.list_adapters(lpar_uuid, adapter_type)
+        response = await hmc._request_with_uuid_path_arguments(
+            "GET",
+            f"/rest/api/uom/LogicalPartition/{lpar_uuid}/{adapter_type}",
+            headers=hmc._uom_headers(adapter_type),
+            uuid_path_arguments={"parent_uuid": lpar_uuid},
+        )
+        if response.status_code == 204 and not response.content:
+            continue
+        if response.status_code != 200 or not response.content:
+            raise HMCError(
+                f"Incomplete {adapter_type} inventory: HTTP {response.status_code}",
+                response.status_code,
+                response.text,
+            )
+        entries = _complete_adapter_feed(response.text, adapter_type)
         for entry in sorted(entries, key=lambda item: str(item.get("UUID") or "")):
             uuid = _text(entry.get("UUID"))
-            if uuid is None:
+            if uuid is None or not is_uuid(uuid) or uuid.lower() in identities:
                 raise ValueError(
-                    f"Cannot safely decommission LPAR {lpar_uuid!r}: HMC returned a "
-                    f"{adapter_type} inventory entry missing its UUID. Retry after "
-                    "refreshing the HMC inventory or remove the unresolved adapter manually."
+                    f"Incomplete {adapter_type} inventory: invalid or duplicate UUID"
                 )
+            identities.add(uuid.lower())
             adapters.append({"type": adapter_type, "uuid": uuid})
     return tuple(adapters)
 
@@ -639,9 +743,13 @@ async def _detach_storage_mappings(
     return WorkflowStep("detach_storage_mappings", "ok", {"mappings": tuple(detached)})
 
 
-async def _detach_adapters(hmc: HMCClient, inventory: _Inventory) -> WorkflowStep:
+async def _detach_adapters(
+    hmc: HMCClient,
+    inventory: _Inventory,
+    adapters: tuple[DecommissionAdapterRecord, ...],
+) -> WorkflowStep:
     deleted: list[DecommissionAdapterRecord] = []
-    for adapter in inventory.adapters:
+    for adapter in adapters:
         try:
             await hmc.delete_adapter(
                 inventory.lpar_uuid,
@@ -661,7 +769,7 @@ async def _detach_adapters(hmc: HMCClient, inventory: _Inventory) -> WorkflowSte
     return WorkflowStep(
         "detach_adapters",
         "ok",
-        {"adapters": inventory.adapters},
+        {"adapters": adapters},
     )
 
 
@@ -850,7 +958,32 @@ async def decommission_lpar(
         _skip_steps(steps, "delete_lpar")
         return _incomplete_result(inventory, steps)
 
-    detach_step = await _detach_adapters(hmc, inventory)
+    try:
+        await authorize_decommission_lpar_ownership_snapshot(
+            hmc,
+            inventory.system_name,
+            inventory.ownership_lpar_name,
+            ownership_override=ownership_override,
+        )
+        adapters = await _inventory_adapters(hmc, inventory.lpar_uuid)
+        authorized = {
+            (item["type"], item["uuid"].lower()) for item in inventory.adapters
+        }
+        if any(
+            (item["type"], item["uuid"].lower()) not in authorized for item in adapters
+        ):
+            raise ValueError(
+                "Refreshed adapter inventory contains an unauthorized identity"
+            )
+    except (HMCError, ValueError, PermissionError) as exc:
+        steps.append(
+            WorkflowStep(
+                "detach_adapters", "error", {"adapters": (), "error": str(exc)}
+            )
+        )
+        _skip_steps(steps, "delete_lpar")
+        return _incomplete_result(inventory, steps)
+    detach_step = await _detach_adapters(hmc, inventory, adapters)
     steps.append(detach_step)
     if detach_step.status != "ok":
         steps.append(WorkflowStep("delete_lpar", "skipped"))

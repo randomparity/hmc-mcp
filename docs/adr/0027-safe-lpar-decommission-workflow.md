@@ -59,8 +59,8 @@ mapping step reports exact VIOS/mapping identities. An incomplete execution reco
 During execution an already inactive LPAR records
 `power_off` as `ok` with `already_off: true`; otherwise it waits for a successful
 terminal power-off outcome. Immediately before mapping deletion and again before
-adapter deletion, the workflow re-reads
-`PartitionState` and fails the detach phase unless the value is exactly `not activated`.
+adapter deletion, recheck ownership and `PartitionState` (`not activated`), then refresh all four
+adapter inventories; reject unverifiable/new identities and delete only surviving original adapters.
 Adapters are ordered by type as `ClientNetworkAdapter`, `VirtualSCSIClientAdapter`,
 `VirtualFibreChannelClientAdapter`, then `VirtualNICDedicated`, and by UUID within a type.
 The `detach_adapters` result contains one `{type, uuid}` record for each deleted instance.

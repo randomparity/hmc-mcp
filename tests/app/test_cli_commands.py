@@ -22,6 +22,7 @@ from typing import Self
 from unittest.mock import AsyncMock
 
 import click
+import httpx
 import pytest
 import typer
 from click import unstyle
@@ -357,6 +358,34 @@ class FakeHMC:
     async def create_virtual_disk(self, vios_uuid, vg_uuid, disk_name, capacity_mib):
         self._record("create_virtual_disk", vios_uuid, vg_uuid, disk_name, capacity_mib)
         return self.disk
+
+    def _uom_headers(self, kind):
+        return {"Accept": kind}
+
+    async def _request_with_uuid_path_arguments(
+        self, method, path, *, headers, uuid_path_arguments
+    ):
+        self._record("_request_with_uuid_path_arguments", method, path)
+        kind = path.rsplit("/", 1)[1]
+        kinds = (
+            "ClientNetworkAdapter",
+            "VirtualSCSIClientAdapter",
+            "VirtualFibreChannelClientAdapter",
+            "VirtualNICDedicated",
+        )
+        assert kind in kinds and method == "GET"
+        assert uuid_path_arguments == {"parent_uuid": LPAR_UUID}
+        assert headers == {"Accept": kind}
+        atom = "{http://www.w3.org/2005/Atom}"
+        uom = "{http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/}"
+        root = ET.Element(atom + "feed")
+        entry = ET.SubElement(root, atom + "entry")
+        ET.SubElement(
+            entry, atom + "id"
+        ).text = f"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa{kinds.index(kind)}"
+        content = ET.SubElement(entry, atom + "content")
+        ET.SubElement(content, uom + kind)
+        return httpx.Response(200, text=ET.tostring(root, encoding="unicode"))
 
     async def list_adapters(self, lpar_uuid, adapter_type):
         self._record("list_adapters", lpar_uuid, adapter_type)
@@ -1886,13 +1915,22 @@ def test_lpars_decommission_json_renders_dataclass_shape(fake_hmc):
                 "status": "dry_run",
                 "result": {
                     "adapters": [
-                        {"type": "ClientNetworkAdapter", "uuid": "adapter-1"},
-                        {"type": "VirtualSCSIClientAdapter", "uuid": "adapter-1"},
+                        {
+                            "type": "ClientNetworkAdapter",
+                            "uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa0",
+                        },
+                        {
+                            "type": "VirtualSCSIClientAdapter",
+                            "uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1",
+                        },
                         {
                             "type": "VirtualFibreChannelClientAdapter",
-                            "uuid": "adapter-1",
+                            "uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2",
                         },
-                        {"type": "VirtualNICDedicated", "uuid": "adapter-1"},
+                        {
+                            "type": "VirtualNICDedicated",
+                            "uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3",
+                        },
                     ]
                 },
             },
@@ -1910,10 +1948,22 @@ def test_lpars_decommission_json_renders_dataclass_shape(fake_hmc):
             "state": "running",
             "owner": None,
             "adapters": [
-                {"type": "ClientNetworkAdapter", "uuid": "adapter-1"},
-                {"type": "VirtualSCSIClientAdapter", "uuid": "adapter-1"},
-                {"type": "VirtualFibreChannelClientAdapter", "uuid": "adapter-1"},
-                {"type": "VirtualNICDedicated", "uuid": "adapter-1"},
+                {
+                    "type": "ClientNetworkAdapter",
+                    "uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa0",
+                },
+                {
+                    "type": "VirtualSCSIClientAdapter",
+                    "uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1",
+                },
+                {
+                    "type": "VirtualFibreChannelClientAdapter",
+                    "uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2",
+                },
+                {
+                    "type": "VirtualNICDedicated",
+                    "uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3",
+                },
             ],
             "storage_mappings": [],
             "unresolved_storage_mapping_count": 0,
