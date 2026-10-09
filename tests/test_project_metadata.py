@@ -22,7 +22,7 @@ CONTRIBUTING_NEXT = "## Changelog"
 LOCAL_PATH_COMMANDS = (
     "just setup",
     "just verify",
-    "UV_NO_SYNC=1 uv run prek run --all-files",
+    "UV_NO_SYNC=1 uv run --no-sync prek run --all-files",
 )
 LOCAL_PATH_EXPECTATIONS = (
     "focused",
