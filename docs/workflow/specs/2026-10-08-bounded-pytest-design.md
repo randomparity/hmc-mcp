@@ -101,9 +101,9 @@ coverage/security, target/version removal and hardware floors remain excluded.
 ## Validation and delivery
 
 Every executable experiment contract has focused tests and a controlled fault
-that makes its assertion fail. Full suite samples retain the exact 90.5% branch
-floor and all collected tests. Local code publication requires `just verify`
-and separate pinned all-files hooks; final prose-only publication uses relevant
+that makes its assertion fail. Full suite samples retain the exact 90.5% combined
+coverage floor, branch denominator and all collected tests. Local code publication
+requires `just verify` and separate pinned all-files hooks; final prose-only publication uses relevant
 document guards. Ordinary actual CI still covers eight native verification legs,
 eight installed-wheel legs and two library jobs. The final evidence report lists
 commands, SHAs, environment, cache conditions, measurement limits and all failures.
