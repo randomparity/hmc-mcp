@@ -44,11 +44,13 @@ def _resources_allow_parallel(
         if len(available) != 1 or len(available[0]) != 3 or available[0][2] != "kB":
             return False
         memory = int(available[0][1]) * 1024
-        memberships = [
-            line[3:]
-            for line in (proc / "self/cgroup").read_text().splitlines()
-            if line.startswith("0::")
-        ]
+        memberships = []
+        for line in (proc / "self/cgroup").read_text().splitlines():
+            hierarchy, controllers, membership = line.split(":", 2)
+            if {"cpu", "memory"}.intersection(controllers.split(",")):
+                return False  # A hybrid hierarchy may hide tighter v1 resource limits.
+            if hierarchy == "0" and not controllers:
+                memberships.append(membership)
         if len(memberships) != 1 or not memberships[0].startswith("/"):
             return False
         root = root.resolve()

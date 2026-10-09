@@ -745,6 +745,29 @@ def test_real_interrupt_preserves_pytest_diagnostic(tmp_path: Path) -> None:
         ({"meminfo": "MemAvailable: -1 kB\n"}, False),
         ({"membership": "0::/../outside\n"}, False),
         ({"membership": "1:memory:/parent/child\n"}, False),
+        ({"membership": "0::/\n", "cgroup.controllers": "io pids"}, True),
+        (
+            {
+                "membership": "4:cpu,cpuacct:/restricted\n0::/\n",
+                "cgroup.controllers": "io pids",
+            },
+            False,
+        ),
+        (
+            {
+                "membership": "5:memory:/restricted\n0::/\n",
+                "cgroup.controllers": "io pids",
+            },
+            False,
+        ),
+        (
+            {
+                "membership": "4:cpu,cpuacct:/restricted\n5:memory:/restricted\n0::/\n",
+                "cgroup.controllers": "io pids",
+            },
+            False,
+        ),
+        ({"membership": "1:name=systemd:/session\n0::/\n"}, True),
         ({"platform": "darwin"}, False),
         ({"cpu.max": "100000 100000"}, False),
         ({"memory.max": str(2 * 1024**3), "memory.current": "0"}, False),
