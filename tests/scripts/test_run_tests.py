@@ -798,6 +798,7 @@ def test_parallel_resource_admission(
         run_tests.os,
         "sched_getaffinity",
         lambda _pid: set(range(change.get("affinity", 48))),
+        raising=False,
     )
     monkeypatch.setattr(run_tests.sys, "platform", change.get("platform", "linux"))
     assert run_tests._resources_allow_parallel(proc, root) is eligible
