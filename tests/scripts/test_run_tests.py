@@ -4,6 +4,7 @@ import contextlib
 import importlib.util
 import inspect
 import io
+import json
 import os
 import signal
 import subprocess
@@ -20,6 +21,12 @@ assert MODULE_SPEC is not None
 assert MODULE_SPEC.loader is not None
 run_tests = importlib.util.module_from_spec(MODULE_SPEC)
 MODULE_SPEC.loader.exec_module(run_tests)
+
+
+@pytest.fixture(autouse=True)
+def serial_in_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep legacy adapter unit tests outside process-level ownership changes."""
+    monkeypatch.setattr(run_tests, "SERIAL", True)
 
 
 class TrackingTemporaryFile(io.BytesIO):
@@ -633,7 +640,7 @@ def test_timing_cli_retains_successful_output(tmp_path: Path) -> None:
         "import sys\nprint('pytest arguments:', sys.argv[1:])\n"
     )
     result = subprocess.run(
-        [sys.executable, str(MODULE_PATH), "--timings"],
+        [sys.executable, str(MODULE_PATH), "--serial", "--timings"],
         check=False,
         cwd=tmp_path,
         capture_output=True,
@@ -657,7 +664,7 @@ def test_real_interrupt_preserves_pytest_diagnostic(tmp_path: Path) -> None:
         "    pathlib.Path('pytest-ready').touch()\n    time.sleep(30)\n"
     )
     process = subprocess.Popen(
-        [sys.executable, str(MODULE_PATH)],
+        [sys.executable, str(MODULE_PATH), "--serial"],
         cwd=tmp_path,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -717,6 +724,8 @@ def test_real_interrupt_preserves_pytest_diagnostic(tmp_path: Path) -> None:
         ({"parent/cpu.max": "max 0"}, False),
         ({"parent/cpu.max": "-1 100000"}, False),
         ({"parent/cpu.max": "broken"}, False),
+        ({"cgroup.controllers": None}, False),
+        ({"cgroup.controllers": ""}, True),
         ({"parent/cpu.max": None}, False),
         ({"parent/memory.max": str(3 * 1024**3)}, True),
         ({"parent/memory.max": str(3 * 1024**3 - 1)}, False),
@@ -748,6 +757,7 @@ def test_parallel_resource_admission(
     (proc / "self").mkdir(parents=True)
     (root / "parent/child").mkdir(parents=True)
     files = {
+        "cgroup.controllers": "cpu memory",
         "parent/cpu.max": "max 100000",
         "parent/memory.max": "max",
         "parent/memory.current": "0",
@@ -783,3 +793,450 @@ def test_serial_cli_preserves_original_invocation(tmp_path: Path) -> None:
     assert result.returncode == 0
     assert result.stderr == "['--durations=30', '--durations-min=0']\n"
     assert result.stdout == "test: passed; configured coverage gate passed\n"
+
+
+def _parallel_probe(
+    tmp_path: Path,
+    controller: str | None,
+    *,
+    interrupts: int = 0,
+    group: bool = False,
+    initial: int = 1,
+    launch_interrupt: bool = False,
+    inventory_error: bool = False,
+    ready_workers: int = 0,
+) -> dict:
+    """Exercise the real runner in isolation; contain only after recording survivors."""
+    if controller is not None:
+        tmp_path.joinpath("pytest.py").write_text(controller)
+    probe = f"""
+import ctypes, importlib.util, json, os, signal, time
+from pathlib import Path
+spec = importlib.util.spec_from_file_location("runner", {str(MODULE_PATH)!r})
+r = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(r)
+libc = ctypes.CDLL(None)
+libc.prctl(36, {initial}, 0, 0, 0)
+before = signal.getsignal(signal.SIGINT)
+r._resources_allow_parallel = lambda: True
+r.TEST_TIMEOUT_SECONDS = 30 if {bool(interrupts) or controller is None!r} else 2
+r.TERMINATE_GRACE_SECONDS = .3
+r.INTERRUPT_GRACE_SECONDS = 5
+original_wait = getattr(r, '_wait_parallel', None)
+def ready_timeout(process, timeout):
+    deadline = time.monotonic() + 60
+    while len(list(Path('.').glob('nested-ready-*'))) < {ready_workers}:
+        if process.poll() is not None or time.monotonic() >= deadline:
+            raise OSError('workers did not reach timeout fixture')
+        time.sleep(.01)
+    return original_wait(process, .3)
+if {ready_workers}:
+    r._wait_parallel = ready_timeout
+original_popen = r.subprocess.Popen
+def interrupted_launch(*args, **kwargs):
+    process = original_popen(*args, **kwargs)
+    deadline = time.monotonic() + 5
+    while not Path('ready').exists() and time.monotonic() < deadline:
+        time.sleep(.01)
+    raise KeyboardInterrupt
+if {launch_interrupt!r}:
+    r.subprocess.Popen = interrupted_launch
+original_stop = getattr(r, '_stop_parallel', None)
+def broken_inventory_stop(process):
+    original_children = r._direct_children
+    failed = False
+    def children():
+        nonlocal failed
+        if not failed:
+            failed = True
+            raise OSError('inventory unavailable')
+        return original_children()
+    r._direct_children = children
+    return original_stop(process)
+if {inventory_error!r}:
+    r._stop_parallel = broken_inventory_stop
+try:
+    status = r.main()
+except BaseException as error:
+    status = type(error).__name__
+children = Path(f"/proc/self/task/{{os.getpid()}}/children")
+survivors = children.read_text().split()
+state = ctypes.c_int()
+libc.prctl(37, ctypes.byref(state), 0, 0, 0)
+result = dict(status=status, survivors=survivors, state=state.value,
+              handler_restored=signal.getsignal(signal.SIGINT) == before)
+# Fixture containment follows, and cannot turn the captured survivor list green.
+signal.signal(signal.SIGINT, signal.SIG_IGN)
+libc.prctl(36, 1, 0, 0, 0)
+deadline = time.monotonic() + 3
+while children.read_text().strip() and time.monotonic() < deadline:
+    for pid in map(int, children.read_text().split()):
+        try:
+            if os.waitpid(pid, os.WNOHANG)[0] == 0:
+                os.kill(pid, signal.SIGKILL)
+        except (ChildProcessError, ProcessLookupError):
+            pass
+    time.sleep(.01)
+print(json.dumps(result))
+"""
+    process = subprocess.Popen(
+        [sys.executable, "-c", probe],
+        cwd=tmp_path,
+        start_new_session=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        if interrupts:
+            _wait_for_process_marker(tmp_path / "ready", process)
+            (os.killpg if group else os.kill)(process.pid, signal.SIGINT)
+            if controller is not None:
+                _wait_for_process_marker(tmp_path / "interrupted", process)
+            if interrupts > 1:
+                os.kill(process.pid, signal.SIGINT)
+                _wait_for_process_marker(tmp_path / "term-ready", process)
+                os.kill(process.pid, signal.SIGINT)
+        stdout, stderr = process.communicate(timeout=75)
+    finally:
+        if process.poll() is None:
+            _kill_process_group(process)
+            process.wait(timeout=5)
+    assert process.returncode == 0, stderr.decode(errors="replace")
+    result = json.loads(stdout.splitlines()[-1])
+    result["stdout"], result["stderr"] = stdout, stderr
+    return result
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux child ownership")
+@pytest.mark.parametrize("status", [0, 7, -signal.SIGTERM])
+def test_parallel_preserves_status_and_restores_state(
+    tmp_path: Path, status: int
+) -> None:
+    result = _parallel_probe(
+        tmp_path,
+        "import os, signal, sys\nprint(sys.argv[1:], flush=True)\n"
+        + (
+            f"os.kill(os.getpid(), {-status})\n"
+            if status < 0
+            else f"sys.exit({status})\n"
+        ),
+        initial=0,
+    )
+    assert result["status"] == run_tests._exit_status(status)
+    assert result["survivors"] == []
+    assert result["state"] == 0 and result["handler_restored"]
+    if status == 0:
+        assert b"workers=2" in result["stdout"]
+    else:
+        assert (
+            b"'-n', '2', '--dist=loadfile', '--max-worker-restart=0'"
+            in result["stderr"]
+        )
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux child ownership")
+@pytest.mark.parametrize("early", [False, True])
+def test_parallel_cleans_nested_session_descendants(
+    tmp_path: Path, early: bool
+) -> None:
+    child = "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)"
+    controller = f"""import subprocess, sys, time
+subprocess.Popen([sys.executable, '-c', {child!r}], start_new_session=True)
+print('original diagnostic', flush=True)
+{"sys.exit(7)" if early else "time.sleep(60)"}
+"""
+    result = _parallel_probe(tmp_path, controller)
+    assert result["status"] == (7 if early else 124)
+    assert result["survivors"] == []
+    assert result["state"] == 1 and result["handler_restored"]
+    assert b"original diagnostic" in result["stderr"]
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux child ownership")
+@pytest.mark.parametrize(
+    ("group", "repeated"), [(False, False), (True, False), (False, True)]
+)
+def test_parallel_interrupt_delivery_and_escalation(
+    tmp_path: Path, group: bool, repeated: bool
+) -> None:
+    controller = f"""import pathlib, signal, time
+count = 0
+def interrupt(sig, frame):
+    global count
+    count += 1
+    pathlib.Path('interrupted').write_text(str(count))
+    print('diagnostic sentinel', flush=True)
+    {"return" if repeated else "raise SystemExit(2)"}
+def terminate(sig, frame):
+    pathlib.Path('term-ready').touch()
+signal.signal(signal.SIGINT, interrupt)
+{"signal.signal(signal.SIGTERM, terminate)" if repeated else ""}
+pathlib.Path('ready').touch()
+while True: time.sleep(.01)
+"""
+    result = _parallel_probe(
+        tmp_path, controller, interrupts=3 if repeated else 1, group=group
+    )
+    assert (result["status"], result["survivors"]) == (130, [])
+    assert result["state"] == 1 and result["handler_restored"]
+    assert (tmp_path / "interrupted").read_text() == "1"
+    assert b"diagnostic sentinel" in result["stderr"]
+
+
+@pytest.mark.parametrize(
+    "condition",
+    ["serial", "resources", "thread", "reaper", "children", "unavailable", "malformed"],
+)
+def test_parallel_ownership_admission(
+    monkeypatch: pytest.MonkeyPatch, condition: str
+) -> None:
+    monkeypatch.setattr(run_tests, "SERIAL", condition == "serial")
+    monkeypatch.setattr(
+        run_tests, "_resources_allow_parallel", lambda: condition != "resources"
+    )
+    monkeypatch.setattr(
+        run_tests.threading, "active_count", lambda: 2 if condition == "thread" else 1
+    )
+    monkeypatch.setattr(
+        run_tests.signal,
+        "getsignal",
+        lambda _sig: signal.SIG_IGN if condition == "reaper" else signal.SIG_DFL,
+    )
+
+    def children():
+        if condition == "malformed":
+            raise ValueError("invalid child inventory")
+        return [123] if condition == "children" else []
+
+    monkeypatch.setattr(run_tests, "_direct_children", children)
+
+    def unavailable(_value=None):
+        assert condition == "unavailable"
+        raise OSError("subreaper unavailable")
+
+    monkeypatch.setattr(run_tests, "_subreaper", unavailable)
+    with run_tests._parallel_mode() as parallel:
+        assert not parallel
+
+
+@pytest.mark.parametrize("returncode", [None, 0])
+def test_adopted_pid_ownership_and_direct_status(
+    monkeypatch: pytest.MonkeyPatch, returncode: int | None
+) -> None:
+    process = cast(
+        subprocess.Popen[bytes],
+        type("Process", (), {"pid": 123, "returncode": returncode})(),
+    )
+    monkeypatch.setattr(run_tests, "_direct_children", lambda: [123, 456, 789])
+    waited, killed = [], []
+
+    def waitpid(pid, options):
+        waited.append(pid)
+        if pid == 789:
+            raise ChildProcessError
+        return (0, 0) if pid == 123 else (pid, 0)
+
+    monkeypatch.setattr(run_tests.os, "waitpid", waitpid)
+    monkeypatch.setattr(run_tests.os, "kill", lambda pid, sig: killed.append(pid))
+    monkeypatch.setattr(run_tests.os, "killpg", lambda pid, sig: killed.append(-pid))
+    run_tests._adopted_children(process, signal.SIGTERM)
+    run_tests._signal_group(process, signal.SIGINT)
+    assert waited == ([456, 789] if returncode is None else [123, 456, 789])
+    assert killed == ([-123] if returncode is None else [123])
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux bounded parallel path")
+@pytest.mark.parametrize("fault", ["none", "coverage", "assertion"])
+def test_real_workers_combine_coverage_and_preserve_failures(
+    tmp_path: Path, fault: str
+) -> None:
+    tmp_path.joinpath("target.py").write_text(
+        "def route(flag):\n    if flag:\n        return 1\n    return 2\n"
+    )
+    tmp_path.joinpath("pytest.ini").write_text(
+        "[pytest]\naddopts = --cov=target --cov-branch --cov-report=json:coverage.json --cov-fail-under=90.5 --junitxml=junit.xml\n"
+    )
+    for number, flag in enumerate([True, fault == "coverage"]):
+        tmp_path.joinpath(
+            f"test_{number}.py"
+        ).write_text(f"""import json, os, socket, time
+from pathlib import Path
+from target import route
+
+def test_case(tmp_path, monkeypatch, worker_id):
+    assert worker_id in ('gw0', 'gw1')
+    assert 'OWNED_PARALLEL_PROBE' not in os.environ
+    monkeypatch.setenv('OWNED_PARALLEL_PROBE', worker_id)
+    with socket.socket() as connection:
+        connection.bind(('127.0.0.1', 0))
+        (tmp_path / 'isolation').write_text(worker_id)
+        marker = Path(worker_id + '.tmp')
+        marker.write_text(json.dumps(dict(port=connection.getsockname()[1], directory=str(tmp_path))))
+        marker.replace(worker_id)
+        other = Path('gw1' if worker_id == 'gw0' else 'gw0')
+        deadline = time.monotonic() + 10
+        while not other.exists() and time.monotonic() < deadline: time.sleep(.01)
+        peer = json.loads(other.read_text())
+        assert peer['port'] != connection.getsockname()[1]
+        assert peer['directory'] != str(tmp_path)
+        assert (tmp_path / 'isolation').read_text() == worker_id
+        assert os.environ['OWNED_PARALLEL_PROBE'] == worker_id
+    value = route({flag!r})
+    assert value == {0 if fault == "assertion" and number == 1 else (1 if flag else 2)}
+""")
+    result = _parallel_probe(tmp_path, None)
+    assert result["status"] == (0 if fault == "none" else 1)
+    assert result["survivors"] == []
+    assert {p.name for p in tmp_path.glob("gw*")} == {"gw0", "gw1"}
+    totals = json.loads((tmp_path / "coverage.json").read_text())["totals"]
+    assert totals["num_branches"] == 2
+    assert (totals["percent_covered"] >= 90.5) is (fault != "coverage")
+
+
+@pytest.mark.parametrize("failure", ["launch", "restore"])
+def test_parallel_errors_restore_state_without_success(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], failure: str
+) -> None:
+    monkeypatch.setattr(run_tests, "SERIAL", False)
+    monkeypatch.setattr(run_tests, "_resources_allow_parallel", lambda: True)
+    monkeypatch.setattr(run_tests.threading, "active_count", lambda: 1)
+    monkeypatch.setattr(run_tests, "_direct_children", list)
+    states = []
+
+    def subreaper(value=None):
+        if value is None:
+            return 0
+        states.append(value)
+        if failure == "restore" and value == 0:
+            raise OSError("restoration denied")
+        return 0
+
+    def launch(*_args, **_kwargs):
+        raise OSError("launch denied")
+
+    monkeypatch.setattr(run_tests, "_subreaper", subreaper)
+    if failure == "launch":
+        monkeypatch.setattr(run_tests.subprocess, "Popen", launch)
+    else:
+        _stub_pytest(monkeypatch, b"", 0)
+        monkeypatch.setattr(run_tests, "_wait_parallel", lambda *_args: None)
+        monkeypatch.setattr(run_tests, "_stop_parallel", lambda *_args: False)
+    assert run_tests.main() == 1
+    assert states == [1, 0]
+    captured = capsys.readouterr()
+    assert "denied" in captured.err and "passed" not in captured.out
+
+
+def test_further_interrupts_cannot_escape_kill_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    phases = []
+    handler = signal.getsignal(signal.SIGINT)
+
+    class Process:
+        returncode = None
+
+        def poll(self):
+            if len(phases) == 3:
+                self.returncode = 0
+            return self.returncode
+
+    process = Process()
+    monkeypatch.setattr(
+        run_tests, "_signal_group", lambda _process, sig: phases.append(sig)
+    )
+    monkeypatch.setattr(run_tests, "_adopted_children", lambda *_args: None)
+    monkeypatch.setattr(
+        run_tests,
+        "_direct_children",
+        lambda: [] if process.returncode is not None else [123],
+    )
+
+    def interrupt(_seconds):
+        callback = signal.getsignal(signal.SIGINT)
+        assert callable(callback) and not isinstance(callback, int)
+        callback(signal.SIGINT, None)
+        callback(signal.SIGINT, None)
+
+    monkeypatch.setattr(run_tests.time, "sleep", interrupt)
+    assert run_tests._stop_parallel(cast(subprocess.Popen[bytes], process))
+    assert phases == [signal.SIGTERM, signal.SIGKILL, signal.SIGKILL]
+    assert signal.getsignal(signal.SIGINT) == handler
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux orphan reaping")
+def test_parallel_reaps_orphans_without_consuming_controller_status(
+    tmp_path: Path,
+) -> None:
+    child = "import os,time; from pathlib import Path; Path('orphan').write_text(str(os.getpid())); time.sleep(.1)"
+    parent = f"import subprocess,sys; subprocess.Popen([sys.executable,'-c',{child!r}])"
+    controller = f"""import subprocess, sys, time
+from pathlib import Path
+subprocess.run([sys.executable, '-c', {parent!r}], check=True)
+while not Path('orphan').exists(): time.sleep(.01)
+pid = Path('orphan').read_text()
+deadline = time.monotonic() + 1
+while Path('/proc/' + pid).exists() and time.monotonic() < deadline: time.sleep(.01)
+sys.exit(9 if Path('/proc/' + pid).exists() else 7)
+"""
+    result = _parallel_probe(tmp_path, controller)
+    assert result["status"] == 7
+    assert result["survivors"] == []
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux launch ownership")
+def test_interrupt_after_real_launch_cleans_before_restoring(tmp_path: Path) -> None:
+    result = _parallel_probe(
+        tmp_path,
+        "from pathlib import Path; import time; Path('ready').touch(); time.sleep(60)",
+        launch_interrupt=True,
+    )
+    assert (result["status"], result["survivors"]) == (130, [])
+    assert result["state"] == 1 and result["handler_restored"]
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux cleanup inventory")
+def test_inventory_error_still_cleans_real_child(tmp_path: Path) -> None:
+    result = _parallel_probe(
+        tmp_path,
+        "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)",
+        inventory_error=True,
+    )
+    assert (result["status"], result["survivors"]) == (1, [])
+    assert b"inventory unavailable" in result["stderr"]
+    assert result["state"] == 1 and result["handler_restored"]
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux real worker timeout")
+def test_real_worker_timeout_owns_nested_sessions(tmp_path: Path) -> None:
+    child = "import os,signal,time; from pathlib import Path; signal.signal(signal.SIGTERM, signal.SIG_IGN); Path('nested-ready-' + str(os.getpid())).touch(); time.sleep(60)"
+    for number in range(2):
+        tmp_path.joinpath(
+            f"test_{number}.py"
+        ).write_text(f"""import subprocess, sys, time
+
+def test_hang():
+    subprocess.Popen([sys.executable, '-c', {child!r}], start_new_session=True)
+    time.sleep(60)
+""")
+    result = _parallel_probe(tmp_path, None, ready_workers=2)
+    assert len(list(tmp_path.glob("nested-ready-*"))) == 2
+    assert (result["status"], result["survivors"]) == (124, [])
+    assert b"timed out" in result["stderr"]
+    assert result["state"] == 1 and result["handler_restored"]
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux real worker interrupt")
+@pytest.mark.parametrize("group", [False, True])
+def test_real_parallel_interrupt_keeps_pytest_diagnostic(
+    tmp_path: Path, group: bool
+) -> None:
+    for number in range(2):
+        tmp_path.joinpath(f"test_{number}.py").write_text(
+            "from pathlib import Path\nimport time\ndef test_slow():\n    Path('ready').touch()\n    time.sleep(60)\n"
+        )
+    result = _parallel_probe(tmp_path, None, interrupts=1, group=group)
+    assert (result["status"], result["survivors"]) == (130, [])
+    assert b"KeyboardInterrupt" in result["stderr"]
+    assert b"INTERNALERROR" not in result["stderr"]
+    assert result["state"] == 1 and result["handler_restored"]
