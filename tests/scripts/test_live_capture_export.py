@@ -485,6 +485,24 @@ def test_path_template_keeps_structure() -> None:
     )
 
 
+def test_path_template_reduces_an_absolute_href_to_its_path() -> None:
+    # A link the HMC returned is fetched as given, so its record carries the host.
+    assert (
+        export.path_template(
+            "https://hmc.test:443/rest/api/pcm/ProcessedMetrics/"
+            "ManagedSystem_00000001-abcd-4ef0-8abc-000000000001_30.json"
+        )
+        == "/rest/api/pcm/ProcessedMetrics/{value}"
+    )
+    assert (
+        export.path_template("https://hmc.test/rest/api/uom/jobs/7?group=Advanced")
+        == "/rest/api/uom/jobs/{value}?group=Advanced"
+    )
+    assert (
+        export.path_template("//rest/api/uom/jobs/7") == "//rest/api/uom/jobs/{value}"
+    )
+
+
 def test_derived_output_is_scanned(tmp_path: Path) -> None:
     out = tmp_path / "v.json"
     with pytest.raises(export.LeakError):
