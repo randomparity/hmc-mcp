@@ -157,8 +157,9 @@ async def _pool_and_vnic_reads(client: Client, state: RunState) -> None:
             Assertion("memory-pools-empty-branch", True)
             if data == []
             else Assertion(
-                "memory-pool-rows-named",
-                _all_rows(data, lambda row: bool(row.get("pool_name"))),
+                # The row's field names are uncaptured (#1245): assert only shape.
+                "memory-pool-rows-parsed",
+                _all_rows(data, bool),
             )
         ]
         if st == "PASS"

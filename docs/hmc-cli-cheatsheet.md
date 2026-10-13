@@ -151,7 +151,8 @@ lshwres -r virtualio --rsubtype eth --level lpar -m <system> \
 lshwres -r virtualio --rsubtype vnic --level lpar -m <system> \
     --filter lpar_names=<lpar>
 
-# shared memory pools (AMS/suspend-resume — not all systems support this)
+# the shared memory pool (AMS; at most one per system, unnamed). No pool prints
+# "No results were found."; a system without AMS refuses with HSCLA4A0
 lshwres -r mempool -m <system>
 
 # SR-IOV adapters — identity and port counts
@@ -388,8 +389,8 @@ chhwres -r virtualio --rsubtype vnic -o r -m <system> \
     --filter lpar_names=<lpar> \
     -a "vnic_id=<id>"
 
-# remove a shared memory pool
-chhwres -r mempool -m <system> -o r -a <pool_name>
+# remove the system's shared memory pool (takes no pool name)
+chhwres -r mempool -m <system> -o r
 
 # dynamically assign an SR-IOV logical port to a running LPAR
 chhwres -r sriov --rsubtype logport -m <system> -o a -p <lpar> \

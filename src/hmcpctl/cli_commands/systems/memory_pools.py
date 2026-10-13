@@ -13,7 +13,7 @@ def memory_pools_list(
     system_name: str = typer.Argument(..., help="Managed system name"),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
-    """List shared memory pools on a managed system (HMC CLI via SSH)."""
+    """List the shared memory pool on a managed system (HMC CLI via SSH)."""
     config = ssh_config()
     pools = run_cli_coroutine(lambda: list_memory_pools(config, system_name))
     if as_json:
@@ -34,22 +34,19 @@ def memory_pools_list(
 
 def memory_pools_remove(
     system_name: str = typer.Argument(..., help="Managed system name"),
-    pool_name: str = typer.Argument(..., help="Memory pool name"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
-    """Remove a shared memory pool after confirming operator intent."""
+    """Remove the shared memory pool after confirming operator intent."""
     if not yes and not typer.confirm(
-        f"Remove memory pool '{pool_name}' on system '{system_name}'?"
+        f"Remove the shared memory pool on system '{system_name}'?"
     ):
         raise typer.Abort()
 
     config = ssh_config()
-    result = run_cli_coroutine(
-        lambda: remove_memory_pool(config, system_name, pool_name)
-    )
+    result = run_cli_coroutine(lambda: remove_memory_pool(config, system_name))
 
     console.print(
-        f"Memory pool '{pool_name}' removed from '{system_name}'",
+        f"Shared memory pool removed from '{system_name}'",
         style="green",
         markup=False,
     )

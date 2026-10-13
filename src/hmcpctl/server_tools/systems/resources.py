@@ -38,9 +38,10 @@ def hmc_get_proc_compat_modes(
 def hmc_list_memory_pools(
     system_name_or_uuid: str, profile: str | None = None
 ) -> list[dict[str, Any]]:
-    """List shared memory pools and their assigned LPARs.
+    """List the shared memory pool rows of a managed system.
 
     A system without Active Memory Sharing, or with no pool, returns an empty list.
+    The row field names are uncaptured (#1245); do not key on any of them.
 
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
@@ -57,21 +58,19 @@ def hmc_list_memory_pools(
 @tool(
     effect="destructive", operation="memory_pool.remove", target_kind="managed_system"
 )
-def hmc_remove_memory_pool(
-    system_name_or_uuid: str, pool_name: str, profile: str | None = None
-) -> str:
-    """Remove an empty shared memory pool after server-side validation.
+def hmc_remove_memory_pool(system_name_or_uuid: str, profile: str | None = None) -> str:
+    """Remove the system's shared memory pool after server-side validation.
+
+    Refused when the system has no pool, or when any partition is not confirmed
+    in dedicated memory mode.
 
     Args:
         system_name_or_uuid: System name or UUID from ``hmc_list_systems``.
-        pool_name: Shared memory pool name returned by ``hmc_list_memory_pools``.
         profile: TOML profile name, or the environment-default HMC when omitted.
     """
 
     return ssh_with_client(
-        lambda config, system_name, _: remove_memory_pool(
-            config, system_name, pool_name
-        ),
+        lambda config, system_name, _: remove_memory_pool(config, system_name),
         system_name_or_uuid=system_name_or_uuid,
         profile=profile,
     )
