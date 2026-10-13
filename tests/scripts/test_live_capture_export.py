@@ -340,6 +340,13 @@ def test_valued_element_with_a_slash_attribute_is_still_scrubbed(
     assert corpus[-1]["body"] == body.replace("1234ABC", "&lt;REDACTED-SERIAL&gt;")
 
 
+def test_self_closing_element_with_a_quoted_gt_fails_closed() -> None:
+    """The malformed-tag fallback ends `kb=">"/>` at its first `>`: the export stops."""
+    body = '<Root><SerialNumber kb=">"/>\n  <Next>x</Next></Root>'
+    with pytest.raises(export.BrokenBodyError):
+        export.tokenize_records(_records(_rest("/e", body)))
+
+
 def test_uuid_tokens_keep_case_and_are_consistent() -> None:
     corpus = export.tokenize_records(_records(_ssh("lssyscfg", LPAR_UUID.lower())))
     upper = corpus[1]["path"].rsplit("/", 1)[1]
