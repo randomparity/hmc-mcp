@@ -288,6 +288,8 @@ def volume_rows(raw, group):
 
 
 async def capture_vios(config, system, partitions, tables):
+    if is_uuid(system) or any(is_uuid(partition["name"]) for partition in partitions):
+        raise ValueError("UUID-shaped names cannot safely select VIOS reads")
     async with HMCClient(config) as hmc:
         for partition in partitions:
             id_ = partition["lpar_id"]

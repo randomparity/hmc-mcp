@@ -152,7 +152,9 @@ Use an existing private directory and new filenames. Capture reads system identi
 partitions/states, slot owners, every profile's `io_slots`, and SR-IOV adapters and
 ports. Repeat `--vios-id ID` only for VIOS partitions whose mapping and volume-group
 reads are authorized; without it there are no VIOS-side reads. `--profile NAME`
-uses the normal connection configuration and environment precedence. Keep other
+uses the normal connection configuration and environment precedence. VIOS capture
+refuses UUID-shaped system or partition names because the shared resolver cannot
+distinguish those names from resource UUIDs. Keep other
 changes quiescent during these sequential reads. Dry-run opens no connections.
 Snapshots contain private infrastructure identifiers, are created mode 0600,
 and must stay local. Existing files and symlinks are refused. Comparison ignores

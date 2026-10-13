@@ -349,3 +349,25 @@ def test_empty_xml_backing_rejected(document, tmp_path, storage):
     path = tmp_path / "incomplete.json"
     path.write_text(json.dumps(document))
     assert baseline.main(["compare", str(path), str(path)]) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("uuid_field", ["system", "partition"])
+async def test_uuid_shaped_names_refused_before_resolution(
+    monkeypatch, document, uuid_field
+):
+    ambiguous = "11111111-1111-1111-1111-111111111111"
+    system = ambiguous if uuid_field == "system" else "sys-R1"
+    partitions = document["tables"]["partitions"]
+    if uuid_field == "partition":
+        partitions[0]["name"] = ambiguous
+    hmc = AsyncMock()
+    hmc.__aenter__.return_value = hmc
+    monkeypatch.setattr(baseline, "HMCClient", lambda config: hmc)
+    hmc._get.side_effect = AssertionError("ambiguous name reached remote reads")
+    resolver = AsyncMock(return_value=ambiguous)
+    monkeypatch.setattr(baseline, "resolve_vios_uuid", resolver)
+    with pytest.raises(ValueError, match="UUID-shaped"):
+        await baseline.capture_vios(object(), system, partitions, document["tables"])
+    resolver.assert_not_awaited()
+    hmc._get.assert_not_awaited()
