@@ -56,8 +56,9 @@ explicitly rather than pretending it is a record.
 
 > **Amended by #1245** (2026-10-13): the value-form site no longer exists. Since PR #1488 the
 > memory-pool remove runs the documented nameless form `chhwres -r mempool -m <system> -o r`,
-> with no `-a <pool_name>`. The recurrence guard's value-form exemption was removed in the same
-> change, so the guard now requires every `chhwres -a` payload to come from the builder.
+> with no `-a <pool_name>`. The recurrence guard's value-form exemption, described below, was
+> removed in the same change, so the guard now requires every `chhwres -a` payload it selects
+> to come from the builder.
 
 **The filter half gets its own builder from the same table.** `build_filter(pairs)` takes
 `(name, value)` pairs, refuses record delimiters and control characters in each value, and
