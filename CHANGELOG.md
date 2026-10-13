@@ -16,9 +16,9 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
 
 ### Fixed
 
-- Creating or modifying an HMC user with `remote_user_id` no longer fails with REST0001 on
-  V10R3: the `UserProfile` document now sends `RemoteUserID` where the HMC's schema expects it,
-  before `AssociatedTaskRole` (#1414).
+- Creating an HMC user with `remote_user_id` no longer fails with REST0001 on V10R3: the
+  `UserProfile` document now sends `RemoteUserID` where the HMC's schema expects it, before
+  `AssociatedTaskRole` (#1414). A modify builds the same document; only the create was run live.
 - Creating an HMC user without a description no longer fails with REST0344 on V10R3: the create
   now describes the user as `HMC User`, the HMC's own default (#1414). Modifying a user without a
   description still leaves it unchanged.
