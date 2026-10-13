@@ -17,7 +17,7 @@ Each repeated positive VIOS partition ID explicitly authorizes its mapping and
 volume-group reads. No VIOS-side reads run when none are selected. Profile
 selection uses the existing `build_config` environment/profile precedence;
 record the effective host in the private snapshot, not credentials.
-Dry-run prints the read categories and selectors without loading credentials,
+Dry-run prints the read categories and VIOS-selection mode without loading credentials,
 opening a connection, or creating an output. `compare BEFORE AFTER` is offline.
 Exit 0 means capture succeeded or validated snapshots match; 1 means drift;
 2 means invalid input, unreadable state or an incomplete capture/comparison.
@@ -52,7 +52,7 @@ A completed read is not a transaction: the operator quiesces other changes.
 Compare scope and validated tables structurally. Ignore only table-row ordering
 and profile slot entry ordering; preserve duplicates as errors and preserve
 field values, volume allocation/state and mapping identities. Output only changed
-category names and counts, not resource values. Snapshots remain private local
+category names, not resource values. Snapshots remain private local
 artifacts: create mode 0600, require an existing parent, refuse existing output
 (including symlinks), install only after successful capture/validation, and
 remove owned temporary files on failure. Raw identifiers never enter public output.
