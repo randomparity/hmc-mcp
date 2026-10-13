@@ -1,7 +1,7 @@
 # HMC reference capability ledger
 
 This directory inventories the four IBM documentation snapshots named by issue
-[#621](https://github.com/randomparity/hmc-mcp/issues/621). It separates the
+[#621](https://github.com/randomparity/hmcpctl/issues/621). It separates the
 reference denominator from current implementation and verification maturity.
 
 The artifacts use format version 1:

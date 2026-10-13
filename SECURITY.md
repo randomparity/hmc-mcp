@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Report suspected vulnerabilities through
-[GitHub private vulnerability reporting](https://github.com/randomparity/hmc-mcp/security/advisories/new).
+[GitHub private vulnerability reporting](https://github.com/randomparity/hmcpctl/security/advisories/new).
 Do not open a public issue or pull request for a suspected vulnerability.
 
 Include the affected behavior or version, reproduction steps, likely impact, and any mitigation you

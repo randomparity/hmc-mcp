@@ -19,9 +19,9 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
 First tagged release of `hmcpctl`: a CLI, an MCP server and a Python library for the IBM HMC.
 It is scoped to two paths. The first is the Tier A contract a kdive host provider relies on to
 adopt an existing partition: power, state readback, console capture and job polling
-([kdive Tier A contract](https://github.com/randomparity/hmc-mcp/blob/v0.1.0/docs/kdive-tier-a-contract.md)). The second is the Tier B bare-CEC
+([kdive Tier A contract](https://github.com/randomparity/hmcpctl/blob/v0.1.0/docs/kdive-tier-a-contract.md)). The second is the Tier B bare-CEC
 path, which creates an LPAR, gives it a dedicated PCIe slot, activates it and deletes it
-([bare-CEC LPAR recipe](https://github.com/randomparity/hmc-mcp/blob/v0.1.0/docs/recipes/bare-cec-lpar.md)). The stable Python API is the
+([bare-CEC LPAR recipe](https://github.com/randomparity/hmcpctl/blob/v0.1.0/docs/recipes/bare-cec-lpar.md)). The stable Python API is the
 six-name `hmcpctl.api` facade of ADR 0118. Every other module is a pre-release domain API. The
 pre-release development history is in the git history, not in this file.
 
@@ -41,9 +41,9 @@ verification ledger reads `current` for each at the release commit:
 The claim covers the MCP tools the run called and what it asserted. It does not cover the
 `hmcpctl` CLI commands that wrap the same operations, and power-off, for example, was verified
 for delayed and immediate shutdown only.
-[What 0.1.0 supports](https://github.com/randomparity/hmc-mcp/blob/v0.1.0/docs/compatibility.md#what-010-supports) maps each operation to its
+[What 0.1.0 supports](https://github.com/randomparity/hmcpctl/blob/v0.1.0/docs/compatibility.md#what-010-supports) maps each operation to its
 tool. `just verification-report` prints every operation's current state, and
-[`docs/capabilities/`](https://github.com/randomparity/hmc-mcp/blob/v0.1.0/docs/capabilities/README.md) holds the ledger, which is authoritative.
+[`docs/capabilities/`](https://github.com/randomparity/hmcpctl/blob/v0.1.0/docs/capabilities/README.md) holds the ledger, which is authoritative.
 
 ### Known issues
 
@@ -76,5 +76,5 @@ tool. `just verification-report` prints every operation's current state, and
 - Builds report the static version `0.1.0` regardless of commit; git-derived dev versions are
   planned (#1471).
 
-[unreleased]: https://github.com/randomparity/hmc-mcp/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/randomparity/hmc-mcp/releases/tag/v0.1.0
+[unreleased]: https://github.com/randomparity/hmcpctl/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/randomparity/hmcpctl/releases/tag/v0.1.0
