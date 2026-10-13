@@ -305,3 +305,37 @@ def test_missing_group_rejected(document):
     ]
     with pytest.raises(ValueError, match="no captured group"):
         baseline.validate(document)
+
+
+def test_empty_xml_backing_rejected(document, tmp_path):
+    from hmcpctl.xmlutil import parse_feed
+
+    raw = """<entry xmlns="http://www.w3.org/2005/Atom"><content>
+    <VirtualIOServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
+    <VirtualSCSIMappings><VirtualSCSIMapping><ServerAdapter>
+    <AdapterName>adapter-R1</AdapterName><VirtualSlotNumber>10</VirtualSlotNumber>
+    <RemoteLogicalPartitionID>3</RemoteLogicalPartitionID><RemoteSlotNumber>11</RemoteSlotNumber>
+    </ServerAdapter><Storage><VirtualDisk/></Storage></VirtualSCSIMapping></VirtualSCSIMappings>
+    </VirtualIOServer></content></entry>"""
+    resource = parse_feed(raw)[0]["Resource"]
+    with pytest.raises(ValueError, match="backing"):
+        baseline.mapping_rows(resource, "2")
+    document["scope"]["vios_ids"] = [2]
+    document["tables"]["vios"] = [
+        {"id": "2", "name": "vios-R1", "uuid": "11111111-1111-1111-1111-111111111111"}
+    ]
+    document["tables"]["vios_mappings"] = [
+        {
+            "vios_id": "2",
+            "server": "adapter-R1",
+            "slot": "10",
+            "remote_id": "3",
+            "remote_slot": "11",
+            "target": "",
+            "client": "{}",
+            "backing": json.dumps({"storage": {"VirtualDisk": ""}, "target": {}}),
+        }
+    ]
+    path = tmp_path / "incomplete.json"
+    path.write_text(json.dumps(document))
+    assert baseline.main(["compare", str(path), str(path)]) == 2

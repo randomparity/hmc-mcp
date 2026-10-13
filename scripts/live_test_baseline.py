@@ -60,6 +60,25 @@ TABLES = {
 }
 
 
+def validate_storage(storage):
+    """A present backing needs one known resource and its local identity."""
+    fields = {
+        "VirtualDisk": "DiskName",
+        "PhysicalVolume": "VolumeName",
+        "LogicalUnit": "UnitName",
+        "VirtualOpticalMedia": "MediaName",
+    }
+    if not isinstance(storage, dict):
+        raise ValueError("VIOS mapping has malformed backing")  # noqa: TRY004 — external document
+    variants = [key for key in storage if not key.startswith("@") and key != "Metadata"]
+    if len(variants) != 1 or variants[0] not in fields:
+        raise ValueError("VIOS mapping has unknown or missing backing variant")
+    resource = storage[variants[0]]
+    name = resource.get(fields[variants[0]]) if isinstance(resource, dict) else None
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("VIOS mapping backing has no identity")
+
+
 def validate(document):
     """Reject partial documents before order-only canonicalization."""
     if (
@@ -116,6 +135,15 @@ def validate(document):
             if name == "profiles":
                 parse_profile_io_slots(row["io_slots"])
                 row["io_slots"] = ",".join(sorted(row["io_slots"].split(",")))
+            if name == "vios_mappings":
+                backing = json.loads(row["backing"], object_pairs_hook=_unique_object)
+                if not isinstance(backing, dict) or set(backing) != {
+                    "storage",
+                    "target",
+                }:
+                    raise ValueError("VIOS mapping backing document is malformed")
+                if backing["storage"] != {}:
+                    validate_storage(backing["storage"])
             normalized.append(row)
         result[name] = sorted(
             normalized, key=lambda row: tuple(row[k] for k in keys.split(","))
@@ -204,8 +232,8 @@ def mapping_rows(resource, vios_id):
         ):
             raise ValueError("VIOS mapping has malformed target")
         backing = mapping.get("Storage", {})
-        if not isinstance(backing, dict) or ("Storage" in mapping and not backing):
-            raise ValueError("VIOS mapping has malformed backing")
+        if "Storage" in mapping:
+            validate_storage(backing)
         client = mapping.get("AssociatedLogicalPartition", {})
         if not isinstance(client, dict):
             raise ValueError("VIOS mapping has malformed client")  # noqa: TRY004 — invalid external document
