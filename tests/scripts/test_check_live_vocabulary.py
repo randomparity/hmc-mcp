@@ -163,30 +163,28 @@ def test_documented_job_statuses_mark_what_was_captured() -> None:
     assert all(source.startswith("docs/refs/") for source in jobs["sources"])
 
 
-#: The elements #1516's re-derived-vocabularies table lists; a stated binding outside it
+#: #1516's re-derived-vocabularies table: each element and its enum. A stated binding outside it
 #: needs a source of its own, cited in the stated list (#1529).
-STATED_BY_1516 = frozenset(
-    {
-        "AIXCapable",
-        "ConfiguredOptions",
-        "CurrentManufacturingDefaulConfigurationtBootMode",
-        "CurrentManufacturingDefaultConfigurationSource",
-        "CurrentOptions",
-        "CurrentPowerOnSide",
-        "CurrentPowerSavingMode",
-        "CurrentSharingMode",
-        "PartitionType",
-        "PendingManufacturingDefaulConfigurationtBootMode",
-        "PendingManufacturingDefaultConfigurationSource",
-        "PendingPowerOnLogicalPartitionStartPolicy",
-        "PendingPowerOnSide",
-        "PortCapabilities",
-        "PowerOnLogicalPartitionStartPolicy",
-        "RequiredPowerSavingMode",
-        "SupportedOptions",
-        "SupportedPowerSavingModeTypes",
-    }
-)
+STATED_BY_1516 = {
+    "AIXCapable": "AIXCapability.Enum",
+    "ConfiguredOptions": "SRIOVPhysicalPortOptions.Enum",
+    "CurrentManufacturingDefaulConfigurationtBootMode": "PartitionBootMode.Enum",
+    "CurrentManufacturingDefaultConfigurationSource": "IPLSource.Enum",
+    "CurrentOptions": "SRIOVPhysicalPortOptions.Enum",
+    "CurrentPowerOnSide": "ServiceProcessorSide.Enum",
+    "CurrentPowerSavingMode": "EnergyManagementModeType.Enum",
+    "CurrentSharingMode": "LogicalPartitionProcessorSharingMode.Enum",
+    "PartitionType": "LogicalPartitionEnvironment.Enum",
+    "PendingManufacturingDefaulConfigurationtBootMode": "PartitionBootMode.Enum",
+    "PendingManufacturingDefaultConfigurationSource": "IPLSource.Enum",
+    "PendingPowerOnLogicalPartitionStartPolicy": "PowerOnStartPolicy.Enum",
+    "PendingPowerOnSide": "ServiceProcessorSide.Enum",
+    "PortCapabilities": "SRIOVPortCapability.Enum",
+    "PowerOnLogicalPartitionStartPolicy": "PowerOnStartPolicy.Enum",
+    "RequiredPowerSavingMode": "EnergyManagementModeType.Enum",
+    "SupportedOptions": "SRIOVPhysicalPortOptions.Enum",
+    "SupportedPowerSavingModeTypes": "EnergyManagementModeType.Enum",
+}
 
 
 def test_stated_bindings_hold_every_captured_value() -> None:
@@ -197,8 +195,8 @@ def test_stated_bindings_hold_every_captured_value() -> None:
     """
     directory = Path(__file__).parents[2] / guard.VOCABULARY_DIR
     stated = json.loads((directory / "enums-stated-bindings.json").read_text())
-    assert set(stated["elements"]) == STATED_BY_1516
-    assert set(stated["evidence"]) == STATED_BY_1516
+    assert stated["elements"] == STATED_BY_1516
+    assert set(stated["evidence"]) == set(STATED_BY_1516)
     types: dict[str, set[str]] = {}
     for path in directory.glob("enums-*.json"):
         if path.name == "enums-stated-bindings.json":
@@ -206,7 +204,7 @@ def test_stated_bindings_hold_every_captured_value() -> None:
         enum_list = json.loads(path.read_text())
         for name, values in enum_list["types"].items():
             types.setdefault(name, set()).update(values)
-        assert not set(enum_list.get("elements", {})) & STATED_BY_1516, path.name
+        assert not STATED_BY_1516.keys() & enum_list.get("elements", {}), path.name
     for path in directory.glob("v*.json"):
         rest = json.loads(path.read_text())["rest"]
         for element, enum in stated["elements"].items():
