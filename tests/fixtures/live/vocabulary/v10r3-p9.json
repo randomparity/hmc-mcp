@@ -3,7 +3,8 @@
  "sources": [
   "2026-09-30 read-only sweep: HMC V10R3 M1060 managing a POWER9 8375-42A",
   "2026-09-29/30 #1161 and #879 windows, same HMC (derived REST values and endpoints)",
-  "2026-10-12 read-only PCM metric-feed capture (#1242): HMC V10R3 M1060 managing a POWER9 8375-42A"
+  "2026-10-12 read-only PCM metric-feed capture (#1242): HMC V10R3 M1060 managing a POWER9 8375-42A",
+  "2026-10-13 operator-authorized vSCSI server-adapter window (#1250): HMC V10R3 M1060 managing a POWER9 8375-42A"
  ],
  "rest": {
   "endpoints": [
@@ -472,6 +473,13 @@
    {
     "method": "GET",
     "path": "/rest/api/uom/VirtualIOServer/{uuid}",
+    "accept": null,
+    "status": 200,
+    "content_type": "application/atom+xml"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/VirtualIOServer/{uuid}",
     "accept": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer",
     "status": 200,
     "content_type": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer"
@@ -496,6 +504,13 @@
     "accept": "*/*",
     "status": 200,
     "content_type": "application/json"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/VirtualIOServer/{uuid}?group=ViosSCSIMapping",
+    "accept": null,
+    "status": 200,
+    "content_type": "application/atom+xml"
    },
    {
     "method": "GET",
@@ -3747,6 +3762,42 @@
     "error_streams": []
    },
    {
+    "command": "lshwres -r virtualio --rsubtype scsi -m {} --level lpar",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
+    "command": "lshwres -r virtualio --rsubtype scsi -m {} --level lpar --filter lpar_ids={} -F slot_num,remote_lpar_name,remote_slot_num",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
+    "command": "lshwres -r virtualio --rsubtype slot -m {} --level lpar --filter lpar_ids={}",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
+    "command": "lshwres -r virtualio --rsubtype slot -m {} --level slot --filter lpar_ids={}",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
     "command": "lshwres -r virtualio --rsubtype vnic --level lpar -m {}",
     "exit_status": [
      0
@@ -3887,6 +3938,24 @@
     "error_streams": []
    },
    {
+    "command": "lssyscfg -r lpar -m {} --filter lpar_ids={} -F name,state,curr_profile",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
+    "command": "lssyscfg -r lpar -m {} --filter lpar_ids={} -F name,state,rmc_state,sync_curr_profile,curr_profile,default_profile",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
     "command": "lssyscfg -r lpar -m {} --filter lpar_names={} -F description",
     "exit_status": [
      0
@@ -3938,6 +4007,15 @@
     ]
    },
    {
+    "command": "lssyscfg -r lpar -m {} -F name,lpar_id,lpar_env,uuid",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
     "command": "lssyscfg -r lpar -m {} -F name,lpar_id,state,rmc_state,lpar_env,msp,uuid --header",
     "exit_status": [
      0
@@ -3948,6 +4026,15 @@
    },
    {
     "command": "lssyscfg -r prof -m {}",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
+    "command": "lssyscfg -r prof -m {} --filter lpar_ids={} -F name,virtual_scsi_adapters,max_virtual_slots",
     "exit_status": [
      0
     ],
@@ -4029,6 +4116,15 @@
     "outputs": [
      "No results were found."
     ],
+    "error_streams": []
+   },
+   {
+    "command": "viosvrcmd -m {} --id {} -c lsmap -all",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
     "error_streams": []
    }
   ],
@@ -4554,6 +4650,69 @@
    ],
    "lshwres -r virtualio --rsubtype eth --level lpar :: vswitch": [
     "<text>"
+   ],
+   "lshwres -r virtualio --rsubtype scsi --level lpar :: adapter_type": [
+    "client",
+    "server"
+   ],
+   "lshwres -r virtualio --rsubtype scsi --level lpar :: is_required": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype scsi --level lpar :: lpar_id": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype scsi --level lpar :: lpar_name": [
+    "<text>"
+   ],
+   "lshwres -r virtualio --rsubtype scsi --level lpar :: remote_lpar_id": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype scsi --level lpar :: remote_lpar_name": [
+    "<text>"
+   ],
+   "lshwres -r virtualio --rsubtype scsi --level lpar :: remote_slot_num": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype scsi --level lpar :: slot_num": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype scsi --level lpar :: state": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype slot --level lpar :: curr_max_virtual_slots": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype slot --level lpar :: lpar_id": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype slot --level lpar :: lpar_name": [
+    "<text>"
+   ],
+   "lshwres -r virtualio --rsubtype slot --level lpar :: next_avail_virtual_slot": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype slot --level lpar :: pend_max_virtual_slots": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype slot --level slot :: config": [
+    "eth",
+    "scsi",
+    "serial"
+   ],
+   "lshwres -r virtualio --rsubtype slot --level slot :: drc_name": [
+    "<text>"
+   ],
+   "lshwres -r virtualio --rsubtype slot --level slot :: lpar_id": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype slot --level slot :: lpar_name": [
+    "<text>"
+   ],
+   "lshwres -r virtualio --rsubtype slot --level slot :: slot_num": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype slot --level slot :: state": [
+    "<int>"
    ],
    "lsmemopt -r lpar -o calcscore :: curr_lpar_score": [
     "<int>",
