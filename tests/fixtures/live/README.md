@@ -99,7 +99,8 @@ From the 2026-09-30 prototype export: `v10r3-p9` and the V11R2 pairs
 `v11r2-p9-9009-42a`, `v11r2-p10-9028-21b`, `v11r2-p11-9824-42a` and
 `v11r2-p11-9242-21b`. From the first run of the tracked sweep and exporter on
 2026-10-01: `v10r3-p8-8247-22l`, `v11r2-p10-9080-hex` and `v11r2-p10-9043-mrx`
-(two HMCs folded together). Beside them sit the
+(two HMCs folded together). From a 2026-10-13 sweep run while the managed system
+was `No Connection` for the whole capture: `v11r2-p11-9043-mru`. Beside them sit the
 documented job statuses (`enums-documented-jobs.json`, names cited to
 `docs/refs/`, each marked captured or documented-only) and the allowlist of
 `just live-vocabulary`. Each vocabulary names its sources;

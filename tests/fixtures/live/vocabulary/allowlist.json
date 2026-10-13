@@ -4,7 +4,7 @@
   "file": "tests/app/test_cli_commands.py",
   "subject": "State",
   "value": "No Connection",
-  "reason": "Test fixture uses the CLI spelling; the HMC's REST State for this system state is 'no connection', captured 2026-10-13 (#1290). Follow-up under #1202: use the captured value"
+  "reason": "Test fixture uses the CLI spelling; the HMC's REST State is 'no connection' (v11r2-p10-9080-hex.json, v11r2-p11-9043-mru.json). Follow-up under #1202: use the captured value"
  },
  {
   "kind": "literal",
@@ -18,7 +18,7 @@
   "file": "tests/system/test_system_tools.py",
   "subject": "State",
   "value": "No Connection",
-  "reason": "Test fixture uses the CLI spelling; the HMC's REST State for this system state is 'no connection', captured 2026-10-13 (#1290). Follow-up under #1202: use the captured value"
+  "reason": "Test fixture uses the CLI spelling; the HMC's REST State is 'no connection' (v11r2-p10-9080-hex.json, v11r2-p11-9043-mru.json). Follow-up under #1202: use the captured value"
  },
  {
   "kind": "rest-path",
