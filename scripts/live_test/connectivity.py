@@ -38,9 +38,9 @@ _FIRMWARE_PLACEMENT_500 = ExpectedOutcome(
     error_codes=_FIRMWARE_INVENTORY_500.error_codes,
 )
 
-# ADR 0138's client fallback serves list_managed_systems from quick/All when the raw
-# feed 500s, dropping unresolved systems silently. ST1 reads the raw feed through
-# hmc_list_resources (plain list_uom, no fallback) so a fallback-served success
+# hmc_list_systems lists from quick/All (#1501), so it succeeds even where the raw
+# feed 500s (ADR 0138). ST1 reads the raw feed through
+# hmc_list_resources (plain list_uom) so a success the raw feed did not serve
 # fails ``feed-served-directly`` instead of promoting.
 _FEED_PROBE = "hmc_list_resources (ManagedSystem feed probe)"
 # hmc_find_placement's processor request, passed explicitly so the fit check

@@ -472,12 +472,11 @@ async def test_systems_mixin_routes_inventory_and_power_jobs():
     client = SystemsHarness()
     client.list_system_summaries = AsyncMock(return_value=[])
 
-    assert await client.list_managed_systems() == []
     assert await client.get_managed_system("system-1") is None
     assert await client.find_vios_by_name("vios-a") is None
     assert await client.power_off_system(UUID_A, immediate=True) == {"UUID": "job-1"}
 
-    client.list_uom.assert_awaited_once_with("ManagedSystem")
+    client.list_uom.assert_not_awaited()
     client.get_uom.assert_awaited_once_with("ManagedSystem", "system-1")
     client.search_uom.assert_awaited_once_with(
         "VirtualIOServer", "PartitionName", "vios-a"

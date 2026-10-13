@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-from conftest import make_config
+from conftest import make_config, mock_system_summaries
 from defusedxml import ElementTree as DET
 
 from hmcpctl.client.core import HMCClient
@@ -112,6 +112,7 @@ def _routes(
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM}").mock(
         return_value=httpx.Response(200, text=_SYSTEM_ENTRY)
     )
+    mock_system_summaries(mock_hmc, (SYSTEM, "sys-a", "operating"))
     get = mock_hmc.get(LPAR_PATH, params={"group": "Advanced"}).mock(
         return_value=httpx.Response(get_status, text=body, headers=headers)
     )

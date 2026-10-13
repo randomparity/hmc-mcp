@@ -16,10 +16,11 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from ...errors import HMCError, HMCTransportError
-from ...resource_identity import is_uuid
+from ...resource_identity import is_uuid, summary_matching
 from ...xmlutil import leaf_text
 from ..lpar.ownership import lpar_ownership_entry
 from ..partition_state import PartitionState
+from ..systems.fleet import sparse_system_entry, system_entry
 from .capacity import system_capacity
 from .composite import _container, _processor_figures
 
@@ -37,8 +38,6 @@ _MAX_CURSOR = 256
 _MAX_DETAIL = 500
 _INVALID_CURSOR = "invalid_cursor: pass next_cursor from a previous page unchanged"
 _SELECTOR_HINT = " Pass systems selectors to read named systems."
-# Firmware that fails the feed can refuse a direct UUID read too; a name is searched.
-_FEED_HINT = " Pass system names as systems selectors."
 
 Admit = Callable[[str, str | None], str | None]
 """Asks whether a delegated tool may run for a system selector (or ``None``).
@@ -127,9 +126,11 @@ class InventoryPage:
 
 @dataclass(frozen=True)
 class _Candidate:
+    """A system to read, as its ``ManagedSystem/quick/All`` summary (#1501)."""
+
     selector: str | None
     uuid: str
-    entry: dict[str, Any]
+    summary: dict[str, Any]
 
 
 def _status(tool: str, denial: str | None) -> SourceStatus:
@@ -210,19 +211,18 @@ async def _enumerate(hmc: Any, admit: Admit) -> tuple[SourceStatus, list[_Candid
     denial = admit(SYSTEMS_TOOL, None)
     if denial is not None:
         return _status(SYSTEMS_TOOL, denial + _SELECTOR_HINT), []
-    # One request, not list_managed_systems: its firmware fallback reads every system
-    # by name and skips the ones that fail, which would report a partial feed as ok.
+    # quick/All, not the ManagedSystem feed: the feed times out while a system has
+    # no connection (#1501). Each page reads its own systems' entries.
     try:
-        entries = await hmc.list_uom("ManagedSystem")
+        summaries = await hmc.list_system_summaries()
     except HMCError as exc:
-        text = f"managed systems are unavailable: {exc}"
-        if not isinstance(exc, HMCTransportError):
-            text = f"{text.rstrip('.')}.{_FEED_HINT}"
-        return _unavailable(SYSTEMS_TOOL, text), []
+        return _unavailable(SYSTEMS_TOOL, f"managed systems are unavailable: {exc}"), []
     candidates = [
-        _Candidate(None, str(entry["UUID"]), entry)
-        for entry in entries
-        if entry.get("UUID")
+        _Candidate(None, summary["UUID"], summary)
+        for summary in summaries
+        if isinstance(summary, dict)
+        and isinstance(summary.get("UUID"), str)
+        and summary["UUID"]
     ]
     return _status(SYSTEMS_TOOL, None), candidates
 
@@ -245,7 +245,7 @@ def _unresolved(selector: str, status: SourceStatus) -> InventorySystem:
 async def _resolve(
     hmc: Any, admit: Admit, selectors: Sequence[str]
 ) -> tuple[list[InventorySystem], list[_Candidate], str | None]:
-    """Admit, then resolve, each distinct selector, as ``resolve_system_uuid`` does.
+    """Admit, then resolve, each distinct selector against ``quick/All``.
 
     The third value is a transport failure's detail: the HMC has stalled, so the
     resolved selectors' partitions are not read on this page.
@@ -264,10 +264,7 @@ async def _resolve(
             )
             continue
         try:
-            if is_uuid(selector):
-                entry = await hmc.get_uom("ManagedSystem", selector)
-            else:
-                entry = await hmc.find_system_by_name(selector)
+            summary = summary_matching(await hmc.list_system_summaries(), selector)
         except HMCTransportError as exc:
             stopped = f"managed system {selector!r} is unavailable: {exc}"
             unresolved.append(
@@ -280,13 +277,13 @@ async def _resolve(
                 _unresolved(selector, _unavailable(PARTITIONS_TOOL, text))
             )
             continue
-        if not entry or not entry.get("UUID"):
+        if summary is None:
             text = f"no managed system matches {selector!r}"
             unresolved.append(
                 _unresolved(selector, _unavailable(PARTITIONS_TOOL, text))
             )
             continue
-        candidates.append(_Candidate(selector, str(entry["UUID"]), entry))
+        candidates.append(_Candidate(selector, str(summary["UUID"]), summary))
     return unresolved, candidates, stopped
 
 
@@ -329,16 +326,30 @@ class _Reader:
     capacity_denial: str | None = None
     capacity_asked: bool = False
 
-    def capacity(self, entry: dict[str, Any]) -> tuple[SourceStatus, Any]:
+    async def capacity(
+        self, candidate: _Candidate, halted: str | None
+    ) -> tuple[SourceStatus, Any, dict[str, Any], str | None]:
+        """Capacity, the entry it came from, and a transport failure's detail.
+
+        Only an operating system's full entry is read; any other's is sparse.
+        """
+        entry = sparse_system_entry(candidate.summary)
         if not self.capacity_asked:
             self.capacity_denial = self.admit(CAPACITY_TOOL, None)
             self.capacity_asked = True
         if self.capacity_denial is not None:
-            return _status(CAPACITY_TOOL, self.capacity_denial), None
+            return _status(CAPACITY_TOOL, self.capacity_denial), None, entry, None
+        if (halted := self.stalled or halted) is not None:
+            return _unavailable(CAPACITY_TOOL, halted), None, entry, None
         try:
-            return _status(CAPACITY_TOOL, None), system_capacity(entry)
+            entry = await system_entry(self.hmc, candidate.summary)
+            return _status(CAPACITY_TOOL, None), system_capacity(entry), entry, None
+        except HMCError as exc:
+            text = f"managed system {candidate.uuid} is unavailable: {exc}"
+            stop = text if isinstance(exc, HMCTransportError) else None
+            return _unavailable(CAPACITY_TOOL, text), None, entry, stop
         except ValueError as exc:
-            return _unavailable(CAPACITY_TOOL, str(exc)), None
+            return _unavailable(CAPACITY_TOOL, str(exc)), None, entry, None
 
     async def system(
         self, candidate: _Candidate, after: str | None
@@ -366,8 +377,9 @@ class _Reader:
             state = partitions_status.status
             detail = f"ownership is read from {PARTITIONS_TOOL}, which is {state}"
             ownership_status = SourceStatus(state, OWNERSHIP_TOOL, detail)
-        capacity_status, figures = self.capacity(candidate.entry)
-        resource = candidate.entry.get("Resource") or {}
+        capacity_status, figures, entry, stalled = await self.capacity(candidate, stop)
+        stop = stop or stalled
+        resource = entry.get("Resource") or {}
         system = InventorySystem(
             id=system_id,
             selector=candidate.selector,

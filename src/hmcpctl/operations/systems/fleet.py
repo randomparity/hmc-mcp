@@ -6,7 +6,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from hmcpctl.client.client_resolution import system_operating
+from hmcpctl.client.client_resolution import summary_for, system_operating
 from hmcpctl.client.core import HMCClient
 from hmcpctl.discovery_limits import MAX_PARENT_DISCOVERY_SYSTEMS
 from hmcpctl.errors import HMCError
@@ -51,6 +51,64 @@ def unreadable_system(system: object) -> UnreadableSystem | None:
         state=_text(summary.get("State")),
         detailed_state=_text(summary.get("StateDetail")),
     )
+
+
+def sparse_system_entry(summary: object) -> dict[str, Any]:
+    """A ``ManagedSystem`` entry built from a quick/All summary alone (ADR 0197).
+
+    The same envelope a parsed entry has, carrying only ``SystemName``, ``State``
+    and ``StateDetail``: its ``State`` says why the rest is absent.
+    """
+    fields = summary if isinstance(summary, dict) else {}
+    return {
+        "UUID": fields.get("UUID"),
+        "title": None,
+        "link": None,
+        "ResourceType": "ManagedSystem",
+        "Resource": {
+            key: fields.get(key) for key in ("SystemName", "State", "StateDetail")
+        },
+    }
+
+
+async def system_entry(hmc: HMCClient, summary: object) -> dict[str, Any]:
+    """An operating system's full entry; any other system's sparse entry.
+
+    ``ManagedSystem/{uuid}`` timed out for a system with no connection (#1501).
+    An operating system whose entry reads back empty also gets the sparse one.
+    """
+    if not isinstance(summary, dict) or unreadable_system(summary) is not None:
+        return sparse_system_entry(summary)
+    entry = await hmc.get_managed_system(summary["UUID"])
+    return entry if entry is not None else sparse_system_entry(summary)
+
+
+async def read_system_entry(hmc: HMCClient, system_uuid: str) -> dict[str, Any] | None:
+    """:func:`system_entry` for one UUID; None when quick/All does not list it."""
+    summary = summary_for(await hmc.list_system_summaries(), system_uuid)
+    return await system_entry(hmc, summary) if summary else None
+
+
+async def operating_system_entry(
+    hmc: HMCClient, system_uuid: str, reading: str
+) -> dict[str, Any] | None:
+    """The full entry of an operating system; refuse any other promptly.
+
+    *reading* names what the caller needs the entry for, in the refusal. None
+    when quick/All does not list the system.
+    """
+    summary = summary_for(await hmc.list_system_summaries(), system_uuid)
+    if not summary:
+        return None
+    skipped = unreadable_system(summary)
+    if skipped is not None:
+        name = skipped.system_name
+        label = system_uuid if name is None else f"{name!r} ({system_uuid})"
+        raise HMCError(
+            f"Cannot read {reading} of managed system {label}: it is in State "
+            f"{skipped.state or 'unknown'!r}; retry when it reconnects"
+        )
+    return await hmc.get_managed_system(system_uuid)
 
 
 async def _stopped_operating(hmc: HMCClient, uuid: str) -> UnreadableSystem | None:

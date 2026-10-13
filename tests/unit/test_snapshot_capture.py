@@ -16,15 +16,16 @@ from hmcpctl.xmlutil import parse_feed
 
 PROFILE = "name=default,lpar_name=aix,min_mem=4096,desired_mem=8192,max_mem=16384,proc_mode=shared,min_proc_units=0.5,desired_proc_units=1.0,max_proc_units=2.0,min_procs=1,desired_procs=2,max_procs=4,sharing_mode=uncap"
 
+SYSTEM_UUID = "00000000-0000-4000-8000-0000000005a1"
+
 
 @pytest.mark.asyncio
 async def test_capture_separates_configuration_and_observations(monkeypatch) -> None:
     hmc = AsyncMock()
     hmc.config = HMCConfig.from_mapping({"host": "h", "user": "u", "password": "p"})
     hmc.list_system_summaries.return_value = [
-        {"UUID": "sys-1", "SystemName": "sys"},
-        {"UUID": "sys-1", "SystemName": "sys-R1"},
-        {"UUID": "sys-1", "SystemName": "sys-1"},
+        {"UUID": SYSTEM_UUID, "SystemName": name, "State": "operating"}
+        for name in ("sys", "sys-R1")
     ]
     hmc.find_partition_by_name.return_value = {"UUID": "lpar-1"}
     hmc.get_console_info.return_value = {
@@ -35,7 +36,7 @@ async def test_capture_separates_configuration_and_observations(monkeypatch) -> 
         },
     }
     hmc.get_managed_system.return_value = {
-        "UUID": "sys-1",
+        "UUID": SYSTEM_UUID,
         "Resource": {
             "SystemName": "sys",
             "MachineTypeModelAndSerialNumber": {
@@ -173,14 +174,13 @@ async def test_capture_propagates_observation_failure(monkeypatch) -> None:
     hmc = AsyncMock()
     hmc.config = HMCConfig.from_mapping({"host": "h", "user": "u", "password": "p"})
     hmc.list_system_summaries.return_value = [
-        {"UUID": "sys-1", "SystemName": "sys"},
-        {"UUID": "sys-1", "SystemName": "sys-R1"},
-        {"UUID": "sys-1", "SystemName": "sys-1"},
+        {"UUID": SYSTEM_UUID, "SystemName": name, "State": "operating"}
+        for name in ("sys", "sys-R1")
     ]
     hmc.find_partition_by_name.return_value = {"UUID": "lpar-1"}
     hmc.get_console_info.return_value = {"UUID": "hmc-1", "Resource": {}}
     hmc.get_managed_system.return_value = {
-        "UUID": "sys-1",
+        "UUID": SYSTEM_UUID,
         "Resource": {
             "SystemName": "sys",
             "MachineTypeModelAndSerialNumber": {
@@ -233,9 +233,8 @@ async def test_capture_reads_captured_console_partition_and_profile(
     hmc = AsyncMock()
     hmc.config = HMCConfig.from_mapping({"host": "h", "user": "u", "password": "p"})
     hmc.list_system_summaries.return_value = [
-        {"UUID": "sys-1", "SystemName": "sys"},
-        {"UUID": "sys-1", "SystemName": "sys-R1"},
-        {"UUID": "sys-1", "SystemName": "sys-1"},
+        {"UUID": SYSTEM_UUID, "SystemName": name, "State": "operating"}
+        for name in ("sys", "sys-R1")
     ]
     lpar = parse_feed(live_fixture("rest-lpar-entry-lp3")["body"])[0]
     hmc.find_partition_by_name.return_value = lpar
@@ -243,7 +242,7 @@ async def test_capture_reads_captured_console_partition_and_profile(
         live_fixture("rest-management-console")["body"]
     )[0]
     hmc.get_managed_system.return_value = {
-        "UUID": "sys-1",
+        "UUID": SYSTEM_UUID,
         "Resource": {
             "SystemName": "sys-R1",
             "MachineTypeModelAndSerialNumber": {

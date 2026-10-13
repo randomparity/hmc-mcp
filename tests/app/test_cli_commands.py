@@ -488,10 +488,6 @@ class FakeHMC:
         return "<ok/>"
 
     # -- systems --------------------------------------------------------- #
-    async def list_managed_systems(self):
-        self._record("list_managed_systems")
-        return [self.system]
-
     async def list_system_summaries(self):
         self._record("list_system_summaries")
         resource = self.system["Resource"]
@@ -507,10 +503,6 @@ class FakeHMC:
     async def get_managed_system(self, uuid):
         self._record("get_managed_system", uuid)
         return self.system if uuid == SYSTEM_UUID else None
-
-    async def find_system_by_name(self, name):
-        self._record("find_system_by_name", name)
-        return self.system if name == "sys1" else None
 
     async def wait_for_job_entry(
         self,
@@ -1329,8 +1321,9 @@ def test_lpars_create(fake_hmc):
         ("newlpar",),
         {"system_uuid": SYSTEM_UUID},
     )
-    assert fake_hmc.calls[1] == ("get_managed_system", (SYSTEM_UUID,), {})
-    name, args, _ = fake_hmc.calls[2]
+    assert fake_hmc.calls[1] == ("list_system_summaries", (), {})
+    assert fake_hmc.calls[2] == ("get_managed_system", (SYSTEM_UUID,), {})
+    name, args, _ = fake_hmc.calls[3]
     assert name == "create_logical_partition"
     assert args[0] == SYSTEM_UUID
     assert "newlpar" in args[1]  # the partition XML carries the name
@@ -4223,7 +4216,10 @@ def test_systems_list_table(fake_hmc):
     assert result.exit_code == 0
     assert "sys1" in result.stdout
     assert "9119-MHE*SN00001" in result.stdout
-    assert fake_hmc.calls == [("list_managed_systems", (), {})]
+    assert fake_hmc.calls == [
+        ("list_system_summaries", (), {}),
+        ("get_managed_system", (SYSTEM_UUID,), {}),
+    ]
 
 
 def test_systems_list_json(fake_hmc):
@@ -4231,7 +4227,10 @@ def test_systems_list_json(fake_hmc):
 
     assert result.exit_code == 0
     assert SYSTEM_UUID in result.stdout
-    assert fake_hmc.calls == [("list_managed_systems", (), {})]
+    assert fake_hmc.calls == [
+        ("list_system_summaries", (), {}),
+        ("get_managed_system", (SYSTEM_UUID,), {}),
+    ]
 
 
 def test_systems_show(fake_hmc):
@@ -4239,7 +4238,10 @@ def test_systems_show(fake_hmc):
 
     assert result.exit_code == 0
     assert "sys1" in result.stdout
-    assert fake_hmc.calls == [("get_managed_system", (SYSTEM_UUID,), {})]
+    assert fake_hmc.calls == [
+        ("list_system_summaries", (), {}),
+        ("get_managed_system", (SYSTEM_UUID,), {}),
+    ]
 
 
 def test_systems_show_by_name(fake_hmc):
@@ -4247,7 +4249,10 @@ def test_systems_show_by_name(fake_hmc):
 
     assert result.exit_code == 0
     assert "sys1" in result.stdout
-    assert fake_hmc.calls == [("find_system_by_name", ("sys1",), {})]
+    assert fake_hmc.calls == [
+        ("list_system_summaries", (), {}),
+        ("get_managed_system", (SYSTEM_UUID,), {}),
+    ]
 
 
 def test_systems_show_not_found_exits_1(fake_hmc):
@@ -4255,7 +4260,7 @@ def test_systems_show_not_found_exits_1(fake_hmc):
 
     assert result.exit_code == 1
     assert "not found" in result.stderr
-    assert fake_hmc.calls == [("find_system_by_name", ("ghost",), {})]
+    assert fake_hmc.calls == [("list_system_summaries", (), {})]
 
 
 def test_systems_power_on(fake_hmc):

@@ -95,7 +95,7 @@ JOB_ENTRY = live_fixture("rest-poweron-submit")["body"].encode()
 
 
 class _MockHMC(BaseHTTPRequestHandler):
-    """Minimal HMC REST stand-in: logon, the two list feeds, logoff.
+    """Minimal HMC REST stand-in: logon, quick/All, one system and its LPARs, logoff.
 
     ``protocol_version`` is HTTP/1.1 and every response carries an explicit
     ``Content-Length``: httpx (the real client) needs the length to know where
@@ -141,7 +141,7 @@ class _MockHMC(BaseHTTPRequestHandler):
     def do_GET(self):
         # Strip query string for routing — the client may append ?group=...
         path = self.path.split("?")[0]
-        if path == "/rest/api/uom/ManagedSystem":
+        if path == "/rest/api/uom/ManagedSystem/33333333-3333-4333-8333-333333333333":
             self._send(SYSTEMS)
         elif path == "/rest/api/uom/ManagedSystem/quick/All":
             self._send(SYSTEM_SUMMARIES)

@@ -19,7 +19,8 @@ from ...jobs import (
     validate_wait_timing,
     wait_for_submitted_job,
 )
-from ...resource_identity import is_uuid, resolve_system_uuid
+from ...resource_identity import resolve_system_uuid, summary_matching
+from .fleet import system_entry
 
 
 @dataclass(frozen=True)
@@ -35,25 +36,38 @@ class ManagedSystemPatch:
 async def list_systems(
     hmc: HMCClient, state: str | None = None
 ) -> list[dict[str, Any]]:
-    """List managed systems, using server-side state filtering when requested.
+    """List managed systems, keeping only those whose ``State`` is *state*.
+
+    The systems come from ``ManagedSystem/quick/All``, filtered locally: the full
+    ``ManagedSystem`` feed and the ``State`` search time out while a system has
+    no connection (#1501). An operating system's entry is its full
+    ``ManagedSystem/{uuid}`` entry; any other system's is sparse (ADR 0197).
 
     Raises:
         HMCError: If the HMC request fails.
     """
-    if state is not None:
-        return await hmc.search_uom("ManagedSystem", "State", state)
-    return await hmc.list_managed_systems()
+    entries = []
+    for summary in await hmc.list_system_summaries():
+        if state is not None and (
+            not isinstance(summary, dict) or summary.get("State") != state
+        ):
+            continue
+        entries.append(await system_entry(hmc, summary))
+    return entries
 
 
 async def get_system(hmc: HMCClient, system_name_or_uuid: str) -> dict[str, Any] | None:
     """Return a managed system selected by exact name or UUID.
 
+    The full entry for an operating system, a sparse one otherwise (ADR 0197).
+
     Raises:
         HMCError: If the HMC request fails.
+        ValueError: If the name matches more than one managed system.
     """
-    if is_uuid(system_name_or_uuid):
-        return await hmc.get_managed_system(system_name_or_uuid)
-    return await hmc.find_system_by_name(system_name_or_uuid)
+    summaries = await hmc.list_system_summaries()
+    summary = summary_matching(summaries, system_name_or_uuid)
+    return await system_entry(hmc, summary) if summary is not None else None
 
 
 async def modify_system(

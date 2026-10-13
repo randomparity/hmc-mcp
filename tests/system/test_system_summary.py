@@ -83,6 +83,7 @@ EMPTY_FEED = """\
 def test_system_summary_by_uuid_returns_flat_dict(monkeypatch, mock_hmc):
     """hmc_system_summary(uuid) fetches system + LPARs + VIOS and returns summary."""
     _hmc_env(monkeypatch)
+    mock_system_summaries(mock_hmc, (SYSTEM_UUID, "p9-prod", "operating"))
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(
             200,
@@ -242,6 +243,7 @@ def test_system_summary_degrades_when_the_vios_feed_fails(monkeypatch, mock_hmc)
     missing source, instead of failing as "unhandled errors in a TaskGroup".
     """
     _hmc_env(monkeypatch)
+    mock_system_summaries(mock_hmc, (SYSTEM_UUID, "p9-prod", "operating"))
     refused = live_fixture("rest-vios-feed-500-v11r2")
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=_system_feed(SYSTEM_UUID, "p9-prod"))

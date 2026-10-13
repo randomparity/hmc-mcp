@@ -25,6 +25,9 @@ async def test_parent_failure_prevents_child_fetch():
 
 
 class _MissingParentClient:
+    async def list_system_summaries(self):
+        return []
+
     async def get_logical_partition(self, _uuid: str):
         return None
 

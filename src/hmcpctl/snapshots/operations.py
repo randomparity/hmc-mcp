@@ -25,6 +25,7 @@ from hmcpctl.operations.affinity.ssh import (
     plan_resource_group_memopt_scores,
     plan_system_memopt_score,
 )
+from hmcpctl.operations.systems.fleet import operating_system_entry
 from hmcpctl.resource_identity import (
     resolve_lpar_uuid,
     resolve_system_name,
@@ -394,7 +395,7 @@ async def capture_lpar_snapshot(
         hmc, lpar_name_or_uuid, system_name_or_uuid=system_uuid
     )
     console = await hmc.get_console_info()
-    system = await hmc.get_managed_system(system_uuid)
+    system = await operating_system_entry(hmc, system_uuid, "the snapshot identity")
     lpar = await hmc.get_logical_partition(lpar_uuid)
     console_resource = _resource(console, "HMC")
     system_resource = _resource(system, "managed-system")

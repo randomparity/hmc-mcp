@@ -10,31 +10,70 @@ from hmcpctl.operations.lpar import core as lpar_operations
 from hmcpctl.operations.lpar.core import list_lpars
 from hmcpctl.operations.systems.core import get_system, list_systems
 
+OPERATING = "12345678-1234-1234-1234-123456789abc"
+STANDBY = "12345678-1234-1234-1234-123456789abd"
+SUMMARIES = [
+    {"UUID": OPERATING, "SystemName": "frame-1", "State": "operating"},
+    {"UUID": STANDBY, "SystemName": "frame-2", "State": "standby", "StateDetail": ""},
+]
+
+
+def _hmc() -> AsyncMock:
+    hmc = AsyncMock()
+    hmc.list_system_summaries.return_value = SUMMARIES
+    hmc.get_managed_system.return_value = {"UUID": OPERATING, "Resource": {}}
+    return hmc
+
 
 @pytest.mark.asyncio
-async def test_list_systems_uses_server_side_state_filter() -> None:
-    hmc = AsyncMock()
-    hmc.search_uom.return_value = [{"UUID": "system-1"}]
+async def test_list_systems_reads_only_operating_entries() -> None:
+    hmc = _hmc()
 
-    result = await list_systems(hmc, "operating")
+    result = await list_systems(hmc)
 
-    hmc.search_uom.assert_awaited_once_with("ManagedSystem", "State", "operating")
-    hmc.list_managed_systems.assert_not_awaited()
-    assert result == [{"UUID": "system-1"}]
+    hmc.get_managed_system.assert_awaited_once_with(OPERATING)
+    hmc.search_uom.assert_not_awaited()
+    assert result == [
+        {"UUID": OPERATING, "Resource": {}},
+        {
+            "UUID": STANDBY,
+            "title": None,
+            "link": None,
+            "ResourceType": "ManagedSystem",
+            "Resource": {
+                "SystemName": "frame-2",
+                "State": "standby",
+                "StateDetail": "",
+            },
+        },
+    ]
 
 
 @pytest.mark.asyncio
-async def test_get_system_routes_names_and_uuids_to_the_correct_client_method() -> None:
-    hmc = AsyncMock()
-    hmc.find_system_by_name.return_value = {"UUID": "system-1"}
-    uuid = "12345678-1234-1234-1234-123456789abc"
-    hmc.get_managed_system.return_value = {"UUID": uuid}
+async def test_list_systems_filters_state_locally() -> None:
+    hmc = _hmc()
 
-    assert await get_system(hmc, "frame-1") == {"UUID": "system-1"}
-    assert await get_system(hmc, uuid) == {"UUID": uuid}
+    result = await list_systems(hmc, "standby")
 
-    hmc.find_system_by_name.assert_awaited_once_with("frame-1")
-    hmc.get_managed_system.assert_awaited_once_with(uuid)
+    hmc.get_managed_system.assert_not_awaited()
+    hmc.search_uom.assert_not_awaited()
+    assert [entry["UUID"] for entry in result] == [STANDBY]
+
+
+@pytest.mark.asyncio
+async def test_get_system_selects_by_name_or_uuid_from_quick_all() -> None:
+    hmc = _hmc()
+
+    assert await get_system(hmc, "frame-1") == {"UUID": OPERATING, "Resource": {}}
+    assert await get_system(hmc, OPERATING.upper()) == {
+        "UUID": OPERATING,
+        "Resource": {},
+    }
+    assert (await get_system(hmc, "frame-2"))["Resource"]["State"] == "standby"
+    assert await get_system(hmc, "frame-9") is None
+
+    assert hmc.get_managed_system.await_count == 2
+    hmc.find_system_by_name.assert_not_awaited()
 
 
 @pytest.mark.asyncio

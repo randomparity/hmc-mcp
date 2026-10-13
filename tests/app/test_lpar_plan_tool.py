@@ -87,20 +87,20 @@ class _HMC:
         self.vios = {SYS_A: VIOS_A, SYS_B: VIOS_B}
         self.calls: list[str] = []
 
-    async def list_uom(self, resource_type: str) -> list[dict]:
-        self.calls.append(f"list_uom {resource_type}")
-        return list(self.systems.values())
+    async def list_system_summaries(self) -> list[dict]:
+        self.calls.append("list_system_summaries")
+        return [
+            {
+                "UUID": uuid,
+                "SystemName": entry["Resource"]["SystemName"],
+                "State": entry["Resource"].get("State", "operating"),
+            }
+            for uuid, entry in self.systems.items()
+        ]
 
-    async def get_uom(self, resource_type: str, uuid: str) -> dict | None:
-        self.calls.append(f"get_uom {uuid}")
+    async def get_managed_system(self, uuid: str) -> dict | None:
+        self.calls.append(f"get_managed_system {uuid}")
         return self.systems.get(uuid.lower())
-
-    async def find_system_by_name(self, name: str) -> dict | None:
-        self.calls.append(f"find_system_by_name {name}")
-        return next(
-            (s for s in self.systems.values() if s["Resource"]["SystemName"] == name),
-            None,
-        )
 
     async def list_logical_partitions(self, uuid: str) -> list[dict]:
         self.calls.append(f"list_logical_partitions {uuid}")
@@ -274,7 +274,7 @@ def test_target_denial_is_a_blocker_with_audit_record(records):
     assert [(b["code"], b["tool"]) for b in denied["blockers"]] == [
         ("denied", "hmc_list_lpars")
     ]
-    assert "find_system_by_name sysB" not in hmc.calls
+    assert hmc.calls.count("list_system_summaries") == 1
     decisions = {(r["tool"], r["decision"]) for r in records}
     assert ("hmc_list_lpars", "deny") in decisions
     assert ("hmc_list_volume_groups", "allow") in decisions
