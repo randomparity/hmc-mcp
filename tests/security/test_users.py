@@ -53,8 +53,70 @@ def test_user_profile_builder_uses_documented_fields_and_escapes() -> None:
     assert ">false</AllowSSHRemoteAccess>" in xml
 
 
+# The UserProfile.Group sequence of the V10R3 schema, GET
+# /rest/api/web/schema/UserProfile.xsd (private capture 2026-10-13-q1414). Every
+# element is optional, but those present must come in this order: a create that
+# sent RemoteUserID after AssociatedTaskRole failed REST0001 (#1414).
+_SCHEMA_SEQUENCE = (
+    "UserID",
+    "UserProfileUUID",
+    "UserDescription",
+    "IsPredefinedUser",
+    "AuthenticationType",
+    "UserProfilePassword",
+    "PasswordExpiry",
+    "RemoteUserID",
+    "AssociatedTaskRole",
+    "AssociatedResourceRoles",
+    "SessionTimeout",
+    "VerifySessionTimeout",
+    "IdleSessionTimeout",
+    "UserInactivity",
+    "MinimumPasswordAge",
+    "AllowWebRemoteAccess",
+    "AllowSSHRemoteAccess",
+    "IsPasswordPolicyEnabled",
+)
+
+
+def _profile_children(xml: str) -> list[str]:
+    from xml.etree import ElementTree as ET
+
+    root = ET.fromstring(xml)
+    (profile,) = (e for e in root.iter() if e.tag.endswith("}UserProfile"))
+    return [child.tag.rsplit("}", 1)[-1] for child in profile]
+
+
+@pytest.mark.parametrize("fixture", ["rest-user-profile", "rest-user-profile-kerberos"])
+def test_captured_user_profiles_follow_the_schema_sequence(fixture) -> None:
+    """Both captured profiles, local and Kerberos, serve their children in the
+    schema's order, so the sequence above is the one the HMC writes too."""
+    served = _profile_children(live_fixture(fixture)["body"])
+    assert served[0] == "Metadata"
+    assert served[1:] == [name for name in _SCHEMA_SEQUENCE if name in served]
+
+
+def test_user_profile_builder_places_remote_user_id_where_the_hmc_expects_it():
+    """The refused create sent RemoteUserID after AssociatedTaskRole; at that point
+    the HMC expected only elements the schema puts after AssociatedTaskRole."""
+    message = live_fixture("rest-user-create-remote-user-id-refused")["body"]
+    expected = _SCHEMA_SEQUENCE[_SCHEMA_SEQUENCE.index("AssociatedTaskRole") + 1 :]
+    assert "REST0001" in message and "RemoteUserID" in message
+    assert all(f":{name}" in message for name in expected)
+
+    children = _profile_children(
+        build_hmc_user_document(
+            user_id="u",
+            authentication_type="Kerberos",
+            associated_task_role="hmcviewer",
+            remote_user_id="primary/instance@EXAMPLE.TEST",
+        )
+    )
+    assert children.index("RemoteUserID") < children.index("AssociatedTaskRole")
+
+
 def test_user_profile_builder_follows_the_documented_shape() -> None:
-    """ADR 0202: roles are names, and children follow the documented order."""
+    """ADR 0202: roles are names, and children follow the schema's order."""
     from xml.etree import ElementTree as ET
 
     xml = build_hmc_user_document(
@@ -75,24 +137,9 @@ def test_user_profile_builder_follows_the_documented_shape() -> None:
         remote_user_id="r",
     )
     children = [child.tag.rsplit("}", 1)[-1] for child in ET.fromstring(xml)]
-    assert children == [
-        "Metadata",
-        "UserID",
-        "UserDescription",
-        "AuthenticationType",
-        "UserProfilePassword",
-        "PasswordExpiry",
-        "AssociatedTaskRole",
-        "AssociatedResourceRoles",
-        "SessionTimeout",
-        "VerifySessionTimeout",
-        "IdleSessionTimeout",
-        "UserInactivity",
-        "MinimumPasswordAge",
-        "AllowWebRemoteAccess",
-        "AllowSSHRemoteAccess",
-        "RemoteUserID",
-    ]
+    sent = [name for name in _SCHEMA_SEQUENCE if name in children]
+    assert children == ["Metadata", *sent]
+    assert len(sent) == 15
     assert "href=" not in xml
     assert (
         '<AssociatedTaskRole ksv="V1_17_0" kb="CUD" kxe="false">hmcviewer</AssociatedTaskRole>'
@@ -124,6 +171,7 @@ def test_user_profile_builder_marks_each_element_as_the_hmc_lists_it() -> None:
         }
 
     captured = facets_by_tag(live_fixture("rest-user-profile")["body"])
+    captured.update(facets_by_tag(live_fixture("rest-user-profile-kerberos")["body"]))
     built = facets_by_tag(
         build_hmc_user_document(
             user_id="u",
@@ -144,11 +192,11 @@ def test_user_profile_builder_marks_each_element_as_the_hmc_lists_it() -> None:
         )
     )
 
-    # The capture has no RemoteUserID (a local user); the reference lists it as
-    # Modifiable, which every captured modifiable element marks V1_17_0 and CUD.
-    assert built.pop("RemoteUserID") == ("V1_17_0", "CUD")
+    # RemoteUserID's facets come from the Kerberos capture (#1414); a local
+    # profile does not serve the element.
+    assert built["RemoteUserID"] == ("V1_17_0", "CUD")
     assert built == {tag: captured[tag] for tag in built}
-    assert len(built) == 15
+    assert len(built) == 16
 
 
 def test_user_profile_builder_sends_the_empty_password_element_as_the_hmc_serves_it():
