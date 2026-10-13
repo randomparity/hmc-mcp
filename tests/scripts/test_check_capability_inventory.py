@@ -33,6 +33,9 @@ def _digest(character: str) -> str:
 def _minimal_inventory(root: Path) -> None:
     root.mkdir(exist_ok=True)
     _write_json(
+        root / "release-verification.json", {"format_version": 1, "operations": []}
+    )
+    _write_json(
         root / "corpora.json",
         {
             "format_version": 1,
@@ -1220,7 +1223,7 @@ def test_runtime_projection_renders_only_recorded_operations(tmp_path: Path) -> 
     registry = _closure_registry(tmp_path)
     records = [_operation(), _operation("sriov.set_mode", state="partial")]
 
-    rendered = inventory.render_runtime_projection(records, registry, tmp_path, _NOW)
+    rendered = inventory.render_runtime_projection(records, registry, {})
 
     assert rendered.endswith("\n")
     assert json.loads(rendered) == {
@@ -1258,14 +1261,14 @@ def test_runtime_projection_preserves_latest_live_observation_time(
         ),
     ]
 
-    rendered = inventory.render_runtime_projection([record], registry, tmp_path, _NOW)
+    rendered = inventory.render_release_verification([record], registry, tmp_path, _NOW)
 
     projected = json.loads(rendered)["operations"][0]
     assert projected["verification"] == "failed"
     assert projected["observed_at"] == "2026-09-01T12:00:00Z"
 
 
-def test_runtime_projection_leaves_age_expiry_to_the_packaged_reader(
+def test_release_snapshot_derivation_does_not_apply_age_expiry(
     tmp_path: Path,
 ) -> None:
     registry = _closure_registry(tmp_path)
@@ -1278,7 +1281,7 @@ def test_runtime_projection_leaves_age_expiry_to_the_packaged_reader(
         )
     ]
 
-    rendered = inventory.render_runtime_projection([record], registry, tmp_path, _NOW)
+    rendered = inventory.render_release_verification([record], registry, tmp_path, _NOW)
 
     projected = json.loads(rendered)["operations"][0]
     assert projected["verification"] == "current"
@@ -1339,9 +1342,7 @@ def test_write_runtime_projection_option_generates_requested_path(
 
     assert projection.read_text(
         encoding="utf-8"
-    ) == inventory.render_runtime_projection(
-        [], (), inventory.ROOT, inventory.datetime.now(UTC)
-    )
+    ) == inventory.render_runtime_projection([], (), {})
 
 
 def test_lpar_modify_binds_assignment_delegate_rows():
@@ -1476,7 +1477,13 @@ def test_report_reuses_fingerprints_and_preserves_outputs(
     ]
     _write_maturity(tmp_path, [record])
     projection = tmp_path / "projection.json"
-    expected = inventory.render_runtime_projection([record], registry, tmp_path, _NOW)
+    snapshot_path = tmp_path / "release-verification.json"
+    snapshot_path.write_text(
+        inventory.render_release_verification([record], registry, tmp_path, _NOW)
+    )
+    expected = inventory.render_runtime_projection(
+        [record], registry, inventory.load_release_verification(snapshot_path)
+    )
     projection.write_text(expected, encoding="utf-8")
     monkeypatch.setattr(inventory, "ROOT", tmp_path)
     monkeypatch.setattr(inventory, "DEFAULT_RUNTIME_PROJECTION", projection)
@@ -1504,11 +1511,189 @@ def test_report_reuses_fingerprints_and_preserves_outputs(
         "value = 2\n", encoding="utf-8"
     )
     counted.reset_mock()
-    assert inventory.main(args) == 1
+    assert inventory.main(args) == int(fail_on_stale)
     output = capsys.readouterr()
-    assert output.out == ""
-    assert output.err == (
-        f"ERROR: runtime projection {projection} is malformed or stale; "
-        "run `just capability-metadata`\n"
-    )
+    assert "verification: system.list implemented stale" in output.out
+    assert output.err == ""
+    assert projection.read_bytes() == expected.encode()
     counted.assert_called_once_with(tmp_path, module_name)
+
+
+def _snapshot_row(operation="system.list", verification="current"):
+    return {
+        "operation": operation,
+        "verification": verification,
+        "reason": None,
+        "observed_at": "2026-01-01T12:00:00Z"
+        if verification != "unevidenced"
+        else None,
+    }
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda d: d.update(extra=True),
+        lambda d: d.update(format_version=True),
+        lambda d: d.update(operations={}),
+        lambda d: d["operations"].append(None),
+        lambda d: d["operations"][0].update(implementation="implemented"),
+        lambda d: d["operations"][0].update(operation="Bad.read"),
+        lambda d: d["operations"][0].update(verification=[]),
+        lambda d: d["operations"][0].update(reason=[]),
+        lambda d: d["operations"][0].update(reason="age-exceeded"),
+        lambda d: d["operations"][0].update(verification="stale"),
+        lambda d: d["operations"][0].update(observed_at=None),
+        lambda d: d["operations"][0].update(observed_at="2026-02-30T00:00:00Z"),
+        lambda d: d["operations"][0].update(observed_at="2026-01-01T00:00:00+00:00"),
+        lambda d: d["operations"][0].update(verification="unevidenced"),
+        lambda d: d["operations"].append(d["operations"][0].copy()),
+        lambda d: d["operations"].append(_snapshot_row("alpha.read")),
+    ],
+)
+def test_release_snapshot_rejects_invalid_schema(tmp_path, mutate):
+    path = tmp_path / "release-verification.json"
+    document = {"format_version": 1, "operations": [_snapshot_row()]}
+    mutate(document)
+    _write_json(path, document)
+    with pytest.raises(inventory.InventoryError):
+        inventory.load_release_verification(path)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b'{"format_version":1,"format_version":1}',
+        b"[]",
+        b"\xff",
+        b"{",
+        b" " * (1_048_576 + 1),
+    ],
+    ids=["duplicate", "array", "unicode", "json", "oversize"],
+)
+def test_release_snapshot_rejects_invalid_bytes(tmp_path, content):
+    path = tmp_path / "release-verification.json"
+    path.write_bytes(content)
+    with pytest.raises(inventory.InventoryError):
+        inventory.load_release_verification(path)
+
+
+def test_release_snapshot_missing_file_fails(tmp_path):
+    with pytest.raises(inventory.InventoryError):
+        inventory.load_release_verification(tmp_path / "missing.json")
+
+
+def test_release_snapshot_accepts_frozen_states(tmp_path):
+    rows = [
+        _snapshot_row("alpha.read", "unevidenced"),
+        _snapshot_row("beta.read", "failed"),
+        _snapshot_row("gamma.read", "stale"),
+        _snapshot_row(),
+    ]
+    rows[2]["reason"] = "closure-changed"
+    path = tmp_path / "release-verification.json"
+    _write_json(path, {"format_version": 1, "operations": rows})
+    assert inventory.load_release_verification(path) == {
+        r["operation"]: r for r in rows
+    }
+
+
+def test_projection_freezes_snapshot_fields_and_preserves_catalog_authority(tmp_path):
+    registry = _closure_registry(tmp_path)
+    record = _operation()
+    snapshot = {"system.list": _snapshot_row()}
+    frozen = inventory.render_runtime_projection([record], registry, snapshot)
+    (tmp_path / "src/hmcpctl/a.py").write_text("value = 999\n")
+    record["evidence"] = [_observation(result="failed")]
+    assert inventory.render_runtime_projection([record], registry, snapshot) == frozen
+    record["implementation"]["state"] = "partial"
+    changed = json.loads(
+        inventory.render_runtime_projection([record], registry, snapshot)
+    )
+    assert changed["operations"][0]["implementation"] == "partial"
+    assert changed["operations"][0]["verification"] == "current"
+    assert (
+        json.loads(inventory.render_runtime_projection([], registry, snapshot))[
+            "operations"
+        ]
+        == []
+    )
+    missing = json.loads(inventory.render_runtime_projection([record], registry, {}))[
+        "operations"
+    ][0]
+    assert (missing["verification"], missing["reason"], missing["observed_at"]) == (
+        "unevidenced",
+        None,
+        None,
+    )
+
+
+def test_release_mode_reports_closure_drift_without_changing_ordinary_projection(
+    tmp_path, monkeypatch, capsys, registered_inventory
+):
+    registry = registered_inventory
+    module = registry[0].handler.rsplit(".", 1)[0]
+    relative = module.removeprefix("hmcpctl.").replace(".", "/") + ".py"
+    _package(tmp_path, {relative: "value = 1\n"})
+    record = _operation()
+    record["evidence"] = [
+        _observation(
+            fingerprint=inventory.closure_fingerprint(tmp_path, module),
+            observed_at="2026-01-01T12:00:00Z",
+        )
+    ]
+    _write_maturity(tmp_path, [record])
+    snapshot = tmp_path / "release-verification.json"
+    snapshot.write_text(
+        inventory.render_release_verification([record], registry, tmp_path, _NOW)
+    )
+    projection = tmp_path / "projection.json"
+    projection.write_text(
+        inventory.render_runtime_projection(
+            [record], registry, inventory.load_release_verification(snapshot)
+        )
+    )
+    expected = projection.read_bytes()
+    monkeypatch.setattr(inventory, "ROOT", tmp_path)
+    monkeypatch.setattr(inventory, "DEFAULT_RUNTIME_PROJECTION", projection)
+    monkeypatch.setattr(inventory, "discover_registry", lambda: registry)
+    args = ["--inventory", str(tmp_path)]
+    assert inventory.main([*args, "--release"]) == 0
+    (tmp_path / "src/hmcpctl" / relative).write_text("value = 2\n")
+    assert inventory.main(args) == 0
+    assert projection.read_bytes() == expected
+    assert inventory.main([*args, "--release"]) == 1
+    assert "release verification snapshot differs" in capsys.readouterr().err
+    assert (
+        inventory.main(
+            [*args, "--release", "--write-runtime-projection", str(projection)]
+        )
+        == 1
+    )
+    assert projection.read_bytes() == expected
+    record["implementation"]["state"] = "partial"
+    record["implementation"]["missing_scope"] = [_scope("other")]
+    _write_maturity(tmp_path, [record])
+    assert inventory.main(args) == 1
+    assert "just capability-metadata" in capsys.readouterr().err
+
+
+def test_missing_snapshot_refuses_regeneration(tmp_path, monkeypatch, capsys):
+    _minimal_inventory(tmp_path)
+    (tmp_path / "release-verification.json").unlink()
+    projection = tmp_path / "projection.json"
+    projection.write_text("previous\n")
+    monkeypatch.setattr(inventory, "discover_registry", tuple)
+    assert (
+        inventory.main(
+            [
+                "--inventory",
+                str(tmp_path),
+                "--write-runtime-projection",
+                str(projection),
+            ]
+        )
+        == 1
+    )
+    assert "cannot read release verification snapshot" in capsys.readouterr().err
+    assert projection.read_text() == "previous\n"

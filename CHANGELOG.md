@@ -16,6 +16,10 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
 
 ### Changed
 
+- CLI and MCP capability discovery retain the last release’s verification state, initially
+  v0.1.0, without runtime age decay. Ordinary capability metadata regeneration combines current
+  catalog structure with the committed release snapshot; explicit `--release` inventory and
+  artifact checks detect candidate closure drift (#1508).
 - `hmc_provision_lpar` and `hmcpctl lpars provision` refuse a dedicated PCIe slot
   (`assignments.dedicated`) before any HMC call, dry runs included. Provision powers on the
   current configuration, so a slot written into the new profile was never owned by the

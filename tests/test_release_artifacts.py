@@ -1468,3 +1468,41 @@ def test_clean_checkout_runs_canonical_artifact_commands(tmp_path: Path) -> None
         assert result.returncode == 0, result.stderr
     assert len(list((project / "dist").glob("*.whl"))) == 1
     assert len(list((project / "dist").glob("*.tar.gz"))) == 1
+
+
+@pytest.mark.parametrize("returncode", [0, 1])
+def test_release_validation_is_opt_in(built_project, monkeypatch, capsys, returncode):
+    artifacts, project = built_project
+    calls = []
+
+    def invoke(arguments, **kwargs):
+        calls.append((arguments, kwargs))
+        return subprocess.CompletedProcess(arguments, returncode, "", "snapshot drift")
+
+    monkeypatch.setattr(subprocess, "run", invoke)
+    assert main([str(artifacts), str(project)]) == 0
+    assert calls == []
+    assert main([str(artifacts), str(project), "--release"]) == returncode
+    assert calls[0][0] == [
+        validator.sys.executable,
+        str(project / "scripts/check_capability_inventory.py"),
+        "--release",
+    ]
+    assert calls[0][1]["cwd"] == project
+    assert calls[0][1]["env"]["PYTHONPATH"] == str(project / "src")
+    if returncode:
+        assert "snapshot drift" in capsys.readouterr().err
+
+
+def test_release_artifacts_recompute_candidate_verification(
+    built_project, tmp_path, capsys
+):
+    artifacts, original = built_project
+    project = tmp_path / "checkout"
+    shutil.copytree(original, project, ignore=shutil.ignore_patterns(".git", "dist"))
+    (project / "docs/capabilities/release-verification.json").write_text(
+        '{"format_version": 1, "operations": []}\n'
+    )
+    assert main([str(artifacts), str(project)]) == 0
+    assert main([str(artifacts), str(project), "--release"]) == 1
+    assert "release verification snapshot differs" in capsys.readouterr().err

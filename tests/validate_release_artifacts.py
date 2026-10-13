@@ -3,9 +3,11 @@ import configparser
 import csv
 import gzip
 import hashlib
+import os
 import re
 import stat
 import struct
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -701,7 +703,7 @@ def _validate_sdist(
     return distribution
 
 
-def validate(artifact_dir: Path, project_root: Path) -> None:
+def validate(artifact_dir: Path, project_root: Path, *, release: bool = False) -> None:
     if not artifact_dir.is_dir():
         _fail(str(artifact_dir), "artifact directory does not exist")
     if not project_root.is_dir():
@@ -716,18 +718,40 @@ def validate(artifact_dir: Path, project_root: Path) -> None:
     sdist = _validate_sdist(sdists[0], project_root, project)
     if wheel.name != sdist.name or wheel.version != sdist.version:
         _fail(str(artifact_dir), "wheel and sdist identity or version differs")
+    if release:
+        project_root = project_root.resolve()
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(project_root / "scripts/check_capability_inventory.py"),
+                "--release",
+            ],
+            cwd=project_root,
+            env={**os.environ, "PYTHONPATH": str(project_root / "src")},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode:
+            _fail(
+                "release verification",
+                result.stderr.strip()
+                or result.stdout.strip()
+                or "inventory check failed",
+            )
 
 
 def main(arguments: list[str] | None = None) -> int:
     args = sys.argv[1:] if arguments is None else arguments
-    if len(args) != 2:
+    release = len(args) == 3 and args[-1] == "--release"
+    if len(args) != 2 and not release:
         print(
-            "usage: validate_release_artifacts.py ARTIFACT_DIR PROJECT_ROOT",
+            "usage: validate_release_artifacts.py ARTIFACT_DIR PROJECT_ROOT [--release]",
             file=sys.stderr,
         )
         return 2
     try:
-        validate(Path(args[0]), Path(args[1]))
+        validate(Path(args[0]), Path(args[1]), release=release)
     except (OSError, ValidationError) as error:
         print(f"artifact validation failed: {error}", file=sys.stderr)
         return 1
