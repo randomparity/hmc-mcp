@@ -14,13 +14,6 @@
   "reason": "Deliberately upper case: exercises fleet_health's case-insensitive State match; no HMC answers it. Follow-up under #1202: mark the line with an inline live-vocabulary allow"
  },
  {
-  "kind": "literal",
-  "file": "tests/system/test_system_tools.py",
-  "subject": "State",
-  "value": "No Connection",
-  "reason": "Test fixture uses the CLI spelling; the HMC's REST State is 'no connection' (v11r2-p10-9080-hex.json, v11r2-p11-9043-mru.json). Follow-up under #1202: use the captured value"
- },
- {
   "kind": "rest-path",
   "file": "src/hmcpctl/client/client_cluster.py",
   "subject": "/rest/api/uom/Cluster/{}",

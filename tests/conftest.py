@@ -505,6 +505,20 @@ def mock_change_location(router, lpar_uuid: str, sync: str = "Disabled"):
     )
 
 
+def mock_system_summaries(router, *systems: tuple[str, str, str]):
+    """Register ManagedSystem/quick/All with one (UUID, name, State) summary each (#1309).
+
+    Keyed as captured in ``tests/fixtures/live/rest-ms-quick-all.json``.
+    """
+    body = [
+        {"UUID": uuid, "SystemName": name, "State": state, "StateDetail": ""}
+        for uuid, name, state in systems
+    ]
+    return router.get("/rest/api/uom/ManagedSystem/quick/All").mock(
+        return_value=httpx.Response(200, json=body)
+    )
+
+
 # The session lifecycle is the only non-GET traffic a read-only call may produce.
 _SESSION_PATHS = frozenset({"/rest/api/web/Logon"})
 

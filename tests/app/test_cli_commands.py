@@ -492,9 +492,17 @@ class FakeHMC:
         self._record("list_managed_systems")
         return [self.system]
 
-    async def inventory_managed_systems(self):
-        self._record("inventory_managed_systems")
-        return [self.system], []
+    async def list_system_summaries(self):
+        self._record("list_system_summaries")
+        resource = self.system["Resource"]
+        return [
+            {
+                "UUID": self.system["UUID"],
+                "SystemName": resource.get("SystemName"),
+                "State": resource.get("State"),
+                "StateDetail": "",
+            }
+        ]
 
     async def get_managed_system(self, uuid):
         self._record("get_managed_system", uuid)
@@ -928,7 +936,7 @@ def test_lpars_list_table(fake_hmc):
     assert LPAR_NAME in result.stdout
     assert "running" in result.stdout
     assert fake_hmc.calls == [
-        ("inventory_managed_systems", (), {}),
+        ("list_system_summaries", (), {}),
         ("list_logical_partitions", (SYSTEM_UUID,), {}),
     ]
 
@@ -941,7 +949,7 @@ def test_lpars_list_json(fake_hmc):
     assert [entry["UUID"] for entry in payload["entries"]] == [LPAR_UUID]
     assert payload["unreadable_systems"] == []
     assert fake_hmc.calls == [
-        ("inventory_managed_systems", (), {}),
+        ("list_system_summaries", (), {}),
         ("list_logical_partitions", (SYSTEM_UUID,), {}),
     ]
 
@@ -953,7 +961,7 @@ def test_lpars_list_state_filter(fake_hmc):
     assert LPAR_NAME in result.stdout
     # The partition feed, filtered locally: V10R3 cannot search a state (#1202).
     assert fake_hmc.calls == [
-        ("inventory_managed_systems", (), {}),
+        ("list_system_summaries", (), {}),
         ("list_logical_partitions", (SYSTEM_UUID,), {}),
     ]
 
@@ -980,7 +988,7 @@ def test_lpars_list_names_a_skipped_system_on_stderr(fake_hmc):
         f"Skipped managed system sys1 ({SYSTEM_UUID}): State No Connection"
         in result.stderr
     )
-    assert fake_hmc.calls == [("inventory_managed_systems", (), {})]
+    assert fake_hmc.calls == [("list_system_summaries", (), {})]
 
 
 def test_lpars_summary_renders_numeric_zero(monkeypatch):
@@ -1316,7 +1324,11 @@ def test_lpars_create(fake_hmc):
 
     assert result.exit_code == 0
     assert "Created LPAR 'newlpar'" in result.stdout
-    assert fake_hmc.calls[0] == ("find_partition_by_name", ("newlpar",), {})
+    assert fake_hmc.calls[0] == (
+        "find_partition_by_name",
+        ("newlpar",),
+        {"system_uuid": SYSTEM_UUID},
+    )
     assert fake_hmc.calls[1] == ("get_managed_system", (SYSTEM_UUID,), {})
     name, args, _ = fake_hmc.calls[2]
     assert name == "create_logical_partition"
@@ -1363,7 +1375,9 @@ def test_lpars_create_rejects_duplicate_name(fake_hmc):
 
     assert result.exit_code == 1
     assert "already exists" in result.stderr
-    assert fake_hmc.calls == [("find_partition_by_name", (LPAR_NAME,), {})]
+    assert fake_hmc.calls == [
+        ("find_partition_by_name", (LPAR_NAME,), {"system_uuid": SYSTEM_UUID})
+    ]
 
 
 def test_lpars_create_rejects_invalid_partition_type_before_client_call(fake_hmc):
@@ -4298,7 +4312,7 @@ def test_vios_list_table(fake_hmc):
     assert "vios1" in result.stdout
     assert "3.1.0" in result.stdout
     assert fake_hmc.calls == [
-        ("inventory_managed_systems", (), {}),
+        ("list_system_summaries", (), {}),
         ("list_vios", (SYSTEM_UUID,), {}),
     ]
 
@@ -4311,7 +4325,7 @@ def test_vios_list_json(fake_hmc):
         VIOS_UUID
     ]
     assert fake_hmc.calls == [
-        ("inventory_managed_systems", (), {}),
+        ("list_system_summaries", (), {}),
         ("list_vios", (SYSTEM_UUID,), {}),
     ]
 

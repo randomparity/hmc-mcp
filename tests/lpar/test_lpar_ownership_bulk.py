@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 
 import httpx
+from conftest import mock_system_summaries
 
 from hmcpctl.operations.lpar import ownership as lpar_ownership
 from hmcpctl.server_tools.lpar.lifecycle_boot import hmc_list_lpar_ownership
@@ -220,32 +221,14 @@ def test_selector_by_system_name_resolves_then_lists_once(monkeypatch, mock_hmc)
     }
 
 
-def _system_entry(uuid: str, name: str, state: str) -> str:
-    return (
-        "  <entry>"
-        f"<id>urn:uuid:{uuid}</id>"
-        f"<title>ManagedSystem:{name}</title>"
-        '<content type="application/vnd.ibm.powervm.uom+xml">'
-        '<ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/'
-        'firmware/uom/mc/2012_10/">'
-        f"<SystemName>{name}</SystemName><State>{state}</State>"
-        "<DetailedState>None</DetailedState>"
-        "</ManagedSystem></content></entry>"
-    )
-
-
 def test_omitted_selector_reads_each_operating_system(monkeypatch, mock_hmc):
     """No selector reads each operating system's feed and names the rest (#1293)."""
     _hmc_env(monkeypatch)
     offline_uuid = "33333333-3333-4333-8333-333333333333"
-    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
-        return_value=httpx.Response(
-            200,
-            text=_feed(
-                _system_entry(offline_uuid, "sys-R1", "No Connection"),
-                _system_entry(SYSTEM_UUID, "sys-E2", "operating"),
-            ),
-        )
+    mock_system_summaries(
+        mock_hmc,
+        (offline_uuid, "sys-R1", "No Connection"),
+        (SYSTEM_UUID, "sys-E2", "operating"),
     )
     route = mock_hmc.get(LIST_ROUTE).mock(
         return_value=httpx.Response(200, text=MIXED_FEED)

@@ -92,6 +92,9 @@ EXISTING_LPAR_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </feed>
 """
 
+# A target system that holds a partition, but none with the requested name.
+OTHER_LPAR_FEED = EXISTING_LPAR_FEED.replace("existing-lpar", "other-lpar")
+
 CREATED_LPAR_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
@@ -218,18 +221,17 @@ SYSTEM_FEED = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 def _mock_preconditions(
     mock_hmc,
     *,
-    name="web01",
     has_lpar=False,
     has_vlan=True,
     has_vg=True,
     vlan_feed=None,
 ):
     """Register the three precondition GET routes."""
-    # Support both "web01" (default) and a custom name such as "existing-lpar"
-    # by registering the search URL for whatever name was requested.
-    lpar_feed_text = EXISTING_LPAR_FEED if has_lpar else EMPTY_FEED
+    # The name check reads the target system's partition feed (#1309); with
+    # has_lpar it holds "existing-lpar", otherwise only an unrelated partition.
+    lpar_feed_text = EXISTING_LPAR_FEED if has_lpar else OTHER_LPAR_FEED
     name_lookup = mock_hmc.get(
-        f"/rest/api/uom/LogicalPartition/search/(PartitionName=={name})"
+        f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
     ).mock(return_value=httpx.Response(200, text=lpar_feed_text))
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualNetwork").mock(
         return_value=httpx.Response(
@@ -741,7 +743,7 @@ def test_provision_lpar_dry_run_validates_only(monkeypatch, mock_hmc):
 def test_provision_lpar_dry_run_name_conflict(monkeypatch, mock_hmc):
     """dry_run=True with a conflicting name surfaces the error without creating."""
     _hmc_env(monkeypatch)
-    _mock_preconditions(mock_hmc, name="existing-lpar", has_lpar=True)
+    _mock_preconditions(mock_hmc, has_lpar=True)
 
     with pytest.raises(ValueError, match="existing-lpar"):
         hmc_provision_lpar(**_provision_args(name="existing-lpar", dry_run=True))
@@ -755,7 +757,7 @@ def test_provision_lpar_dry_run_name_conflict(monkeypatch, mock_hmc):
 def test_provision_lpar_name_conflict_aborts(monkeypatch, mock_hmc):
     """Name collision raises ValueError before any execution step."""
     _hmc_env(monkeypatch)
-    _mock_preconditions(mock_hmc, name="existing-lpar", has_lpar=True)
+    _mock_preconditions(mock_hmc, has_lpar=True)
 
     create_route = mock_hmc.put(
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
@@ -999,7 +1001,7 @@ def test_provision_operation_rejects_bad_token_before_any_round_trip(monkeypatch
 
 def test_provision_passes_caller_token_to_creation(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
-    _mock_preconditions(mock_hmc, name="p-lpar")
+    _mock_preconditions(mock_hmc)
     _mock_execution_steps(mock_hmc)
     result = hmc_provision_lpar(
         **_provision_args(name="p-lpar", power_on=False, caller_token="CHG-9")
@@ -1071,15 +1073,15 @@ def _provision_via_406(
     readback: httpx.Response | None = None,
 ):
     """Run provision down the mksyscfg fallback, recording call order."""
-    searches = iter(
+    lookups = iter(
         [
-            httpx.Response(200, text=EMPTY_FEED),
-            httpx.Response(200, text=EMPTY_FEED),
+            httpx.Response(200, text=OTHER_LPAR_FEED),
+            httpx.Response(200, text=OTHER_LPAR_FEED),
             readback or httpx.Response(200, text=CREATED_LPAR_FEED),
         ]
     )
-    mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==web01)").mock(
-        side_effect=lambda request: next(searches)
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        side_effect=lambda request: next(lookups)
     )
     _mock_execution_steps(mock_hmc).mock(return_value=httpx.Response(406))
     network = mock_hmc.put(

@@ -127,3 +127,40 @@ async def require_operating_system(
         f"State {state!r} (DetailedState {detailed!r}), and an empty {resources} "
         "feed cannot be trusted unless the system is operating"
     )
+
+
+def system_operating(state: object) -> bool:
+    """Whether a managed system's ``State`` reads ``operating``."""
+    return isinstance(state, str) and state.strip().lower() == "operating"
+
+
+def _summary_label(summary: object) -> str:
+    if not isinstance(summary, dict):
+        return "an unidentified managed system"
+    name = _state_text(summary.get("SystemName"))
+    uuid = _state_text(summary.get("UUID"))
+    return f"{name!r} ({uuid}) in State {_state_text(summary.get('State'))!r}"
+
+
+async def require_absence_provable(
+    list_system_summaries: Callable[[], Awaitable[list[Any]]],
+    resource_label: str,
+    name: str,
+) -> None:
+    """Refuse to read an HMC-wide search miss as absent while a system cannot be read.
+
+    The HMC-wide ``PartitionName`` searches answer 204 for a name on a system
+    with no connection, the same as for a name that exists nowhere (#1309).
+    """
+    unreadable = [
+        summary
+        for summary in await list_system_summaries()
+        if not isinstance(summary, dict) or not system_operating(summary.get("State"))
+    ]
+    if unreadable:
+        raise HMCError(
+            f"No {resource_label} named {name!r} was found on the readable managed "
+            "systems, but these managed systems cannot be read: "
+            f"{', '.join(_summary_label(summary) for summary in unreadable)}; "
+            "supply a managed-system selector, or retry when they reconnect"
+        )

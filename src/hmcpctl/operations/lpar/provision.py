@@ -162,9 +162,13 @@ class AttachDiskResult:
     )
 
 
-async def _check_name_unique(hmc, name: str) -> None:
-    """Raise ValueError if an LPAR with *name* already exists."""
-    existing = await hmc.find_partition_by_name(name)
+async def _check_name_unique(hmc, system_uuid: str, name: str) -> None:
+    """Raise ValueError if an LPAR with *name* already exists on *system_uuid*.
+
+    Scoped: the HMC-wide search misses partitions on a system it cannot read
+    (#1309), and the scoped feed refuses a non-operating system.
+    """
+    existing = await hmc.find_partition_by_name(name, system_uuid=system_uuid)
     if existing:
         raise ValueError(
             f"An LPAR named {name!r} already exists "
@@ -594,7 +598,7 @@ async def _preflight_provision_request(
     if request.minimum_affinity_policy is not None:
         system_name, _ = await resolve_ssh_names(hmc.config, system_name_or_uuid, None)
         await require_minimum_affinity_policy_capability(hmc.config, system_name)
-    await _check_name_unique(hmc, request.name)
+    await _check_name_unique(hmc, system_uuid, request.name)
     await _check_vlan_exists(hmc, system_uuid, request.adapters.port_vlan_id)
     if request.storage.vg_uuid is not None:
         await _check_vg_exists(hmc, request.storage.vios_uuid, request.storage.vg_uuid)

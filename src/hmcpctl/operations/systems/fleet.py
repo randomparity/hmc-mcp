@@ -6,9 +6,11 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from hmcpctl.client.client_resolution import system_operating
 from hmcpctl.client.core import HMCClient
 from hmcpctl.discovery_limits import MAX_PARENT_DISCOVERY_SYSTEMS
 from hmcpctl.errors import HMCError
+from hmcpctl.resource_identity import is_uuid
 
 
 @dataclass(frozen=True)
@@ -30,36 +32,37 @@ class FleetListing:
 
 
 def _text(value: object) -> str | None:
-    return value if isinstance(value, str) else None
+    return value if isinstance(value, str) and value.strip() else None
 
 
-def _unreadable(system: dict[str, Any]) -> UnreadableSystem | None:
-    """None when *system* can be read; otherwise the record naming it."""
-    resource = system.get("Resource") or {}
-    uuid = system.get("UUID")
-    state = resource.get("State")
+def _unreadable(system: object) -> UnreadableSystem | None:
+    """None when the quick/All *system* summary can be read; otherwise its record."""
+    summary = system if isinstance(system, dict) else {}
+    uuid = summary.get("UUID")
     if (
         isinstance(uuid, str)
-        and uuid
-        and isinstance(state, str)
-        and state.strip().lower() == "operating"
+        and is_uuid(uuid)
+        and system_operating(summary.get("State"))
     ):
         return None
     return UnreadableSystem(
-        system_name=_text(resource.get("SystemName")),
-        system_uuid=_text(uuid) or None,
-        state=_text(state),
-        detailed_state=_text(resource.get("DetailedState")),
+        system_name=_text(summary.get("SystemName")),
+        system_uuid=_text(uuid),
+        state=_text(summary.get("State")),
+        detailed_state=_text(summary.get("StateDetail")),
     )
 
 
 async def _stopped_operating(hmc: HMCClient, uuid: str) -> UnreadableSystem | None:
     """The record for a system that left `operating` after the inventory read."""
     try:
-        fresh = await hmc.get_managed_system(uuid)
+        summaries = await hmc.list_system_summaries()
     except HMCError:
         return None
-    return _unreadable(fresh) if fresh is not None else None
+    for summary in summaries:
+        if isinstance(summary, dict) and summary.get("UUID") == uuid:
+            return _unreadable(summary)
+    return None
 
 
 async def read_fleet(
@@ -70,16 +73,17 @@ async def read_fleet(
     """Read each operating system's scoped feed, naming every system skipped.
 
     The HMC-wide partition and VIOS feeds time out while any one system has no
-    connection, where the other systems' scoped feeds still answer (#1293).
+    connection, where the other systems' scoped feeds still answer (#1293). So
+    does the full ManagedSystem feed, so the systems come from quick/All (#1309).
     """
-    systems, unresolved = await hmc.inventory_managed_systems()
+    systems = await hmc.list_system_summaries()
     if len(systems) > MAX_PARENT_DISCOVERY_SYSTEMS:
         raise ValueError(
             f"Cannot list {resources} across managed systems: discovery exceeds "
             f"{MAX_PARENT_DISCOVERY_SYSTEMS} managed systems; supply managed-system scope"
         )
     entries: list[dict[str, Any]] = []
-    unreadable = [UnreadableSystem(name, uuid, None, None) for uuid, name in unresolved]
+    unreadable: list[UnreadableSystem] = []
     for system in systems:
         skipped = _unreadable(system)
         if skipped is None:

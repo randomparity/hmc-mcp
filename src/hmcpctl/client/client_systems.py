@@ -21,6 +21,7 @@ from .client_parse import _parse_feed
 from .client_resolution import (
     ambiguity_candidate_ids,
     ambiguous_parent_details,
+    require_absence_provable,
     require_operating_system,
 )
 
@@ -66,20 +67,19 @@ class SystemsMixin:
                 ) from exc
             raise
 
-    async def _quick_all_system_names(self: SystemsClient) -> dict[str, str]:
-        """UUID -> SystemName map from GET .../ManagedSystem/quick/All.
+    async def list_system_summaries(self: SystemsClient) -> list[Any]:
+        """Every managed system's summary from GET .../ManagedSystem/quick/All.
 
         Not documented in this repo's vendored HMC REST API reference (only
         the per-UUID quick/{Property} form is); evidenced by IBM's public
         project-pim repository (ADR 0138), and captured on V10R3 as a JSON
-        array of objects keyed ``UUID`` (lower case) and ``SystemName``; the
-        map is keyed by the lower-cased UUID. No typed Accept header, matching
+        array of objects keyed ``UUID`` (lower case), ``SystemName``,
+        ``State`` and ``StateDetail``. No typed Accept header, matching
         get_quick_property's precedent (core.py) that a uom+xml header 406s
         on quick/ endpoints, and project-pim's own quick/All calls, which
-        send none either. Used only as a fallback when the direct/unfiltered
-        feed trips the null-property serialization bug, so an unexpected
-        shape here is treated defensively: entries missing UUID or
-        SystemName are skipped rather than raised.
+        send none either. It answers while a system is ``No Connection``,
+        where the full ManagedSystem feed times out (#1309). Items are
+        returned unvalidated; each caller decides what an unreadable one means.
         """
         resp = await self._request(
             "GET",
@@ -111,30 +111,34 @@ class SystemsMixin:
                 "GET /rest/api/uom/ManagedSystem/quick/All returned a JSON "
                 f"{type(summaries).__name__}; expected an array"
             )
+        return summaries
+
+    async def _quick_all_system_names(self: SystemsClient) -> dict[str, str]:
+        """UUID -> SystemName map from quick/All, keyed by the lower-cased UUID.
+
+        Used only as a fallback when the direct/unfiltered feed trips the
+        null-property serialization bug, so entries missing UUID or
+        SystemName are skipped rather than raised.
+        """
         return {
             entry["UUID"].lower(): entry["SystemName"]
-            for entry in summaries
+            for entry in await self.list_system_summaries()
             if isinstance(entry, dict)
             and isinstance(entry.get("UUID"), str)
             and "SystemName" in entry
         }
 
     async def list_managed_systems(self: SystemsClient) -> list[dict[str, Any]]:
-        return (await self.inventory_managed_systems())[0]
-
-    async def inventory_managed_systems(
-        self: SystemsClient,
-    ) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
-        """Managed-system entries, and the (UUID, SystemName) pairs left unresolved.
+        """Every managed-system entry from the full ManagedSystem feed.
 
         Some firmware 500s on the unfiltered feed over a null hardware-inventory
         property (e.g. VirtualPersistentMemoryVolume/Uuid). quick/All +
         find_system_by_name (a different, working path) resolve what they can;
         a system that still fails (or resolves ambiguously) is skipped with a
-        warning rather than failing the whole call, and returned as unresolved.
+        warning rather than failing the whole call.
         """
         try:
-            return await self.list_uom("ManagedSystem"), []
+            return await self.list_uom("ManagedSystem")
         except HMCError as exc:
             if not (
                 exc.status_code == 500
@@ -148,8 +152,7 @@ class SystemsMixin:
                 names = {}
                 quick_all_exc = qa_exc
             resolved: list[dict[str, Any]] = []
-            unresolved: list[tuple[str, str]] = []
-            for uuid, name in names.items():
+            for name in names.values():
                 try:
                     entry = await self.find_system_by_name(name)
                 except (HMCError, ValueError) as resolution_exc:
@@ -158,7 +161,6 @@ class SystemsMixin:
                         name,
                         resolution_exc,
                     )
-                    unresolved.append((uuid, name))
                     continue
                 if entry is not None:
                     resolved.append(entry)
@@ -167,9 +169,8 @@ class SystemsMixin:
                         "Skipping managed system %r during inventory fallback: not found",
                         name,
                     )
-                    unresolved.append((uuid, name))
             if resolved:
-                return resolved, unresolved
+                return resolved
             raise HMCError(
                 "Managed-system inventory is unavailable because this HMC "
                 "firmware could not serialize a null hardware property; "
@@ -294,8 +295,11 @@ class SystemsMixin:
             return results[0] if results else None
 
         results = await self.search_uom("VirtualIOServer", "PartitionName", name)
-        if len(results) <= 1:
-            return results[0] if results else None
+        if not results:
+            await require_absence_provable(self.list_system_summaries, "VIOS", name)
+            return None
+        if len(results) == 1:
+            return results[0]
 
         details = await ambiguous_parent_details(
             results,

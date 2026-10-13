@@ -9,7 +9,11 @@ hmc_run_command (SSH) is covered there too.
 
 import httpx
 import pytest
-from conftest import captured_lpar_entry, captured_system_entry
+from conftest import (
+    captured_lpar_entry,
+    captured_system_entry,
+    mock_system_summaries,
+)
 
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.systems.fleet import FleetListing, UnreadableSystem
@@ -69,33 +73,18 @@ def _fleet(mock_hmc) -> list:
     """sys-R1 in No Connection and sys-E2 operating; returns the HMC-wide routes.
 
     Each returned route must stay uncalled: the HMC-wide feeds time out while
-    any one system has no connection (#1293).
+    any one system has no connection (#1293), and so does the full
+    ManagedSystem feed (#1309).
     """
-    entries = [
-        _feed(uuid, "ManagedSystem", **fields)
-        .split("<entry>", 1)[1]
-        .split("</entry>")[0]
-        for uuid, fields in (
-            (
-                OFFLINE_UUID,
-                {
-                    "SystemName": "sys-R1",
-                    "State": "No Connection",
-                    "DetailedState": "None",
-                },
-            ),
-            (SYSTEM_UUID, {"SystemName": "sys-E2", "State": "operating"}),
-        )
-    ]
-    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
-        return_value=httpx.Response(
-            200,
-            text='<feed xmlns="http://www.w3.org/2005/Atom">'
-            + "".join(f"<entry>{entry}</entry>" for entry in entries)
-            + "</feed>",
-        )
+    mock_system_summaries(
+        mock_hmc,
+        (OFFLINE_UUID, "sys-R1", "no connection"),
+        (SYSTEM_UUID, "sys-E2", "operating"),
     )
     return [
+        mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
+            return_value=httpx.Response(504)
+        ),
         mock_hmc.get("/rest/api/uom/LogicalPartition").mock(
             return_value=httpx.Response(504)
         ),
@@ -108,7 +97,7 @@ def _fleet(mock_hmc) -> list:
     ]
 
 
-SKIPPED = [UnreadableSystem("sys-R1", OFFLINE_UUID, "No Connection", "None")]
+SKIPPED = [UnreadableSystem("sys-R1", OFFLINE_UUID, "no connection", None)]
 
 
 LPAR_SEARCH_FEED = """\
@@ -360,11 +349,12 @@ def test_lpars_name_finds_by_name(monkeypatch, mock_hmc):
 
 
 def test_lpars_name_not_found_returns_none(monkeypatch, mock_hmc):
-    """hmc_list_lpars returns None when a partition name matches nothing."""
+    """hmc_get_lpar returns None when a name matches nothing and every system operates."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==ghost)").mock(
         return_value=httpx.Response(200, text=EMPTY_FEED)
     )
+    mock_system_summaries(mock_hmc, (SYSTEM_UUID, "sys-E2", "operating"))
     assert hmc_get_lpar("ghost") is None
 
 

@@ -999,6 +999,7 @@ SYSTEM_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
       <SystemName>sys1</SystemName>
+      <State>operating</State>
     </ManagedSystem>
   </content>
 </entry>
@@ -1024,9 +1025,9 @@ def test_create_lpar_refuses_name_collision(monkeypatch, mock_hmc):
     from hmcpctl.server_tools.lpar.lifecycle_create import hmc_create_lpar
 
     _hmc_env(monkeypatch)
-    mock_hmc.get(
-        "/rest/api/uom/LogicalPartition/search/(PartitionName==existing-lpar)"
-    ).mock(return_value=httpx.Response(200, text=EXISTING_LPAR_FEED))
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(200, text=EXISTING_LPAR_FEED)
+    )
     create_route = mock_hmc.put(
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
     )
@@ -1044,9 +1045,9 @@ def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
     from hmcpctl.server_tools.lpar.lifecycle_create import hmc_create_lpar
 
     _hmc_env(monkeypatch)
-    mock_hmc.get(
-        "/rest/api/uom/LogicalPartition/search/(PartitionName==new-lpar)"
-    ).mock(return_value=httpx.Response(200, text=EMPTY_FEED))
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(200, text=EMPTY_FEED)
+    )
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )

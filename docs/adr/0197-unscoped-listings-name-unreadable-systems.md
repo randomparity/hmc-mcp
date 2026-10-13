@@ -48,6 +48,13 @@ could not read. The three tools returned `list[dict]`, so they had nowhere to pu
 - An unscoped listing costs one `ManagedSystem` read plus one scoped read per operating system. On
   the HMC above, the `ManagedSystem` feed alone took about 160 s, and the change has not been
   measured live. Whether the HMC-wide feed is ever a safe fast path stays with #1290.
+- Amended 2026-10-13 (#1309): a read-only capture on two V11R2 HMCs, each with one system in
+  `No Connection`, found the full `ManagedSystem` feed timing out too (at 60, 300 and 600 s), while
+  `ManagedSystem/quick/All` answered fast and listed every system with its `State`. The inventory
+  in decision 2 now comes from `quick/All`. A system whose `State` is not `operating`, or whose
+  `UUID` is not a UUID, is recorded as unreadable; `detailed_state` is `quick/All`'s non-blank
+  `StateDetail`; the re-read in decision 4 also uses `quick/All`. The null-property fallback that
+  decision 2 mentions no longer applies to these listings, because `quick/All` does not trip it.
 - A system in `Standby`, `Power Off` or any other state that is not `operating` is listed as
   unreadable, even when its scoped feed would have returned partitions.
 - The scoped `lpar list --system` / `vios list --system` and `list_lpar_ownership(hmc, system)`
