@@ -7,12 +7,17 @@ every case rather than one.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
+from conftest import live_fixture
+
+from hmcpctl.client.client_parse import _parse_feed
+from hmcpctl.client.client_storage import mapping_lpar_uuid, storage_mapping_id
 
 SCRIPTS_ROOT = Path(__file__).parents[2] / "scripts"
 sys.path.insert(0, str(SCRIPTS_ROOT))
@@ -962,6 +967,39 @@ async def test_no_listed_adapter_reads_as_zero():
     )
 
     assert await recovery.check_test_partition(_lpar_caller(responses), _ALL) == []
+
+
+@pytest.mark.asyncio
+async def test_the_captured_unmapped_adapter_is_reported_by_slot():
+    """The #1250 capture: two listed adapters toward the partition, one mapped.
+
+    The mappings are the ones REST links to the partition in the same window, so the
+    adapter-only mapping it also carried is excluded exactly as the tool excludes it.
+    """
+    listing = live_fixture("cli-vios-scsi-unmapped-adapter")
+    capture = live_fixture("rest-vios-scsi-mapping-unmapped-adapter")
+    resource = _parse_feed(capture["body"], capture["path"])[0]["Resource"]
+    linked = [
+        {"id": storage_mapping_id(mapping)}
+        for mapping in resource["VirtualSCSIMappings"]["VirtualSCSIMapping"]
+        if mapping_lpar_uuid(mapping) == "00000002-ABCD-4EF0-8ABC-000000000002"
+    ]
+    responses = _lpar_responses(
+        hmc_run_command=listing["stdout"], hmc_list_storage_mappings=linked
+    )
+    inputs = dataclasses.replace(_ALL, lpar_name="sys-R1-lp3")
+
+    findings = await recovery.check_test_partition(_lpar_caller(responses), inputs)
+
+    assert [(finding.what, finding.detail) for finding in findings] == [
+        (
+            "unmapped server adapter",
+            (
+                f"VIOS {_VIOS_ID} has 2 vSCSI server adapter(s) toward sys-R1-lp3 "
+                "(slots 3, 5) but 1 mapped"
+            ),
+        )
+    ]
 
 
 @pytest.mark.asyncio

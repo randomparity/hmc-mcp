@@ -18,7 +18,11 @@ import pytest
 from conftest import live_fixture, make_config
 
 from hmcpctl.client.client_parse import _parse_feed
-from hmcpctl.client.client_storage import lpar_uuid_from_href, storage_mapping_id
+from hmcpctl.client.client_storage import (
+    lpar_uuid_from_href,
+    mapping_lpar_uuid,
+    storage_mapping_id,
+)
 from hmcpctl.client.core import HMCClient
 from hmcpctl.errors import HMCError
 
@@ -214,6 +218,49 @@ async def test_list_storage_mappings_filters_live_lpar_case_insensitively(mock_h
         )
 
     assert [storage_mapping_id(m) for m in mappings] == ["dev-369/dev-256"]
+
+
+@pytest.mark.asyncio
+async def test_an_unmapped_server_adapter_is_a_mapping_holding_only_its_adapter(
+    mock_hmc,
+):
+    """A live V10R3 VIOS with an unmapped vSCSI server adapter (#1250).
+
+    The HMC lists the adapter as a mapping with no client adapter, target, storage
+    or partition link, so it has no identity and an LPAR-scoped list drops it.
+    """
+    capture = live_fixture("rest-vios-scsi-mapping-unmapped-adapter")
+    mock_hmc.get(capture["path"]).mock(
+        return_value=httpx.Response(200, text=capture["body"])
+    )
+    vios, test_lpar = (
+        "00000001-ABCD-4EF0-8ABC-000000000001",
+        "00000002-ABCD-4EF0-8ABC-000000000002",
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        everything = await hmc.list_storage_mappings(vios)
+        scoped = await hmc.list_storage_mappings(vios, test_lpar)
+
+    assert [storage_mapping_id(m) for m in everything] == [
+        "dev-17/dev-11",
+        None,
+        "dev-17/dev-12",
+    ]
+    assert [storage_mapping_id(m) for m in scoped] == ["dev-17/dev-11", "dev-17/dev-12"]
+    adapter_only = everything[1]
+    assert mapping_lpar_uuid(adapter_only) is None
+    assert {key for key in adapter_only if not key.startswith("@")} == {
+        "Metadata",
+        "ServerAdapter",
+    }
+    adapter = adapter_only["ServerAdapter"]
+    assert (
+        adapter["AdapterName"],
+        adapter["VirtualSlotNumber"],
+        adapter["RemoteLogicalPartitionID"],
+        adapter["RemoteSlotNumber"],
+    ) == ("dev-18", "5", "1", "4")
 
 
 @pytest.mark.asyncio
