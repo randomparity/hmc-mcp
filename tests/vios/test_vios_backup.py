@@ -67,7 +67,9 @@ def _client_factory(hmc, config=None):
 def _fake_vios_client(monkeypatch):
     """Prevent command-contract tests from depending on a reachable HMC."""
     hmc = AsyncMock()
-    hmc.find_system_by_name.return_value = {"UUID": SYSTEM_UUID}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": SYSTEM_UUID, "SystemName": SYSTEM_NAME}
+    ]
     hmc.find_vios_by_name.return_value = {"UUID": VIOS_UUID}
     monkeypatch.setattr("hmcpctl._app.client_from_env", _client_factory(hmc))
 
@@ -491,7 +493,9 @@ def test_backup_vios_preserves_a_direct_system_name_and_scopes_vios_name(monkeyp
     """A name stays the CLI identity while its VIOS lookup is system-scoped."""
     _hmc_env(monkeypatch)
     hmc = AsyncMock()
-    hmc.find_system_by_name.return_value = {"UUID": SYSTEM_UUID}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": SYSTEM_UUID, "SystemName": SYSTEM_NAME}
+    ]
     hmc.find_vios_by_name.return_value = {"UUID": VIOS_UUID}
     monkeypatch.setattr("hmcpctl._app.client_from_env", _client_factory(hmc))
     conn_mock = _make_ssh_mock("completed\n")

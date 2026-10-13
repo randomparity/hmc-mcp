@@ -44,8 +44,8 @@ class FakeHMC:
     async def __aexit__(self, *_exc):
         return None
 
-    async def find_system_by_name(self, name):
-        return {"UUID": SYS} if name == "sysA" else None
+    async def list_system_summaries(self):
+        return [{"UUID": SYS, "SystemName": "sysA"}]
 
     async def list_logical_partitions(self, system_uuid):
         assert system_uuid == SYS

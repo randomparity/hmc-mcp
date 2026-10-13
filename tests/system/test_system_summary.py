@@ -193,8 +193,8 @@ def test_system_summary_by_name_resolves_uuid(monkeypatch, mock_hmc):
 def test_system_summary_name_not_found_raises(monkeypatch, mock_hmc):
     """hmc_system_summary raises ValueError when the system name is unknown."""
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==ghost-sys)").mock(
-        return_value=httpx.Response(200, text=EMPTY_FEED)
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(
+        return_value=httpx.Response(200, json=[])
     )
 
     with pytest.raises(ValueError, match="ghost-sys"):

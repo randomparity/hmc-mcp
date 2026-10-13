@@ -44,7 +44,9 @@ def _hmc(**resolutions) -> AsyncMock:
     """A duck-typed client whose name lookups resolve to the test fixtures."""
     hmc = AsyncMock()
     hmc.config = make_config()
-    hmc.find_system_by_name.return_value = {"UUID": SYSTEM_UUID}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": SYSTEM_UUID, "SystemName": "sys1"}
+    ]
     hmc.find_vios_by_name.return_value = {"UUID": LPAR_UUID}
     hmc.get_vios.return_value = {
         "Resource": {
@@ -203,7 +205,7 @@ async def test_operation_rejects_invalid_input_before_any_io(field, value, messa
         )
 
     assert ssh.commands == []
-    hmc.find_system_by_name.assert_not_awaited()
+    hmc.list_system_summaries.assert_not_awaited()
 
 
 @pytest.mark.asyncio

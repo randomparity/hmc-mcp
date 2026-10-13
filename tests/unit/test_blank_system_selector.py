@@ -63,7 +63,7 @@ async def test_lpar_name_resolution_ignores_a_blank_system(blank):
 
     assert await resolve_lpar_uuid(hmc, "lp1", system_name_or_uuid=blank) == LPAR_UUID
 
-    hmc.find_system_by_name.assert_not_awaited()
+    hmc.list_system_summaries.assert_not_awaited()
     hmc.find_partition_by_name.assert_awaited_once_with("lp1")
 
 
@@ -74,7 +74,7 @@ async def test_vios_name_resolution_ignores_a_blank_system(blank):
 
     assert await resolve_vios_uuid(hmc, "vios1", system_name_or_uuid=blank) == VIOS_UUID
 
-    hmc.find_system_by_name.assert_not_awaited()
+    hmc.list_system_summaries.assert_not_awaited()
     hmc.find_vios_by_name.assert_awaited_once_with("vios1")
 
 
@@ -87,7 +87,7 @@ async def test_adapter_listing_ignores_a_blank_system(blank):
 
     await list_adapters(hmc, blank, "lp1", "ClientNetworkAdapter")
 
-    hmc.find_system_by_name.assert_not_awaited()
+    hmc.list_system_summaries.assert_not_awaited()
     hmc.list_adapters.assert_awaited_once_with(LPAR_UUID, "ClientNetworkAdapter")
 
 
@@ -101,7 +101,6 @@ async def test_lpar_and_vios_inventory_ignore_a_blank_system(blank):
     await list_vios(hmc, blank)
     await get_lpar(hmc, "lp1", system_name_or_uuid=blank)
 
-    hmc.find_system_by_name.assert_not_awaited()
     assert hmc.list_system_summaries.await_count == 2
     hmc.list_logical_partitions.assert_not_awaited()
     hmc.list_vios.assert_not_awaited()
@@ -116,7 +115,6 @@ async def test_ownership_listing_walks_the_fleet_for_a_blank_system(blank):
 
     assert (await list_lpar_ownership(hmc, blank)).entries == []
 
-    hmc.find_system_by_name.assert_not_awaited()
     hmc.list_system_summaries.assert_awaited_once_with()
 
 
@@ -135,14 +133,16 @@ async def test_a_rename_with_a_blank_system_reports_the_missing_selector(blank):
             new_name="lp2",
         )
 
-    hmc.find_system_by_name.assert_not_awaited()
+    hmc.list_system_summaries.assert_not_awaited()
 
 
 @BLANKS
 @pytest.mark.asyncio
 async def test_pcm_targets_read_a_blank_system_as_absent(blank):
     hmc = _hmc()
-    hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": "system-uuid", "SystemName": "frame-1"}
+    ]
 
     validate_pcm_metric_target("ManagedSystem", blank)
     target = await resolve_pcm_resource(
@@ -193,7 +193,9 @@ async def test_an_affinity_power_on_with_a_blank_system_submits_nothing(blank):
 async def test_an_affinity_power_on_strips_the_target_selector():
     hmc = _hmc()
     hmc.config.authorize_power_operations = False
-    hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": "system-uuid", "SystemName": "frame-1"}
+    ]
     hmc.get_quick_property.return_value = "running"
 
     await power_on_lpar(
@@ -203,7 +205,7 @@ async def test_an_affinity_power_on_strips_the_target_selector():
         affinity_assessment=_affinity("frame-1"),
     )
 
-    hmc.find_system_by_name.assert_awaited_once_with("frame-1")
+    hmc.list_system_summaries.assert_awaited_once_with()
 
 
 @pytest.mark.asyncio
@@ -257,7 +259,9 @@ async def test_vios_backup_and_restore_refuse_a_blank_required_system(blank):
 @pytest.mark.asyncio
 async def test_vios_backup_and_restore_send_the_stripped_system():
     hmc = _hmc()
-    hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": "system-uuid", "SystemName": "frame-1"}
+    ]
     cli = AsyncMock(return_value="ok")
 
     with patch("hmcpctl.operations.vios.core.run_hmc_cli", new=cli):
