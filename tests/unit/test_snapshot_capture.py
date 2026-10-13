@@ -21,7 +21,11 @@ PROFILE = "name=default,lpar_name=aix,min_mem=4096,desired_mem=8192,max_mem=1638
 async def test_capture_separates_configuration_and_observations(monkeypatch) -> None:
     hmc = AsyncMock()
     hmc.config = HMCConfig.from_mapping({"host": "h", "user": "u", "password": "p"})
-    hmc.find_system_by_name.return_value = {"UUID": "sys-1"}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": "sys-1", "SystemName": "sys"},
+        {"UUID": "sys-1", "SystemName": "sys-R1"},
+        {"UUID": "sys-1", "SystemName": "sys-1"},
+    ]
     hmc.find_partition_by_name.return_value = {"UUID": "lpar-1"}
     hmc.get_console_info.return_value = {
         "UUID": "hmc-1",
@@ -168,7 +172,11 @@ async def test_capture_separates_configuration_and_observations(monkeypatch) -> 
 async def test_capture_propagates_observation_failure(monkeypatch) -> None:
     hmc = AsyncMock()
     hmc.config = HMCConfig.from_mapping({"host": "h", "user": "u", "password": "p"})
-    hmc.find_system_by_name.return_value = {"UUID": "sys-1"}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": "sys-1", "SystemName": "sys"},
+        {"UUID": "sys-1", "SystemName": "sys-R1"},
+        {"UUID": "sys-1", "SystemName": "sys-1"},
+    ]
     hmc.find_partition_by_name.return_value = {"UUID": "lpar-1"}
     hmc.get_console_info.return_value = {"UUID": "hmc-1", "Resource": {}}
     hmc.get_managed_system.return_value = {
@@ -224,7 +232,11 @@ async def test_capture_reads_captured_console_partition_and_profile(
     """Every HMC answer here is a V10R3 capture; only the system is a stub."""
     hmc = AsyncMock()
     hmc.config = HMCConfig.from_mapping({"host": "h", "user": "u", "password": "p"})
-    hmc.find_system_by_name.return_value = {"UUID": "sys-1"}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": "sys-1", "SystemName": "sys"},
+        {"UUID": "sys-1", "SystemName": "sys-R1"},
+        {"UUID": "sys-1", "SystemName": "sys-1"},
+    ]
     lpar = parse_feed(live_fixture("rest-lpar-entry-lp3")["body"])[0]
     hmc.find_partition_by_name.return_value = lpar
     hmc.get_console_info.return_value = parse_feed(

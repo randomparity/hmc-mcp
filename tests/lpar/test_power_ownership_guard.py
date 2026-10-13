@@ -315,7 +315,9 @@ async def test_enabled_guard_resolves_the_managed_system_once() -> None:
     ownership token is then read.
     """
     hmc = _hmc(authorize=True, agent_id="alice")
-    hmc.find_system_by_name.return_value = {"UUID": SYSTEM_UUID}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": SYSTEM_UUID, "SystemName": "sys1"}
+    ]
     hmc.find_partition_by_name.return_value = {"UUID": LPAR_UUID}
 
     with patch(
@@ -329,7 +331,7 @@ async def test_enabled_guard_resolves_the_managed_system_once() -> None:
             power_on=False,
         )
 
-    hmc.find_system_by_name.assert_awaited_once_with("sys1")
+    hmc.list_system_summaries.assert_awaited_once_with()
     hmc.find_partition_by_name.assert_awaited_once_with("aix1", system_uuid=SYSTEM_UUID)
 
 

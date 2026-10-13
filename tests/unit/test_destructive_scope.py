@@ -22,7 +22,9 @@ def _client_factory(hmc):
 @pytest.mark.asyncio
 async def test_delete_lpar_uses_required_system_to_scope_name_resolution():
     hmc = AsyncMock()
-    hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": "system-uuid", "SystemName": "system-name"}
+    ]
     hmc.find_partition_by_name.return_value = {"UUID": "lpar-uuid"}
     hmc.get_logical_partition.return_value = {
         "Resource": {"PartitionName": "aix1", "Description": ""}
@@ -43,7 +45,9 @@ async def test_delete_lpar_uses_required_system_to_scope_name_resolution():
 @pytest.mark.asyncio
 async def test_rename_lpar_uses_required_system_to_scope_name_resolution():
     hmc = AsyncMock()
-    hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": "system-uuid", "SystemName": "system-name"}
+    ]
     hmc.find_partition_by_name.return_value = {"UUID": "lpar-uuid"}
     hmc.get_logical_partition.return_value = {
         "Resource": {"PartitionName": "aix1", "Description": ""}
@@ -73,7 +77,9 @@ async def test_power_lpar_forwards_optional_system_scope():
     hmc.config = HMCConfig.from_mapping(
         {"host": "hmc.test", "user": "u", "password": "p"}
     )
-    hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": "system-uuid", "SystemName": "system-name"}
+    ]
     hmc.find_partition_by_name.return_value = {"UUID": "lpar-uuid"}
     hmc.submit_job.return_value = {"UUID": "job-uuid"}
 
@@ -92,7 +98,9 @@ async def test_power_lpar_forwards_optional_system_scope():
 @pytest.mark.asyncio
 async def test_power_vios_forwards_optional_system_scope():
     hmc = AsyncMock()
-    hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": "system-uuid", "SystemName": "system-name"}
+    ]
     hmc.find_vios_by_name.return_value = {"UUID": "vios-uuid"}
     hmc.power_off_vios.return_value = {"UUID": "job-uuid"}
 
@@ -119,7 +127,9 @@ def test_power_off_lpar_tool_forwards_system_scope(monkeypatch):
 
 def test_delete_vios_tool_scopes_name_before_mutation(monkeypatch):
     hmc = AsyncMock()
-    hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": "system-uuid", "SystemName": "system-name"}
+    ]
     hmc.find_vios_by_name.return_value = {"UUID": "vios-uuid"}
     hmc.get_quick_property.return_value = "not activated"
     monkeypatch.setattr("hmcpctl._app.client_from_env", _client_factory(hmc))
@@ -135,7 +145,9 @@ def test_delete_vios_tool_scopes_name_before_mutation(monkeypatch):
 
 def test_restore_vios_tool_forwards_system_scope(monkeypatch):
     hmc = AsyncMock()
-    hmc.find_system_by_name.return_value = {"UUID": "system-uuid"}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": "system-uuid", "SystemName": "system-name"}
+    ]
     hmc.find_vios_by_name.return_value = {"UUID": "vios-uuid"}
     command = AsyncMock(return_value="restored")
     monkeypatch.setattr("hmcpctl._app.client_from_env", _client_factory(hmc))

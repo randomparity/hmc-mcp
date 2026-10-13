@@ -23,6 +23,7 @@ from .client_resolution import (
     ambiguous_parent_details,
     require_absence_provable,
     require_operating_system,
+    summary_for,
 )
 
 _logger = logging.getLogger(__name__)
@@ -280,8 +281,9 @@ class SystemsMixin:
             ]
             if len(results) > 1:
                 ambiguity_candidate_ids(results, "VIOS", name)
-                system = await self.get_managed_system(system_uuid)
-                system_name = (system or {}).get("Resource", {}).get("SystemName")
+                system_name = summary_for(
+                    await self.list_system_summaries(), system_uuid
+                ).get("SystemName")
                 if not isinstance(system_name, str) or not system_name:
                     raise ValueError(
                         f"Cannot resolve ambiguous VIOS name {name!r}: cannot "
@@ -303,7 +305,7 @@ class SystemsMixin:
 
         details = await ambiguous_parent_details(
             results,
-            await self.list_managed_systems(),
+            await self.list_system_summaries(),
             "VIOS",
             name,
             self.list_vios,

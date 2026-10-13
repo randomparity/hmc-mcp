@@ -194,8 +194,11 @@ def _system_feed(name: str) -> str:
 
 
 def _mock_resolution(mock_hmc) -> None:
-    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==sys1)").mock(
-        return_value=httpx.Response(200, text=_system_feed("sys1"))
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(
+        return_value=httpx.Response(
+            200,
+            json=[{"UUID": SYSTEM_UUID, "SystemName": "sys1", "State": "operating"}],
+        )
     )
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=_system_feed("sys1"))
@@ -271,8 +274,11 @@ def test_install_vios_unknown_name_fails_before_submission(monkeypatch, mock_hmc
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
     monkeypatch.setenv("HMC_PASSWORD", "test-password")
-    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==sys1)").mock(
-        return_value=httpx.Response(200, text=_system_feed("sys1"))
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(
+        return_value=httpx.Response(
+            200,
+            json=[{"UUID": SYSTEM_UUID, "SystemName": "sys1", "State": "operating"}],
+        )
     )
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer").mock(
         return_value=httpx.Response(200, text='<?xml version="1.0"?><feed/>')

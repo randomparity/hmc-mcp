@@ -81,9 +81,9 @@ class _HMC:
         self.state = state
         self.calls: list[str] = []
 
-    async def find_system_by_name(self, name: str) -> dict | None:
-        self.calls.append(f"find_system_by_name {name}")
-        return {"UUID": SYS, "Resource": {"SystemName": name}}
+    async def list_system_summaries(self) -> list[dict]:
+        self.calls.append("list_system_summaries")
+        return [{"UUID": SYS, "SystemName": "sysA"}]
 
     async def list_logical_partitions(self, uuid: str) -> list[dict]:
         self.calls.append(f"list_logical_partitions {uuid}")

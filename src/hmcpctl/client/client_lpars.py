@@ -21,6 +21,7 @@ from .client_resolution import (
     ambiguous_parent_details,
     require_absence_provable,
     require_operating_system,
+    summary_for,
 )
 
 _UOM_NS = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
@@ -71,8 +72,9 @@ class LparsMixin:
             ]
             if len(results) > 1:
                 ambiguity_candidate_ids(results, "LPAR", name)
-                system = await self.get_managed_system(system_uuid)
-                system_name = (system or {}).get("Resource", {}).get("SystemName")
+                system_name = summary_for(
+                    await self.list_system_summaries(), system_uuid
+                ).get("SystemName")
                 if not isinstance(system_name, str) or not system_name:
                     raise ValueError(
                         f"Cannot resolve ambiguous LPAR name {name!r}: cannot "
@@ -94,7 +96,7 @@ class LparsMixin:
 
         details = await ambiguous_parent_details(
             results,
-            await self.list_managed_systems(),
+            await self.list_system_summaries(),
             "LPAR",
             name,
             self.list_logical_partitions,

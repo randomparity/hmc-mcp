@@ -17,7 +17,10 @@ from hmcpctl.operations.lpar.workflow_contract import WorkflowStep
 def _hmc_with_system(configurable_memory_mib: int = 16384) -> AsyncMock:
     """An HMC double whose system reads return the dict documents production gets."""
     hmc = AsyncMock()
-    hmc.find_system_by_name.return_value = {"UUID": "system-uuid-1"}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": "system-uuid-1", "SystemName": name}
+        for name in ("system-1", "system-uuid-1")
+    ]
     hmc.get_managed_system.return_value = {
         "Resource": {
             "AssociatedSystemMemoryConfiguration": {
