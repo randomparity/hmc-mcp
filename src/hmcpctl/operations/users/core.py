@@ -11,6 +11,7 @@ from hmcpctl.client.core import HMCClient
 
 from ...documents import (
     AUTHENTICATION_TYPES,
+    DEFAULT_USER_DESCRIPTION,
     AuthenticationType,
     build_hmc_user_document,
 )
@@ -89,8 +90,11 @@ async def create_user(
     console_uuid: str,
     request: CreateUserRequest,
 ) -> dict[str, Any] | None:
-    """Create an HMC user profile."""
-    document = build_hmc_user_document(**asdict(request))
+    """Create an HMC user profile, describing it as the HMC does when unset."""
+    fields = asdict(request)
+    if fields["description"] is None:
+        fields["description"] = DEFAULT_USER_DESCRIPTION
+    document = build_hmc_user_document(**fields)
     return await hmc.create_hmc_user(console_uuid, document)
 
 

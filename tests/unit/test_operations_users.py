@@ -38,6 +38,41 @@ async def test_create_user_builds_document_from_typed_request() -> None:
     assert result == {"Resource": {"UserID": "alice"}}
 
 
+@pytest.mark.asyncio
+async def test_create_user_without_a_description_sends_the_hmcs_default() -> None:
+    """V10R3 refused a create without UserDescription: REST0344, "UserDescription
+    is missing or invalid" (#1414). mkhmcusr's default is "HMC User"."""
+    hmc = AsyncMock()
+    request = CreateUserRequest(
+        user_id="alice",
+        password="",
+        authentication_type="Kerberos",
+        remote_user_id="primary/instance@EXAMPLE.TEST",
+    )
+
+    await create_user(hmc, "console-1", request)
+
+    document = hmc.create_hmc_user.await_args.args[1]
+    assert (
+        '<UserDescription ksv="V1_17_0" kb="CUD" kxe="false">HMC User</UserDescription>'
+        in document
+    )
+
+
+@pytest.mark.asyncio
+async def test_modify_user_without_a_description_leaves_it_unchanged() -> None:
+    hmc = AsyncMock()
+    hmc.get_hmc_user.return_value = {
+        "Resource": {"UserID": "alice", "AuthenticationType": "local"}
+    }
+
+    await modify_user(
+        hmc, "console-1", "profile-1", ModifyUserPatch(verify_session_timeout=0)
+    )
+
+    assert "UserDescription" not in hmc.modify_hmc_user.await_args.args[2]
+
+
 _PROFILE = {
     "UUID": "profile-1",
     "Resource": {"UserID": "alice", "AuthenticationType": "local"},
@@ -137,6 +172,39 @@ async def test_modify_user_sends_a_supplied_authentication_type_over_the_profile
     document = hmc.modify_hmc_user.await_args.args[2]
     assert ">kerberos</AuthenticationType>" in document
     assert ">local</AuthenticationType>" not in document
+
+
+@pytest.mark.asyncio
+async def test_modify_user_sends_remote_user_id_before_the_task_role():
+    """A modify builds the create's document, so it carries the schema position
+    a V10R3 create needed for RemoteUserID (REST0001 when sent last, #1414)."""
+    hmc = AsyncMock()
+    hmc.get_hmc_user.return_value = _PROFILE
+
+    await modify_user(
+        hmc,
+        "console-1",
+        "profile-1",
+        ModifyUserPatch(
+            authentication_type="Kerberos",
+            associated_task_role="hmcviewer",
+            remote_user_id="primary/instance@EXAMPLE.TEST",
+            allow_ssh_remote_access=False,
+        ),
+    )
+
+    document = hmc.modify_hmc_user.await_args.args[2]
+    order = [
+        document.index(f"<{name} ")
+        for name in (
+            "AuthenticationType",
+            "UserProfilePassword",
+            "RemoteUserID",
+            "AssociatedTaskRole",
+            "AllowSSHRemoteAccess",
+        )
+    ]
+    assert order == sorted(order)
 
 
 @pytest.mark.asyncio

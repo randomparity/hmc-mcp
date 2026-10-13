@@ -1196,7 +1196,9 @@ async def _unmapped_server_adapters(call, inputs: LparResidueInputs) -> Finding 
     """Whether a VIOS server adapter toward the test partition has no mapping.
 
     A mapping names its adapter (`vhost0`), the listing its slot, so the two are
-    compared by count; joining them needs the REST shape #1250 captures.
+    compared by count. REST shows an unmapped adapter as a mapping holding only its
+    `ServerAdapter`, with no partition link, so the partition's mappings never include
+    it and a join would need the slot the projection does not carry (#1250).
     """
     if not (inputs.vmedia_ran or inputs.provisioned or inputs.storage_ran):
         return None

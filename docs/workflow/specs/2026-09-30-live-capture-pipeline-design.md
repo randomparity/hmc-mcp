@@ -124,6 +124,9 @@ Three subcommands, all offline:
 The first five come from the 2026-09-30 tokenized corpora. `v10r3-p9` also folds in
 the vocabulary derived from the #1161 and #879 mutation windows on the same HMC, the
 only source of job statuses.
+Amended by #1310 (2026-10-13): that folded file was lost, and `v10r3-p9` is now
+derived without `--fold`, from one corpus tokenized from a fresh sweep and the
+retained raw window, #1242 and #1250 captures (`tests/fixtures/live/README.md`).
 
 ### Gate — `scripts/check_live_vocabulary.py`, `just live-vocabulary`
 

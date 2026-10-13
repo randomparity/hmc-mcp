@@ -557,10 +557,10 @@ evidence covers the ownership-guarded path, as bare-cec's does.
   a repeated stop (already in state) and a replayed request id, and the delete.
 - **Partition P** (`…-p`). Only when exactly one VIOS lists the configured group
   with 1 GiB free and `LIVE_TEST_PROVISION_VLAN_ID` has a virtual network. It
-  creates the 1 GiB volume `lppwr<8 hex>`, provisions P on it (virtual Ethernet on
-  the VLAN, vSCSI mapping, PowerOn), and adds a dedicated slot only when the
-  dedicated arm is configured for this system and a slot is unowned and listed by
-  no profile. It then proves the decommission dry run inventories the exact vSCSI
+  first sends a dry-run provision carrying a dedicated slot, which must be refused
+  before any HMC read (`dedicated-slot-refused`; #1390). It then creates the 1 GiB
+  volume `lppwr<8 hex>` and provisions P on it (virtual Ethernet on the VLAN, vSCSI
+  mapping, PowerOn) with no PCIe argument. It then proves the decommission dry run inventories the exact vSCSI
   mapping and client adapters without changing them. The real decommission removes
   its own mapping before deleting P; the arm proves P and its mapping absent, the
   backing volume retained, and foreign mappings and other volumes unchanged. Only
@@ -622,7 +622,10 @@ Live on V10R3 (2026-10-07, POWER9) seven of its eight observations passed:
 `lpar.power`, `lpar.delete` and `lpar.decommission`. `provision.lpar` with the
 dedicated-slot argument failed and stays failed: the slot is written into the new
 partition's profile, but the provision's PowerOn activates the current configuration,
-so the running partition does not own the slot.
+so the running partition does not own the slot. Provision now refuses a dedicated
+slot before any HMC call (#1390), and the arm expects that refusal instead of sending
+the slot; a dedicated slot is assigned through the bare-CEC path
+([recipe](recipes/bare-cec-lpar.md)). Profile-first provisioning is #1225.
 
 `lpar.power_on` passed on a re-run after #1392. The first run's current-configuration
 activation ended `FAILED_TO_START` with "Parameter 'OperationType' is not allowed for
@@ -790,7 +793,9 @@ The vmedia classes key on the configured test partition (`LIVE_TEST_LPAR_NAME`
 as the run recorded it), not on a marker. A medium is the run's only when its
 artifacts name it (`vmedia_blank_name`, `vmedia_iso_name`); the configured ISO
 name alone never is. An unmapped server adapter toward that partition is
-reported whoever left it.
+reported whoever left it. REST shows such an adapter only as a mapping holding just its
+server adapter, with no partition link, so `storage list-mappings --lpar` never lists
+it; the `lshwres` listing is the witness (#1250).
 
 ## If something goes wrong mid-run
 
