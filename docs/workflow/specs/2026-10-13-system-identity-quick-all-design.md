@@ -32,8 +32,15 @@ system's `UUID`, `SystemName` and `State`. Three identity reads still use the st
    or `SystemName`, is still refused as incomplete inventory metadata.
 3. The scoped ambiguity path takes the system's `SystemName` from its `quick/All` summary
    (`summary_for`, extracted from `require_operating_system`).
-4. `find_system_by_name`, `get_managed_system`, `list_managed_systems` and
-   `system_name_from_uuid` are unchanged here; their callers are later parts of #1501.
+4. Part 2: `system_name_from_uuid` takes the `SystemName` of the `quick/All` summary whose `UUID`
+   matches case-insensitively (`summary_for`), instead of reading `ManagedSystem/{uuid}`. A UUID
+   `quick/All` does not list, or a blank or non-string name, returns `None`, as an unusable
+   entry did. Its callers keep their own handling of `None`: `resolve_system_name` raises
+   `ResourceNotFoundError`, the SSH selector raises `ValueError`, and the ownership guard falls
+   back to the SSH lookup. An unknown UUID used to answer 404 (`HMCError`); it now reads as
+   `None` through those same branches.
+5. `find_system_by_name`, `get_managed_system` and `list_managed_systems` are unchanged; their
+   callers are later parts of #1501.
 
 ### Failure model
 
@@ -57,3 +64,5 @@ system's `UUID`, `SystemName` and `State`. Three identity reads still use the st
    names each candidate's parent; a candidate left unplaced names the two `no connection`
    systems.
 3. A scoped ambiguous name names its system from `quick/All` without `ManagedSystem/{uuid}`.
+4. A UUID in the capture, in any letter case, names its system from `quick/All` for an operating
+   and a `no connection` system, and the SSH selector does so without opening SSH.
