@@ -120,6 +120,33 @@ def test_an_enum_list_can_bind_an_element(tmp_path: Path) -> None:
     assert evidence.bindings["Status"] == "JobStatus.Enum"
 
 
+def test_a_stated_binding_overrides_an_inferred_one(tmp_path: Path) -> None:
+    """A vocabulary that inferred `Status` as a VNIC status does not loosen job statuses (#1498).
+
+    `Status` is shared by jobs and VNIC backing devices; the exporter binds it by local
+    name, so a capture whose only statuses are LINK_DOWN and OPERATIONAL infers the VNIC
+    enum. The documented job-status list states the element's binding and wins.
+    """
+    directory = tmp_path / guard.VOCABULARY_DIR
+    directory.mkdir(parents=True)
+    inferred = json.loads(json.dumps(VOCABULARY))
+    inferred["rest"]["values"] = {"Status": ["LINK_DOWN", "OPERATIONAL"]}
+    inferred["rest"]["element_enums"] = {"Status": "BackingDeviceStatus.Enum"}
+    (directory / "vx-p10.json").write_text(json.dumps(inferred))
+    vnic = {
+        "types": {"BackingDeviceStatus.Enum": ["LINK_DOWN", "OPERATIONAL", "UNKNOWN"]}
+    }
+    (directory / "enums-vx-p10.json").write_text(json.dumps(vnic))
+    jobs = {
+        "types": {"JobStatus.Enum": ["COMPLETED_OK"]},
+        "elements": {"Status": "JobStatus.Enum"},
+    }
+    (directory / "enums-documented-jobs.json").write_text(json.dumps(jobs))
+    evidence = guard.load_evidence(tmp_path)
+    assert evidence.allowed["Status"] == {"COMPLETED_OK", "LINK_DOWN", "OPERATIONAL"}
+    assert evidence.bindings["Status"] == "JobStatus.Enum"
+
+
 def test_documented_job_statuses_mark_what_was_captured() -> None:
     """Each documented status says whether a committed vocabulary captured it."""
     directory = Path(__file__).parents[2] / guard.VOCABULARY_DIR
