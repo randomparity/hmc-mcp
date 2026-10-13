@@ -17,7 +17,9 @@ from types import SimpleNamespace
 from typing import Any
 
 import asyncssh
+import httpx
 import pytest
+from conftest import live_response, make_config
 
 sys.path.insert(0, str(Path(__file__).parents[2] / "scripts"))
 import live_capture_sweep as sweep
@@ -458,3 +460,105 @@ def test_sweep_raw_skips_unknown_placeholders(
     assert all("{" not in str(item) for item in sent)
     skips = (tmp_path / "tools.capture.jsonl").read_text()
     assert "lpar-quick-all" in skips
+
+
+# --- name resolution (#1499) ------------------------------------------------------
+
+#: A ``No Connection`` system in the captured quick/All answer.
+DISCONNECTED_NAME = "sys-R8"
+DISCONNECTED_UUID = "00000219-abcd-4ef0-8abc-000000000219"
+QUICK_ALL = "rest-ms-quick-all-no-connection-v11r2"
+
+
+def _stalled(mock_hmc: Any) -> tuple[Any, Any]:
+    """The two reads that timed out on a No Connection system in #1290."""
+    timeout = httpx.ReadTimeout("read timed out")
+    search = mock_hmc.get(
+        f"/rest/api/uom/ManagedSystem/search/(SystemName=={DISCONNECTED_NAME})"
+    ).mock(side_effect=timeout)
+    read = mock_hmc.get(f"/rest/api/uom/ManagedSystem/{DISCONNECTED_UUID}").mock(
+        side_effect=timeout
+    )
+    return search, read
+
+
+def _resolve(tmp_path: Path, system: str) -> tuple[Any, list[dict[str, Any]]]:
+    async def run() -> Any:
+        async with HMCClient(make_config()) as hmc:
+            return await sweep.resolve_names(hmc, sweep.Context(system=system), log)
+
+    path = tmp_path / "tools.capture.jsonl"
+    log = sweep.ToolLog(path)
+    try:
+        names = asyncio.run(run())
+    finally:
+        log.close()
+    return names, [json.loads(line) for line in path.read_text().splitlines()]
+
+
+@pytest.mark.parametrize("system", [DISCONNECTED_NAME, DISCONNECTED_UUID])
+def test_system_resolves_from_quick_all_without_the_stalling_reads(
+    mock_hmc: Any, tmp_path: Path, system: str
+) -> None:
+    search, read = _stalled(mock_hmc)
+    path, response = live_response(QUICK_ALL)
+    mock_hmc.get(path).mock(return_value=response)
+
+    names, records = _resolve(tmp_path, system)
+
+    assert (names.sys_uuid, names.system_name) == (DISCONNECTED_UUID, DISCONNECTED_NAME)
+    assert not search.called and not read.called
+    assert records == []
+
+
+@pytest.mark.parametrize(
+    ("system", "expected"),
+    [
+        (DISCONNECTED_NAME, (None, DISCONNECTED_NAME)),
+        (DISCONNECTED_UUID, (DISCONNECTED_UUID, None)),
+    ],
+)
+def test_a_timed_out_system_read_is_recorded_and_the_raw_phase_runs(
+    mock_hmc: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    system: str,
+    expected: tuple[str | None, str | None],
+) -> None:
+    _stalled(mock_hmc)
+    path, _ = live_response(QUICK_ALL)
+    mock_hmc.get(path).mock(side_effect=httpx.ReadTimeout("read timed out"))
+
+    names, records = _resolve(tmp_path, system)
+
+    assert (names.sys_uuid, names.system_name) == expected
+    assert [(r["kind"], r["step"], r["system"]) for r in records] == [
+        ("resolve", "system", system)
+    ]
+    assert "timed out" in records[0]["exception"]
+
+    sent: list[str] = []
+
+    async def run(config: Any, command: str) -> str:
+        sent.append(command)
+        return ""
+
+    monkeypatch.setattr("hmcpctl.ssh.transport.run_hmc_command", run)
+    log = sweep.ToolLog(tmp_path / "raw.capture.jsonl")
+    hmc = SimpleNamespace(config=object(), _request=lambda *a, **k: asyncio.sleep(0))
+    try:
+        asyncio.run(sweep.sweep_raw(hmc, names, log, lambda _: None))
+    finally:
+        log.close()
+    assert "lshmc -V" in sent
+    assert ("lssyscfg -r sys -m sys-R8" in sent) is (names.system_name is not None)
+
+
+def test_a_system_quick_all_does_not_list_is_refused(
+    mock_hmc: Any, tmp_path: Path
+) -> None:
+    path, response = live_response(QUICK_ALL)
+    mock_hmc.get(path).mock(return_value=response)
+
+    with pytest.raises(ValueError, match="no-such-system"):
+        _resolve(tmp_path, "no-such-system")

@@ -400,8 +400,8 @@ async def sweep_tools(
 class Names:
     """Values a raw probe template may name, by placeholder."""
 
-    sys_uuid: str
-    system_name: str
+    sys_uuid: str | None = None
+    system_name: str | None = None
     lpar_uuid: str | None = None
     lpar_name: str | None = None
     vios_uuid: str | None = None
@@ -529,17 +529,43 @@ RAW_COMMANDS: tuple[tuple[str, str], ...] = (
 )
 
 
-async def resolve_names(hmc: HMCClient, context: Context) -> Names:
-    from hmcpctl.resource_identity import (
-        resolve_lpar_uuid,
-        resolve_system_uuid,
-        resolve_vios_uuid,
-    )
+async def resolve_system(
+    hmc: HMCClient, system: str, log: ToolLog
+) -> tuple[str | None, str | None]:
+    """(UUID, name) of *system* from ``ManagedSystem/quick/All`` (#1499).
+
+    quick/All answers while a system is ``No Connection``, where the ``SystemName``
+    search and the ``ManagedSystem/{uuid}`` read stall. A failed read is recorded and
+    the half the operator supplied is kept, so the raw phase still runs.
+    """
+    from hmcpctl.errors import HMCError
+    from hmcpctl.resource_identity import is_uuid
+
+    given = (system, None) if is_uuid(system) else (None, system)
+    try:
+        by_uuid = await hmc._quick_all_system_names()
+    except HMCError as exc:
+        log.write(
+            {
+                "kind": "resolve",
+                "step": "system",
+                "system": system,
+                "exception": str(exc),
+            }
+        )
+        return given
+    for uuid, name in by_uuid.items():
+        if system.lower() == uuid or system == name:
+            return uuid, name
+    raise ValueError(f"no managed system {system!r} in ManagedSystem/quick/All")
+
+
+async def resolve_names(hmc: HMCClient, context: Context, log: ToolLog) -> Names:
+    from hmcpctl.resource_identity import resolve_lpar_uuid, resolve_vios_uuid
 
     if context.system is None:
         raise ValueError("no managed system was discovered; pass --system")
-    sys_uuid = await resolve_system_uuid(hmc, context.system)
-    system = await hmc.get_uom("ManagedSystem", sys_uuid) or {}
+    sys_uuid, system_name = await resolve_system(hmc, context.system, log)
     lpar_uuid = lpar_name = vios_uuid = vios_name = None
     if context.lpar:
         lpar_uuid = await resolve_lpar_uuid(
@@ -555,7 +581,7 @@ async def resolve_names(hmc: HMCClient, context: Context) -> Names:
         vios_name = _leaf((vios.get("Resource") or vios).get("PartitionName")) or None
     return Names(
         sys_uuid=sys_uuid,
-        system_name=_leaf((system.get("Resource") or system).get("SystemName")),
+        system_name=system_name,
         lpar_uuid=lpar_uuid,
         lpar_name=lpar_name,
         vios_uuid=vios_uuid,
@@ -611,7 +637,7 @@ async def sweep(out: Path, context: Context) -> str:
                 calls, skips = await sweep_tools(client, context, log, cap.step)
             async with client_from_env() as hmc:
                 sent = await sweep_raw(
-                    hmc, await resolve_names(hmc, context), log, cap.step
+                    hmc, await resolve_names(hmc, context, log), log, cap.step
                 )
     finally:
         log.close()
