@@ -95,6 +95,9 @@ LPAR_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </entry>
 """
 
+# The read-back filters the target system's feed by the created name.
+CREATED_LPAR_ENTRY = LPAR_ENTRY.replace("lpar1", "new-lpar")
+
 SYSTEM_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <entry xmlns="http://www.w3.org/2005/Atom">
   <id>urn:uuid:{SYSTEM_UUID}</id>
@@ -102,6 +105,7 @@ SYSTEM_ENTRY = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <content type="application/vnd.ibm.powervm.uom+xml">
     <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
       <SystemName>sys1</SystemName>
+      <State>operating</State>
     </ManagedSystem>
   </content>
 </entry>
@@ -167,22 +171,22 @@ def _mock_create_406(
     readback: httpx.Response | None = None,
     rejection: httpx.Response | None = None,
 ) -> None:
-    """REST create is refused (406 by default); the name search is empty before, found after."""
-    search_responses = iter(
+    """REST create is refused (406 by default); the scoped name read is empty before, found after."""
+    lookup_responses = iter(
         [
             httpx.Response(200, text=EMPTY_FEED),
-            readback or httpx.Response(200, text=LPAR_ENTRY),
+            readback or httpx.Response(200, text=CREATED_LPAR_ENTRY),
         ]
     )
 
-    def _search(request):
+    def _lookup(request):
         if order is not None:
-            order.append("search")
-        return next(search_responses)
+            order.append("lookup")
+        return next(lookup_responses)
 
-    mock_hmc.get(
-        "/rest/api/uom/LogicalPartition/search/(PartitionName==new-lpar)"
-    ).mock(side_effect=_search)
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        side_effect=_lookup
+    )
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
@@ -244,7 +248,7 @@ def test_create_lpar_http_406_falls_back_to_cli(monkeypatch, mock_hmc):
     assert resources.desired_memory == 4096
     assert resources.desired_vcpus == 1
     assert apply.await_args.args[1:] == ("sys1", "new-lpar")
-    assert order == ["search", "mksyscfg", "apply", "search"]
+    assert order == ["lookup", "mksyscfg", "apply", "lookup"]
     assert result.steps[1] == WorkflowStep("apply_profile", "ok", "default_profile")
     assert result.workflow_completed is True
     assert result.warnings == ()
@@ -271,7 +275,7 @@ def test_create_lpar_rest0001_schema_rejection_falls_back_to_cli(
     create_via_cli.assert_awaited_once()
     apply.assert_awaited_once()
     assert result.lpar.get("UUID") == LPAR_UUID
-    assert order == ["search", "mksyscfg", "search"]
+    assert order == ["lookup", "mksyscfg", "lookup"]
     assert any(
         "falling back to mksyscfg" in record.getMessage()
         and "must appear on element 'PartitionProcessorConfiguration'"
@@ -321,9 +325,9 @@ def test_create_lpar_rest_success_reports_skipped_apply(
     An explicit ``apply_partition_profile=False`` requested nothing, so it reports nothing.
     """
     _hmc_env(monkeypatch)
-    mock_hmc.get(
-        "/rest/api/uom/LogicalPartition/search/(PartitionName==new-lpar)"
-    ).mock(return_value=httpx.Response(200, text=EMPTY_FEED))
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(200, text=EMPTY_FEED)
+    )
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
@@ -887,9 +891,9 @@ def test_cli_create_refuses_dedicated_sharing_mode_for_shared(mode):
 
 def _rest_create_body(mock_hmc, **kwargs) -> ET.Element:
     """Run hmc_create_lpar down a successful REST create and parse the PUT body."""
-    mock_hmc.get(
-        "/rest/api/uom/LogicalPartition/search/(PartitionName==new-lpar)"
-    ).mock(return_value=httpx.Response(200, text=EMPTY_FEED))
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(200, text=EMPTY_FEED)
+    )
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
@@ -977,11 +981,13 @@ def test_create_with_no_resource_values_goes_straight_to_mksyscfg(
     )
 
     assert not any(
-        call.request.url.path.endswith("/LogicalPartition") for call in mock_hmc.calls
+        call.request.method == "PUT"
+        and call.request.url.path.endswith("/LogicalPartition")
+        for call in mock_hmc.calls
     )
     create_via_cli.assert_awaited_once()
     assert create_via_cli.await_args.kwargs["resources"] == LparResources()
-    assert order == ["search", "mksyscfg", "search"]
+    assert order == ["lookup", "mksyscfg", "lookup"]
     assert result.lpar.get("UUID") == LPAR_UUID
 
 

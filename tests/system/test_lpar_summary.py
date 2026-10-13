@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
-from conftest import captured_lpar_entry
+from conftest import captured_lpar_entry, mock_system_summaries
 
 from hmcpctl.operations.inventory.composite import _lpar_summary
 from hmcpctl.server_tools.inventory.composite import hmc_lpar_summary
@@ -328,6 +328,9 @@ def test_lpar_summary_name_not_found_raises(monkeypatch, mock_hmc):
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==ghost)").mock(
         return_value=httpx.Response(200, text=EMPTY_FEED)
+    )
+    mock_system_summaries(
+        mock_hmc, ("22222222-2222-4222-8222-222222222222", "sys-E2", "operating")
     )
 
     with pytest.raises(ValueError, match="ghost"):

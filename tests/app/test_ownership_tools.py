@@ -55,8 +55,8 @@ def _setup_mock(router):
         return_value=httpx.Response(200, text=LOGON_XML)
     )
     router.delete("/rest/api/web/Logon").mock(return_value=httpx.Response(204))
-    # Name-uniqueness check — no existing LPAR
-    router.get("/rest/api/uom/LogicalPartition/search/(PartitionName==test-lpar)").mock(
+    # Name-uniqueness check on the target system — no existing LPAR
+    router.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(200, text=EMPTY_FEED)
     )
     # System UUID lookup (resolve_system_uuid called with a UUID → direct GET)
@@ -69,6 +69,7 @@ def _setup_mock(router):
   <content type="application/vnd.ibm.powervm.uom+xml">
     <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
       <SystemName>server1</SystemName>
+      <State>operating</State>
     </ManagedSystem>
   </content>
 </entry>""",

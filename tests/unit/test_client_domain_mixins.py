@@ -45,6 +45,7 @@ class LparsHarness(LparsMixin):
         self.get_uom = AsyncMock(return_value=None)
         self.search_uom = AsyncMock(return_value=[])
         self.list_managed_systems = AsyncMock(return_value=[])
+        self.list_system_summaries = AsyncMock(return_value=[])
         self.get_managed_system = AsyncMock(
             return_value=_entry("sys-a", "system-a", "ManagedSystem")
         )
@@ -472,6 +473,7 @@ async def test_storage_mixin_reports_a_possible_side_effect_after_a_5xx():
 @pytest.mark.asyncio
 async def test_systems_mixin_routes_inventory_and_power_jobs():
     client = SystemsHarness()
+    client.list_system_summaries = AsyncMock(return_value=[])
 
     assert await client.list_managed_systems() == []
     assert await client.get_managed_system("system-1") is None

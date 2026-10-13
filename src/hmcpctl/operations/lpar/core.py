@@ -443,7 +443,9 @@ async def _create_via_cli(
         else None
     )
     try:
-        created_lpar = await hmc.find_partition_by_name(creation.name)
+        created_lpar = await hmc.find_partition_by_name(
+            creation.name, system_uuid=system_uuid
+        )
     except HMCError as exc:
         return system_name, apply_step, None, exc
     return system_name, apply_step, created_lpar, None
@@ -482,14 +484,16 @@ async def create_and_stamp_lpar(
         validate_caller_token(creation.caller_token)
     validate_partition_type(creation.partition_type)
     validate_keylock(creation.keylock)
-    existing = await hmc.find_partition_by_name(creation.name)
+    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
+    # Scoped: the HMC-wide search misses partitions on a system it cannot
+    # read (#1309), and the scoped feed refuses a non-operating system.
+    existing = await hmc.find_partition_by_name(creation.name, system_uuid=system_uuid)
     if existing:
         raise ValueError(
             f"An LPAR named {creation.name!r} already exists "
             f"(UUID {existing.get('UUID')!r}). Choose a different name "
             "or delete the existing partition first."
         )
-    system_uuid = await resolve_system_uuid(hmc, system_name_or_uuid)
     await require_memory_within_system(hmc, system_uuid, creation.resources)
     system_name: str | None = None
     apply_step: WorkflowStep | None = None

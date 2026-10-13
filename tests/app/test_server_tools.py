@@ -27,6 +27,7 @@ from conftest import (
     RUNNING_JOB_ID,
     live_fixture,
     live_response,
+    mock_system_summaries,
 )
 
 from hmcpctl.documents import LparResources
@@ -281,11 +282,12 @@ def test_lpars_by_name(monkeypatch, mock_hmc):
 
 
 def test_lpars_name_not_found_returns_none(monkeypatch, mock_hmc):
-    """hmc_list_lpars returns None when a partition name matches nothing."""
+    """hmc_get_lpar returns None when a name matches nothing and every system operates."""
     _hmc_env(monkeypatch)
     mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==ghost)").mock(
         return_value=httpx.Response(200, text=EMPTY_FEED)
     )
+    mock_system_summaries(mock_hmc, (SYSTEM_UUID, "sys-E2", "operating"))
     assert hmc_get_lpar("ghost") is None
 
 
@@ -448,9 +450,9 @@ def test_dump_restart_lpar_tool_refuses_without_opt_in(monkeypatch, mock_hmc):
 def test_create_lpar_builds_xml(monkeypatch, mock_hmc):
     """hmc_create_lpar maps its arguments into the LogicalPartition document."""
     _hmc_env(monkeypatch)
-    # Mock name-collision check (no existing LPAR with this name).
-    mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==newlpar)").mock(
-        return_value=httpx.Response(200, text=EMPTY_FEED)
+    # The name-collision check reads the target system: no LPAR with this name.
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(200, text=LPAR_FEED.format(name="other-lpar"))
     )
     route = mock_hmc.put(
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
@@ -510,9 +512,9 @@ def test_create_lpar_builds_xml(monkeypatch, mock_hmc):
 def test_create_lpar_dedicated_uses_whole_cpus(monkeypatch, mock_hmc):
     """dedicated=True emits DedicatedProcessorConfiguration with int CPUs."""
     _hmc_env(monkeypatch)
-    # Mock name-collision check (no existing LPAR with this name).
-    mock_hmc.get("/rest/api/uom/LogicalPartition/search/(PartitionName==ded)").mock(
-        return_value=httpx.Response(200, text=EMPTY_FEED)
+    # The name-collision check reads the target system: no LPAR with this name.
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
+        return_value=httpx.Response(200, text=LPAR_FEED.format(name="other-lpar"))
     )
     route = mock_hmc.put(
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"

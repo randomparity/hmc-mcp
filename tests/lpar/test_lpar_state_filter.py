@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
-from conftest import live_fixture, live_response, make_config
+from conftest import live_fixture, live_response, make_config, mock_system_summaries
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.operations.lpar.core import list_lpars
@@ -26,14 +26,6 @@ _FEED = (
     f"{_ENTRY.split('?>', 1)[-1]}{_RUNNING_ENTRY.split('?>', 1)[-1]}</feed>"
 )
 _SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
-_SYSTEMS = (
-    '<feed xmlns="http://www.w3.org/2005/Atom"><entry>'
-    f"<id>urn:uuid:{_SYSTEM_UUID}</id>"
-    '<content type="application/vnd.ibm.powervm.uom+xml">'
-    '<ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">'
-    "<SystemName>sys-E2</SystemName><State>operating</State>"
-    "</ManagedSystem></content></entry></feed>"
-)
 
 
 @pytest.mark.asyncio
@@ -46,9 +38,7 @@ async def test_fleet_wide_state_filter_reads_the_feed_not_the_search(
     search = mock_hmc.get(url__regex=r"/rest/api/uom/LogicalPartition/search/.*").mock(
         return_value=refused
     )
-    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
-        return_value=httpx.Response(200, text=_SYSTEMS)
-    )
+    mock_system_summaries(mock_hmc, (_SYSTEM_UUID, "sys-E2", "operating"))
     feed = mock_hmc.get(
         f"/rest/api/uom/ManagedSystem/{_SYSTEM_UUID}/LogicalPartition"
     ).mock(return_value=httpx.Response(200, text=_FEED))

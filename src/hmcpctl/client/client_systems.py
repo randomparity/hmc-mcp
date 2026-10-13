@@ -21,6 +21,7 @@ from .client_parse import _parse_feed
 from .client_resolution import (
     ambiguity_candidate_ids,
     ambiguous_parent_details,
+    require_absence_provable,
     require_operating_system,
 )
 
@@ -66,20 +67,19 @@ class SystemsMixin:
                 ) from exc
             raise
 
-    async def _quick_all_system_names(self: SystemsClient) -> dict[str, str]:
-        """UUID -> SystemName map from GET .../ManagedSystem/quick/All.
+    async def list_system_summaries(self: SystemsClient) -> list[Any]:
+        """Every managed system's summary from GET .../ManagedSystem/quick/All.
 
         Not documented in this repo's vendored HMC REST API reference (only
         the per-UUID quick/{Property} form is); evidenced by IBM's public
         project-pim repository (ADR 0138), and captured on V10R3 as a JSON
-        array of objects keyed ``UUID`` (lower case) and ``SystemName``; the
-        map is keyed by the lower-cased UUID. No typed Accept header, matching
+        array of objects keyed ``UUID`` (lower case), ``SystemName``,
+        ``State`` and ``StateDetail``. No typed Accept header, matching
         get_quick_property's precedent (core.py) that a uom+xml header 406s
         on quick/ endpoints, and project-pim's own quick/All calls, which
-        send none either. Used only as a fallback when the direct/unfiltered
-        feed trips the null-property serialization bug, so an unexpected
-        shape here is treated defensively: entries missing UUID or
-        SystemName are skipped rather than raised.
+        send none either. It answers while a system is ``No Connection``,
+        where the full ManagedSystem feed times out (#1309). Items are
+        returned unvalidated; each caller decides what an unreadable one means.
         """
         resp = await self._request(
             "GET",
@@ -111,9 +111,18 @@ class SystemsMixin:
                 "GET /rest/api/uom/ManagedSystem/quick/All returned a JSON "
                 f"{type(summaries).__name__}; expected an array"
             )
+        return summaries
+
+    async def _quick_all_system_names(self: SystemsClient) -> dict[str, str]:
+        """UUID -> SystemName map from quick/All, keyed by the lower-cased UUID.
+
+        Used only as a fallback when the direct/unfiltered feed trips the
+        null-property serialization bug, so entries missing UUID or
+        SystemName are skipped rather than raised.
+        """
         return {
             entry["UUID"].lower(): entry["SystemName"]
-            for entry in summaries
+            for entry in await self.list_system_summaries()
             if isinstance(entry, dict)
             and isinstance(entry.get("UUID"), str)
             and "SystemName" in entry
@@ -294,8 +303,11 @@ class SystemsMixin:
             return results[0] if results else None
 
         results = await self.search_uom("VirtualIOServer", "PartitionName", name)
-        if len(results) <= 1:
-            return results[0] if results else None
+        if not results:
+            await require_absence_provable(self.list_system_summaries, "VIOS", name)
+            return None
+        if len(results) == 1:
+            return results[0]
 
         details = await ambiguous_parent_details(
             results,

@@ -53,6 +53,11 @@ SYSTEMS = b"""<?xml version="1.0"?>
   </entry>
 </feed>"""
 
+SYSTEM_SUMMARIES = (
+    b'[{"UUID":"33333333-3333-4333-8333-333333333333","SystemName":"server1",'
+    b'"State":"operating","StateDetail":""}]'
+)
+
 LPARS = b"""<?xml version="1.0"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
@@ -138,6 +143,8 @@ class _MockHMC(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path == "/rest/api/uom/ManagedSystem":
             self._send(SYSTEMS)
+        elif path == "/rest/api/uom/ManagedSystem/quick/All":
+            self._send(SYSTEM_SUMMARIES)
         elif (
             path
             == "/rest/api/uom/ManagedSystem/33333333-3333-4333-8333-333333333333/LogicalPartition"

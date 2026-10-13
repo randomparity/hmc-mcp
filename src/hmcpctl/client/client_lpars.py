@@ -19,6 +19,7 @@ from .client_parse import _parse_feed
 from .client_resolution import (
     ambiguity_candidate_ids,
     ambiguous_parent_details,
+    require_absence_provable,
     require_operating_system,
 )
 
@@ -85,8 +86,11 @@ class LparsMixin:
             return results[0] if results else None
 
         results = await self.search_uom("LogicalPartition", "PartitionName", name)
-        if len(results) <= 1:
-            return results[0] if results else None
+        if not results:
+            await require_absence_provable(self.list_system_summaries, "LPAR", name)
+            return None
+        if len(results) == 1:
+            return results[0]
 
         details = await ambiguous_parent_details(
             results,

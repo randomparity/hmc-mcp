@@ -55,8 +55,9 @@ def hmc_create_lpar(
     network and boot settings still need to be configured before it can boot an
     OS. This creates a real partition — confirm the target before calling.
 
-    Raises ValueError if a partition with the given name already exists on any
-    managed system — names must be unique across the HMC.
+    Raises ValueError if a partition with the given name already exists on the
+    target managed system, and HMCError, before creating anything, when that
+    system's partitions cannot be read (for example, it has no connection).
 
     Returns a dict with ``lpar``, ``ownership_stamped``, and ``warnings`` keys.
 
