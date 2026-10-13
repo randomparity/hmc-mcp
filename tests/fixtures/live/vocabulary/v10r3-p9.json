@@ -1,7 +1,7 @@
 {
  "firmware": "v10r3-p9",
  "sources": [
-  "2026-10-13 read-only sweep, with the retained raw 2026-09-29/30 #1161 and #879 window captures and the 2026-10-12 #1242 PCM metric-feed captures (#1310): HMC V10R3 M1060 managing a POWER9 8375-42A"
+  "2026-10-13 read-only sweep, with the retained raw 2026-09-29/30 #1161 and #879 window captures the 2026-10-12 #1242 PCM metric-feed captures and the 2026-10-13 #1250 vSCSI server-adapter window reads (#1310): HMC V10R3 M1060 managing a POWER9 8375-42A"
  ],
  "rest": {
   "endpoints": [
@@ -428,6 +428,13 @@
    {
     "method": "GET",
     "path": "/rest/api/uom/VirtualIOServer/{uuid}",
+    "accept": null,
+    "status": 200,
+    "content_type": "application/atom+xml"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/VirtualIOServer/{uuid}",
     "accept": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer",
     "status": 200,
     "content_type": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer"
@@ -452,6 +459,13 @@
     "accept": "*/*",
     "status": 200,
     "content_type": "application/json"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/VirtualIOServer/{uuid}?group=ViosSCSIMapping",
+    "accept": null,
+    "status": 200,
+    "content_type": "application/atom+xml"
    },
    {
     "method": "GET",
@@ -3874,6 +3888,42 @@
     "error_streams": []
    },
    {
+    "command": "lshwres -r virtualio --rsubtype scsi -m {} --level lpar",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
+    "command": "lshwres -r virtualio --rsubtype scsi -m {} --level lpar --filter lpar_ids={} -F slot_num,remote_lpar_name,remote_slot_num",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
+    "command": "lshwres -r virtualio --rsubtype slot -m {} --level lpar --filter lpar_ids={}",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
+    "command": "lshwres -r virtualio --rsubtype slot -m {} --level slot --filter lpar_ids={}",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
     "command": "lshwres -r virtualio --rsubtype vnic --level lpar -m {}",
     "exit_status": [
      0
@@ -4034,6 +4084,24 @@
     "error_streams": []
    },
    {
+    "command": "lssyscfg -r lpar -m {} --filter lpar_ids={} -F name,state,curr_profile",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
+    "command": "lssyscfg -r lpar -m {} --filter lpar_ids={} -F name,state,rmc_state,sync_curr_profile,curr_profile,default_profile",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
     "command": "lssyscfg -r lpar -m {} --filter lpar_names={} -F description",
     "exit_status": [
      0
@@ -4074,7 +4142,25 @@
     ]
    },
    {
+    "command": "lssyscfg -r lpar -m {} -F name,lpar_id,lpar_env,uuid",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
     "command": "lssyscfg -r prof -m {}",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
+    "command": "lssyscfg -r prof -m {} --filter lpar_ids={} -F name,virtual_scsi_adapters,max_virtual_slots",
     "exit_status": [
      0
     ],
@@ -4165,6 +4251,15 @@
     "outputs": [
      "No results were found."
     ],
+    "error_streams": []
+   },
+   {
+    "command": "viosvrcmd -m {} --id {} -c lsmap -all",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
     "error_streams": []
    }
   ],
@@ -4692,6 +4787,69 @@
    "lshwres -r virtualio --rsubtype eth --level lpar :: vswitch": [
     "<text>"
    ],
+   "lshwres -r virtualio --rsubtype scsi --level lpar :: adapter_type": [
+    "client",
+    "server"
+   ],
+   "lshwres -r virtualio --rsubtype scsi --level lpar :: is_required": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype scsi --level lpar :: lpar_id": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype scsi --level lpar :: lpar_name": [
+    "<text>"
+   ],
+   "lshwres -r virtualio --rsubtype scsi --level lpar :: remote_lpar_id": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype scsi --level lpar :: remote_lpar_name": [
+    "<text>"
+   ],
+   "lshwres -r virtualio --rsubtype scsi --level lpar :: remote_slot_num": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype scsi --level lpar :: slot_num": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype scsi --level lpar :: state": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype slot --level lpar :: curr_max_virtual_slots": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype slot --level lpar :: lpar_id": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype slot --level lpar :: lpar_name": [
+    "<text>"
+   ],
+   "lshwres -r virtualio --rsubtype slot --level lpar :: next_avail_virtual_slot": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype slot --level lpar :: pend_max_virtual_slots": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype slot --level slot :: config": [
+    "eth",
+    "scsi",
+    "serial"
+   ],
+   "lshwres -r virtualio --rsubtype slot --level slot :: drc_name": [
+    "<text>"
+   ],
+   "lshwres -r virtualio --rsubtype slot --level slot :: lpar_id": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype slot --level slot :: lpar_name": [
+    "<text>"
+   ],
+   "lshwres -r virtualio --rsubtype slot --level slot :: slot_num": [
+    "<int>"
+   ],
+   "lshwres -r virtualio --rsubtype slot --level slot :: state": [
+    "<int>"
+   ],
    "lsmemopt -r lpar -o calcscore :: curr_lpar_score": [
     "<int>"
    ],
@@ -4857,6 +5015,9 @@
    ],
    "lssyscfg -r lpar :: time_ref": [
     "<int>"
+   ],
+   "lssyscfg -r lpar :: uuid": [
+    "<uuid-upper>"
    ],
    "lssyscfg -r lpar :: virtual_serial_num": [
     "<text>"

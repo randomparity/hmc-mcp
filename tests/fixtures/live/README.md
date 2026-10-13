@@ -37,6 +37,13 @@ name's suffix and these were not synthetic, and its `MACAddressPrefix` values an
 on an HMC at V10R3 SP1060 managing a POWER8 8247-22L: the reader's `lsrefcode` command against a
 synthetic partition name the HMC does not know.
 
+`rest-vios-scsi-mapping-unmapped-adapter` and `cli-vios-scsi-unmapped-adapter` (`capture`
+prefix `2026-10-13-q1250/`) come from an operator-authorized window for #1250 on the V10R3 HMC
+and POWER9 system above. One vSCSI server adapter was DLPAR-added to the VIOS toward the test
+partition with no mapping, read while it existed, and removed. The REST body is the VIOS's
+`ViosSCSIMapping` group, and the listing is the #1237 `lshwres` command. Its `MACAddressPrefix`
+is zeroed, which the exporter does not do. Their token map is their own, as for the exports above.
+
 ## Format
 
 Every file is a JSON object with these keys:
@@ -105,15 +112,16 @@ documented job statuses (`enums-documented-jobs.json`, names cited to
 `just live-vocabulary`. Each vocabulary names its sources.
 
 `v10r3-p9.json` was re-derived on 2026-10-13 (#1310) from one corpus, tokenized
-in one pass from three raw captures of the same HMC: a tracked read-only sweep
+in one pass from four raw captures of the same HMC: a tracked read-only sweep
 that day, the 2026-09-29/30 #1161 and #879 mutation windows (where its job
-statuses come from), and the 2026-10-12 #1242 PCM metric-feed reads. The window
-captures predate the tracked harness, so their REST rows have a null `accept`
-and `content_type`, and their CLI records contribute nothing. The derivation
-replaced the 2026-09-30 sweep and the lost window fold, so rows only those held
-are gone; the #1310 pull request lists them. The raw captures,
-the corpus and the `export.sh` that re-runs the derivation are private, on the
-live-test host under `~/hmc-live-evidence/2026-10-13-q1310/`.
+statuses come from), the 2026-10-12 #1242 PCM metric-feed reads, and the
+2026-10-13 #1250 window's reads. The #1161/#879 captures predate the tracked
+harness, so their REST rows have a null `accept` and `content_type`, and their
+CLI records contribute nothing. The derivation replaced the 2026-09-30 sweep and
+the lost window fold, so rows only those held are gone; the #1310 pull request
+lists them. The raw captures, the corpus and the `export.sh` that re-runs the
+derivation are private, on the live-test host under
+`~/hmc-live-evidence/2026-10-13-q1310/`.
 
 Regenerate them with `scripts/live_capture_export.py`, as
 `docs/live-testing.md` ("Capturing an HMC's vocabulary") describes; do not edit

@@ -126,7 +126,7 @@ the vocabulary derived from the #1161 and #879 mutation windows on the same HMC,
 only source of job statuses.
 Amended by #1310 (2026-10-13): that folded file was lost, and `v10r3-p9` is now
 derived without `--fold`, from one corpus tokenized from a fresh sweep and the
-retained raw window and #1242 captures (`tests/fixtures/live/README.md`).
+retained raw window, #1242 and #1250 captures (`tests/fixtures/live/README.md`).
 
 ### Gate — `scripts/check_live_vocabulary.py`, `just live-vocabulary`
 

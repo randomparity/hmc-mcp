@@ -793,7 +793,9 @@ The vmedia classes key on the configured test partition (`LIVE_TEST_LPAR_NAME`
 as the run recorded it), not on a marker. A medium is the run's only when its
 artifacts name it (`vmedia_blank_name`, `vmedia_iso_name`); the configured ISO
 name alone never is. An unmapped server adapter toward that partition is
-reported whoever left it.
+reported whoever left it. REST shows such an adapter only as a mapping holding just its
+server adapter, with no partition link, so `storage list-mappings --lpar` never lists
+it; the `lshwres` listing is the witness (#1250).
 
 ## If something goes wrong mid-run
 
