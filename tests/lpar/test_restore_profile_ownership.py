@@ -29,7 +29,9 @@ def _hmc() -> AsyncMock:
             "agent_id": "alice",
         }
     )
-    hmc.get_managed_system.return_value = {"Resource": {"SystemName": SYSTEM_NAME}}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": SYSTEM_UUID, "SystemName": SYSTEM_NAME}
+    ]
     return hmc
 
 

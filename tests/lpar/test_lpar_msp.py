@@ -7,7 +7,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-from conftest import SYSTEM_ENTRY, live_process_error, mock_uuid_resolution
+from conftest import (
+    SYSTEM_ENTRY,
+    live_process_error,
+    mock_system_summary,
+    mock_uuid_resolution,
+)
 
 from hmcpctl.config import HMCConfig
 from hmcpctl.resource_identity import ResourceNotFoundError
@@ -133,6 +138,7 @@ def _mock_vios_resolution(router, vios_uuid: str = VIOS_UUID) -> None:
             200, text=SYSTEM_ENTRY.format(uuid=SYSTEM_UUID, name=SYSTEM_NAME)
         )
     )
+    mock_system_summary(router, SYSTEM_UUID, SYSTEM_NAME)
     router.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer").mock(
         return_value=httpx.Response(
             200,

@@ -28,6 +28,7 @@ from conftest import (
     live_fixture,
     live_response,
     mock_system_summaries,
+    mock_system_summary,
 )
 
 from hmcpctl.documents.lpar import LparResources
@@ -472,6 +473,7 @@ def test_create_lpar_builds_xml(monkeypatch, mock_hmc):
 </entry>""",
         )
     )
+    mock_system_summary(mock_hmc, SYSTEM_UUID, "server1")
     # stamp_lpar_ownership calls set_lpar_description over SSH;
     # patch stamp to avoid needing a live SSH server in this XML-building test.
     with patch(

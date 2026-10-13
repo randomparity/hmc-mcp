@@ -13,7 +13,13 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from conftest import JOB_ENTRY, JOB_ID, LPAR_RESOURCE_CONFIG, SYSTEM_ENTRY
+from conftest import (
+    JOB_ENTRY,
+    JOB_ID,
+    LPAR_RESOURCE_CONFIG,
+    SYSTEM_ENTRY,
+    mock_system_summary,
+)
 
 from hmcpctl.documents.lpar import LparResources
 from hmcpctl.errors import HMCError
@@ -75,6 +81,7 @@ def _mock_dlpar_authorization(router) -> None:
             200, text=SYSTEM_ENTRY.format(uuid=SYSTEM_UUID, name="sys1")
         )
     )
+    mock_system_summary(router, SYSTEM_UUID, "sys1")
     router.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_ENTRY, headers={"ETag": "etag-1"})
     )

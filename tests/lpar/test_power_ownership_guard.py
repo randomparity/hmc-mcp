@@ -51,7 +51,9 @@ def _hmc(*, authorize: bool, agent_id: str = "alice") -> AsyncMock:
             "authorize_power_operations": authorize,
         }
     )
-    hmc.get_managed_system.return_value = {"Resource": {"SystemName": "sys1"}}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": SYSTEM_UUID, "SystemName": "sys1"}
+    ]
     hmc.get_logical_partition.return_value = {"Resource": {"PartitionName": "aix1"}}
     hmc.submit_job.return_value = {"UUID": "job-uuid"}
     # ADR 0094's resolve chain confirms the partition lives on the selected
@@ -113,7 +115,7 @@ async def test_disabled_guard_opens_no_ssh_connection_and_reads_no_ownership() -
 
     assert result.job == {"UUID": "job-uuid"}
     connect.assert_not_called()
-    hmc.get_managed_system.assert_not_awaited()
+    hmc.list_system_summaries.assert_not_awaited()
     hmc.get_logical_partition.assert_not_awaited()
     hmc.submit_job.assert_awaited_once()
 
@@ -307,7 +309,7 @@ async def test_enabled_guard_fails_closed_when_the_ownership_read_fails() -> Non
 
 
 @pytest.mark.asyncio
-async def test_enabled_guard_resolves_the_managed_system_once() -> None:
+async def test_enabled_guard_resolves_the_selector_once_and_scopes_the_lpar() -> None:
     """The named selector is resolved once and scopes the partition lookup.
 
     Resolving it again inside the guard would buy a second REST GET, and it
@@ -331,7 +333,8 @@ async def test_enabled_guard_resolves_the_managed_system_once() -> None:
             power_on=False,
         )
 
-    hmc.list_system_summaries.assert_awaited_once_with()
+    # One summary read resolves the name to its UUID, one the UUID to the CLI name.
+    assert hmc.list_system_summaries.await_count == 2
     hmc.find_partition_by_name.assert_awaited_once_with("aix1", system_uuid=SYSTEM_UUID)
 
 

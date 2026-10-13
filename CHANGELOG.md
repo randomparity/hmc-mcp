@@ -52,6 +52,9 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
   each candidate's system from `quick/All` and reads only the operating systems. Both stalled for
   minutes on an HMC with a system in `No Connection`. A candidate found on no operating system
   now names the systems that were not read (#1501).
+- Tools that turn a managed-system UUID into its name for an HMC CLI command, or for the LPAR
+  ownership check, read it from `ManagedSystem/quick/All` instead of `ManagedSystem/{uuid}`,
+  which stalled for a system in `No Connection` (#1501).
 - A partition or VIOS name lookup without a managed-system selector no longer reports a name as
   not found while a managed system cannot be read. The HMC-wide name search answers "not found"
   for a partition on a system in `No Connection`, so a miss now reads the managed-system summary

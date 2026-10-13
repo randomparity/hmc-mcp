@@ -40,11 +40,12 @@ LPAR_NAME = "my-lpar"
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "resource", [None, [], {}, {"SystemName": ""}, {"SystemName": 1}]
+    "summary",
+    [None, [], {}, {"UUID": SYSTEM_UUID}, {"UUID": SYSTEM_UUID, "SystemName": 1}],
 )
-async def test_system_rest_selector_rejects_malformed_resource(resource):
+async def test_system_rest_selector_rejects_malformed_resource(summary):
     hmc = MagicMock()
-    hmc.get_managed_system = AsyncMock(return_value={"Resource": resource})
+    hmc.list_system_summaries = AsyncMock(return_value=[summary])
 
     with pytest.raises(ValueError, match="Could not resolve system UUID") as raised:
         await _system_name_from_rest(hmc, SYSTEM_UUID)
@@ -355,19 +356,35 @@ async def test_resolve_lpar_name_falls_back_scoped_by_system(mock_hmc):
 async def test_resolve_system_name_does_not_fall_back_on_rest_status_error(
     mock_hmc,
 ):
-    """A REST 4xx (HMCError) is a real answer — no SSH fallback.
+    """A REST error status (HMCError) is a real answer — no SSH fallback.
 
-    REST responded, so the unknown UUID should surface as an error rather
-    than silently resolving via SSH.
+    REST responded, so its failure should surface as an error rather than
+    silently resolving via SSH.
     """
-    # logon succeeds (fixture default); the system GET returns 404.
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
-        return_value=httpx.Response(404, text="not found")
+    # logon succeeds (fixture default); the summary GET returns 500.
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(
+        return_value=httpx.Response(500, text="server error")
     )
 
     with (
         patch("hmcpctl.ssh.transport.asyncssh.connect") as mock_connect,
         pytest.raises(HMCError),
+    ):
+        await resolve_system_name(make_config(), SYSTEM_UUID)
+
+    mock_connect.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_resolve_system_name_reports_a_uuid_no_summary_lists(mock_hmc):
+    """A UUID the summary does not list is a REST answer too — no SSH fallback."""
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+
+    with (
+        patch("hmcpctl.ssh.transport.asyncssh.connect") as mock_connect,
+        pytest.raises(ValueError, match="Could not resolve system UUID"),
     ):
         await resolve_system_name(make_config(), SYSTEM_UUID)
 

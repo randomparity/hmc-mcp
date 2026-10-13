@@ -24,6 +24,7 @@ from conftest import (
     live_response,
     make_config,
     mock_system_summaries,
+    mock_system_summary,
 )
 
 from hmcpctl.audit import sink as audit_sink
@@ -101,6 +102,7 @@ def _mock_system_detail(router) -> None:
             200, text=SYSTEM_ENTRY.format(uuid=SYSTEM_UUID, name=SYSTEM_NAME)
         )
     )
+    mock_system_summary(router, SYSTEM_UUID, SYSTEM_NAME)
     _mock_partition_feed(router, SYSTEM_UUID, LPAR_UUID)
 
 
@@ -671,6 +673,7 @@ async def test_a_partition_uuid_off_the_selected_system_is_rejected(
             200, text=SYSTEM_ENTRY.format(uuid=OTHER_SYSTEM_UUID, name="server0")
         )
     )
+    mock_system_summary(mock_hmc, OTHER_SYSTEM_UUID, "server0")
     # server0 hosts a *different* partition that happens to share lpar1's name.
     _mock_partition_feed(mock_hmc, OTHER_SYSTEM_UUID, COLLIDING_LPAR_UUID)
     route = _mock_modify(mock_hmc)
@@ -764,6 +767,7 @@ async def test_a_partition_name_is_not_re_read_for_containment(mock_hmc, operati
             200, text=SYSTEM_ENTRY.format(uuid=SYSTEM_UUID, name=SYSTEM_NAME)
         )
     )
+    mock_system_summary(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     feed = mock_hmc.get(
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
     ).mock(
@@ -799,6 +803,7 @@ async def test_an_unreadable_feed_carries_its_error(mock_hmc, operation):
             200, text=SYSTEM_ENTRY.format(uuid=SYSTEM_UUID, name=SYSTEM_NAME)
         )
     )
+    mock_system_summary(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(500)
     )

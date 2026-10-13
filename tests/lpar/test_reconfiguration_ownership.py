@@ -166,7 +166,9 @@ def _real_guard_hmc() -> AsyncMock:
             "agent_id": "my-agent",
         }
     )
-    hmc.get_managed_system.return_value = {"Resource": {"SystemName": SYSTEM_NAME}}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": SYSTEM_UUID, "SystemName": SYSTEM_NAME}
+    ]
     hmc.get_logical_partition.return_value = {"Resource": {"PartitionName": LPAR_NAME}}
     hmc.list_logical_partitions.return_value = [{"UUID": LPAR}]
     hmc.list_optical_mappings.return_value = [

@@ -21,6 +21,7 @@ from conftest import (
     live_fixture,
     live_response,
     mock_system_summaries,
+    mock_system_summary,
 )
 from defusedxml import ElementTree as DET
 
@@ -51,7 +52,7 @@ LPAR_UUID = "00000000-0000-0000-0000-000000000002"
 @pytest.mark.asyncio
 async def test_system_name_propagates_unexpected_rest_failure():
     hmc = AsyncMock()
-    hmc.get_managed_system.side_effect = TypeError("programming defect")
+    hmc.list_system_summaries.side_effect = TypeError("programming defect")
 
     with pytest.raises(TypeError, match="programming defect"):
         await _system_name(hmc, SYSTEM_UUID, "fallback")
@@ -60,7 +61,7 @@ async def test_system_name_propagates_unexpected_rest_failure():
 @pytest.mark.asyncio
 async def test_system_name_uses_fallback_only_for_expected_lookup_failures():
     hmc = AsyncMock()
-    hmc.get_managed_system.side_effect = HMCError("REST unavailable")
+    hmc.list_system_summaries.side_effect = HMCError("REST unavailable")
 
     with patch(
         "hmcpctl.operations.lpar.ownership.resolve_system_cli_name",
@@ -75,7 +76,9 @@ async def test_system_name_falls_back_on_whitespace_only_rest_name():
     ``if name:`` check, so it slipped through unrejected; the shared helper's
     ``.strip()`` treats it as absent and diverts to the SSH lookup instead."""
     hmc = AsyncMock()
-    hmc.get_managed_system.return_value = {"Resource": {"SystemName": "   "}}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": SYSTEM_UUID, "SystemName": "   "}
+    ]
 
     with patch(
         "hmcpctl.operations.lpar.ownership.resolve_system_cli_name",
@@ -128,6 +131,7 @@ def _mock_dlpar_authorization(router) -> None:
     router.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
+    mock_system_summary(router, SYSTEM_UUID, "sys1")
     router.get(f"/rest/api/uom/LogicalPartition/{LPAR_UUID}").mock(
         return_value=httpx.Response(200, text=LPAR_ENTRY, headers={"ETag": "etag-1"})
     )
@@ -195,6 +199,7 @@ def _mock_create_406(
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
+    mock_system_summary(mock_hmc, SYSTEM_UUID, "sys1")
     mock_system_summaries(mock_hmc, (SYSTEM_UUID, "sys1", "operating"))
     mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=rejection or httpx.Response(406)
@@ -337,6 +342,7 @@ def test_create_lpar_rest_success_reports_skipped_apply(
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
+    mock_system_summary(mock_hmc, SYSTEM_UUID, "sys1")
     mock_system_summaries(mock_hmc, (SYSTEM_UUID, "sys1", "operating"))
     mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
@@ -904,6 +910,7 @@ def _rest_create_body(mock_hmc, **kwargs) -> ET.Element:
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
+    mock_system_summary(mock_hmc, SYSTEM_UUID, "sys1")
     mock_system_summaries(mock_hmc, (SYSTEM_UUID, "sys1", "operating"))
     put = mock_hmc.put(
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"

@@ -104,40 +104,41 @@ SYSTEM_UUID = "22222222-2222-4222-8222-222222222222"
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "entry",
+    "summaries",
     [
-        None,
-        {"Resource": None},
-        {"Resource": []},
-        {"Resource": ["x"]},
-        {"Resource": {}},
-        {"Resource": {"SystemName": ""}},
-        {"Resource": {"SystemName": "   "}},
-        {"Resource": {"SystemName": 1}},
+        [],
+        ["x"],
+        [{"UUID": "33333333-3333-4333-8333-333333333333", "SystemName": "sys-b"}],
+        [{"UUID": SYSTEM_UUID}],
+        [{"UUID": SYSTEM_UUID, "SystemName": ""}],
+        [{"UUID": SYSTEM_UUID, "SystemName": "   "}],
+        [{"UUID": SYSTEM_UUID, "SystemName": 1}],
     ],
 )
-async def test_system_name_resolver_reports_unusable_payload_as_not_found(entry):
+async def test_system_name_resolver_reports_unusable_payload_as_not_found(summaries):
     hmc = AsyncMock()
-    hmc.get_managed_system.return_value = entry
+    hmc.list_system_summaries.return_value = summaries
 
     with pytest.raises(
         ResourceNotFoundError,
-        match=f"Managed system '{SYSTEM_UUID}' has no SystemName. "
+        match=f"No managed system '{SYSTEM_UUID}' with a SystemName found. "
         "Use hmc_list_systems to inspect available systems.",
     ) as raised:
         await resolve_system_name(hmc, SYSTEM_UUID)
 
     assert raised.value.resource_kind == "managed system"
     assert raised.value.selector == SYSTEM_UUID
-    hmc.get_managed_system.assert_awaited_once_with(SYSTEM_UUID)
+    hmc.list_system_summaries.assert_awaited_once_with()
 
 
 @pytest.mark.asyncio
 async def test_system_name_resolver_resolves_uuid_and_passes_name_through():
     hmc = AsyncMock()
-    hmc.get_managed_system.return_value = {"Resource": {"SystemName": "sys-a"}}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": SYSTEM_UUID, "SystemName": "sys-a"}
+    ]
 
     assert await resolve_system_name(hmc, "sys-b") == "sys-b"
-    hmc.get_managed_system.assert_not_awaited()
+    hmc.list_system_summaries.assert_not_awaited()
     assert await resolve_system_name(hmc, SYSTEM_UUID) == "sys-a"
-    hmc.get_managed_system.assert_awaited_once_with(SYSTEM_UUID)
+    hmc.list_system_summaries.assert_awaited_once_with()
