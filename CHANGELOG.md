@@ -22,6 +22,8 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
 
 ### Changed
 
+- Generated tool-reference verification retains the last release’s state regardless of the
+  rendering date, with a regression check spanning more than 90 days (#1509).
 - CLI and MCP capability discovery retain the last release’s verification state, initially
   v0.1.0, without runtime age decay. Ordinary capability metadata regeneration combines current
   catalog structure with the committed release snapshot; explicit `--release` inventory and
