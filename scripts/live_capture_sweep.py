@@ -566,8 +566,9 @@ async def resolve_partition(
     """(UUID, name) of the LPAR or VIOS *value* on *sys_uuid* (#1532).
 
     A failed lookup or read is recorded and leaves both unset, so the raw phase still
-    runs without that partition's probes. A name the system does not list, or an
-    HTTP 404 for a supplied UUID, is the operator's mistake and still raises.
+    runs without that partition's probes. A name the system does not list still
+    raises, and so does an HTTP 404 from either call -- for a supplied UUID, that is
+    the operator's mistake.
     """
     from hmcpctl.errors import HMCError
     from hmcpctl.resource_identity import resolve_lpar_uuid, resolve_vios_uuid
