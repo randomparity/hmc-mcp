@@ -418,10 +418,11 @@ def test_vocabulary_keeps_values_shapes_and_bindings() -> None:
 
 
 def test_ambiguous_enum_binding_is_left_unbound() -> None:
-    types = {"A.Enum": ["x", "y"], "B.Enum": ["x", "z"]}
+    types = {"AThing.Enum": ["x", "y"], "BThing.Enum": ["x", "y", "z"]}
     assert export._bound_enum("Thing", {"x"}, types) is None
-    assert export._bound_enum("Thing", {"x", "y"}, types) == "A.Enum"
-    assert export._bound_enum("B", {"x"}, types) == "B.Enum"
+    assert export._bound_enum("Thing", {"x", "y"}, types) is None
+    assert export._bound_enum("Thing", {"x", "z"}, types) == "BThing.Enum"
+    assert export._bound_enum("AThing", {"x"}, types) == "AThing.Enum"
 
 
 def test_one_literal_binds_only_a_same_named_enum() -> None:
@@ -429,6 +430,12 @@ def test_one_literal_binds_only_a_same_named_enum() -> None:
     types = {"VirtualNICBackingDeviceStatus.Enum": ["OPERATIONAL", "DOWN"]}
     assert export._bound_enum("Status", {"OPERATIONAL"}, types) is None
     assert export._bound_enum("Status", {"OPERATIONAL", "DOWN"}, types) is not None
+
+
+def test_literals_alone_never_bind_an_unrelated_enum() -> None:
+    """An enum the element's name does not relate to is not bound by its literals (#1498)."""
+    types = {"SRIOVPhysicalPortOptions.Enum": ["Veb", "fullDuplex", "linkUp"]}
+    assert export._bound_enum("ConfiguredOptions", {"Veb", "fullDuplex"}, types) is None
 
 
 PENDING = "pending authentication - password updates required"
