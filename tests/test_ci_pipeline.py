@@ -651,7 +651,8 @@ def test_github_ci_exercises_the_installed_public_api_without_app_dependencies()
     assert "grep -q 'import-untyped' probe.txt" in body
     assert "grep -q 'attr-defined' probe.txt" in body
     assert "class FakeHMC:" in body
-    assert "async def list_managed_systems(" in body
+    assert "async def list_system_summaries(" in body
+    assert "async def get_managed_system(" in body
     assert "async def list_logical_partitions(" in body
     assert "asyncio.run(fetch_capacity_report(FakeHMC()))" in body
     assert "CapacitySummary(" in body
