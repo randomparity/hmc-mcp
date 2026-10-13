@@ -1,5 +1,7 @@
 """Tests for the LogicalPartition create builder and the modify field mapping."""
 
+import ast
+import pathlib
 import xml.etree.ElementTree as ET
 
 import pytest
@@ -20,6 +22,18 @@ from hmcpctl.documents.remote_access import build_remote_access_document
 _EMPTY_LPAR = ET.fromstring(
     '<LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"/>'
 )
+
+
+def test_document_package_initializer_imports_nothing():
+    """Every import of a builder module reads this file, so it must not re-export (#1495).
+
+    ADR 0127 adds each package initializer on an import's resolution path to the
+    operation's closure; a re-export here would put every builder in every closure.
+    """
+    initializer = pathlib.Path(common.__file__).with_name("__init__.py")
+    tree = ast.parse(initializer.read_text(encoding="utf-8"))
+
+    assert [type(node).__name__ for node in tree.body] == ["Expr"]
 
 
 @pytest.mark.parametrize(

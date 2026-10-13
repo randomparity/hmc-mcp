@@ -3,8 +3,9 @@
 Issue #1495. ADR 0127 derives an operation's verification staleness from its handler module's
 import closure (`closure_paths` in `scripts/check_capability_inventory.py`). Every operation
 logs on, so whatever module holds the logon builder sits in every closure. Today that module is
-`documents/access.py`, which also holds the `UserProfile` builder: editing that builder for one
-operation re-staled seventeen.
+`documents/access.py`, which also holds the `UserProfile` builder: it was in the closure of 159
+of 163 operations, and #1491's edit to that builder turned every one of the seventeen current
+verifications stale.
 
 ## Changes
 
@@ -39,6 +40,7 @@ operation re-staled seventeen.
   (`hmcpctl.server_tools.systems.core`) and asserts `documents/access.py` is absent and
   `documents/logon.py` present.
 - A test pins the exact output of the moved builders, captured before the move.
+- A test asserts `documents/__init__.py` holds only its docstring.
 
 ## Failure model
 
