@@ -57,6 +57,17 @@ updates:
       github-actions-dependencies:
         patterns:
           - "*"
+
+  - package-ecosystem: "docker"
+    directory: "/.github/containers"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      docker-dependencies:
+        patterns:
+          - "*"
 """
 
 
