@@ -60,6 +60,13 @@ _REPOSITORY_ALREADY_GONE = ExpectedOutcome(
     reason="repository already gone (expected on re-run)",
     error_codes=frozenset({"not found", "does not exist", "no repository", "no media"}),
 )
+_DELETE_REFUSED_WHILE_MOUNTED = ExpectedOutcome(
+    operation="media.delete",
+    variant="delete-while-mounted",
+    transient=True,
+    reason="delete refused while mounted (expected)",
+    error_codes=frozenset({"is mounted on"}),
+)
 
 if TYPE_CHECKING:
     from live_test_runner import LiveTestConfig, RunState
@@ -813,9 +820,20 @@ class _RoundTrip:
         self.vg = str(state.artifacts.vmedia_vg_uuid)
         self.name = f"{BLANK_PREFIX}{_run_tag()}"
 
-    def note(self, tool: str, label: str, result: tuple[str, Any]) -> tuple[str, Any]:
+    def note(
+        self,
+        tool: str,
+        label: str,
+        result: tuple[str, Any],
+        expected: ExpectedOutcome | None = None,
+    ) -> tuple[str, Any]:
         """Record one call's row and hand its result back."""
-        self.state.record(19, f"{tool} ({label})", *result)
+        if expected is None:
+            self.state.record(19, f"{tool} ({label})", *result)
+        else:
+            self.state.record_with_expected(
+                19, f"{tool} ({label})", *result, [expected]
+            )
         return result
 
     def skip(self, reason: str) -> None:
@@ -1149,6 +1167,7 @@ class _RoundTrip:
                 media_name=self.name,
                 system_name_or_uuid=self.config.system_name,
             ),
+            _DELETE_REFUSED_WHILE_MOUNTED,
         )
         _, _, still = await self.media("after the guarded delete")
         refused = st_d == "FAIL" and still is not None and self.name in still

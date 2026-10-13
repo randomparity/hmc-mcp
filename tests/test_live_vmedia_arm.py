@@ -86,6 +86,7 @@ class FakeHMC:
     unmount_fails: bool = False
     unmount_leaves_adapter: bool = False
     guarded_delete_allowed: bool = False
+    guarded_delete_error: str | None = None
     optical_id_missing: bool = False
     boot_order: dict[str, Any] = field(
         default_factory=lambda: {
@@ -151,8 +152,13 @@ class FakeHMC:
 
     def _delete(self, name: str) -> tuple[str, Any]:
         mounted = any(row[3] == name for row in self.mappings)
+        if mounted and self.guarded_delete_error:
+            return "FAIL", _failure(self.guarded_delete_error)
         if mounted and not self.guarded_delete_allowed:
-            return "FAIL", _failure(f"HMCError: Cannot delete optical media {name!r}")
+            return "FAIL", _failure(
+                f"HMCError: Cannot delete optical media {name!r}: it is mounted on "
+                f"1 LPAR(s): '{LPAR_UUID}'. Unmount the media first."
+            )
         self.media.pop(name, None)
         return "PASS", {}
 
@@ -270,6 +276,11 @@ def _results(state, operation: str) -> list[str]:
 
 def _manual(state) -> list[dict[str, Any]]:
     return [r for r in state.results if "MANUAL RECOVERY" in str(r.get("note", ""))]
+
+
+def _while_mounted(state) -> dict[str, Any]:
+    (row,) = [r for r in state.results if r["tool"].endswith("(while mounted)")]
+    return row
 
 
 def _mutations(hmc) -> list[tuple[str, dict[str, Any]]]:
@@ -561,6 +572,29 @@ async def test_a_delete_the_guard_lets_through_while_mounted_fails(arm):
     delete = _observations(state)["media.delete"][0]
     assert delete["result"] == "failed"
     assert "refused-while-mounted" not in delete["assertions"]
+
+
+@pytest.mark.asyncio
+async def test_the_guards_refusal_while_mounted_is_expected_not_failed(arm):
+    state, _hmc = arm
+
+    await _run(state, 16, 19)
+
+    assert _while_mounted(state)["status"] == "SKIP"
+    assert (
+        "refused-while-mounted" in _observations(state)["media.delete"][0]["assertions"]
+    )
+    assert not [r for r in state.results if r["status"] == "FAIL"]
+
+
+@pytest.mark.asyncio
+async def test_a_delete_that_fails_for_another_reason_while_mounted_fails(arm):
+    state, hmc = arm
+    hmc.guarded_delete_error = "HMCError: HTTP 500 REST0269"
+
+    await _run(state, 16, 19)
+
+    assert _while_mounted(state)["status"] == "FAIL"
 
 
 # ---------------------------------------------------------------------------
