@@ -318,7 +318,7 @@ def test_mac_elements_scrub_only_hex(element: str, value: str, token: str) -> No
         "MACAddress",
     ],
 )
-@pytest.mark.parametrize("closer", ["/>", " />"])
+@pytest.mark.parametrize("closer", ["/>", " />", ' kb="a/b"/>'])
 def test_self_closing_element_keeps_the_text_after_it(
     element: str, closer: str
 ) -> None:
@@ -326,6 +326,15 @@ def test_self_closing_element_keeps_the_text_after_it(
     body = f"<Root><{element}{closer}\n  <Next>x</Next></Root>"
     corpus = export.tokenize_records(_records(_rest("/e", body)))
     assert corpus[-1]["body"] == body
+
+
+def test_valued_element_with_a_slash_attribute_is_still_scrubbed() -> None:
+    """Only a `/` directly before `>` marks a self-closing tag; one in a value does not."""
+    body = '<SerialNumber href="a/">1234ABC</SerialNumber>'
+    corpus = export.tokenize_records(_records(_rest("/e", body)))
+    assert corpus[-1]["body"] == (
+        '<SerialNumber href="a/">&lt;REDACTED-SERIAL&gt;</SerialNumber>'
+    )
 
 
 def test_uuid_tokens_keep_case_and_are_consistent() -> None:
