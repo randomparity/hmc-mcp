@@ -51,9 +51,10 @@ it. The first is hmcpctl's create refused with REST0001 because it sent `RemoteU
 `AssociatedTaskRole` (`probe.capture.jsonl`). The second is the profile hmcpctl created once
 that was fixed, with no description given (`probe3.capture.jsonl`); its `desc-1` was `HMC User`
 before tokenizing. The exporter's e-mail rule rewrote the principal to
-`hmcpctl-test/user@example.test`. The HMC serves `RemoteUserID` with a trailing newline that
-the create did not send; the fixture keeps it, and hmcpctl does not strip it on read. Their
-token map is their own, as for the exports above.
+`hmcpctl-test/user@example.test`. The HMC serves `RemoteUserID` with a trailing newline that the
+create did not send; the fixture keeps it. hmcpctl's shared parser strips leaf text on read, so
+callers receive the principal without it (ADR 0076, #1538). Their token map is their own, as for
+the exports above.
 
 `rest-ms-quick-all-no-connection-v11r2` is record `#5` of #1290's read-only 2026-10-13 No
 Connection sweep of its second HMC (V11R2 SP1120): `ManagedSystem/quick/All` while two of its
