@@ -1264,7 +1264,7 @@ def test_set_description_refuses_a_malformed_current_stamp():
 # ---------------------------------------------------------------------------
 
 
-from hmcpctl.documents import LparResources  # noqa: E402
+from hmcpctl.documents.lpar import LparResources  # noqa: E402
 from hmcpctl.errors import HMCError  # noqa: E402
 from hmcpctl.operations.lpar.core import (  # noqa: E402
     LparCreation,

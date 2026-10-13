@@ -27,14 +27,15 @@ from hmcpctl.operations.partition_state import PARTITION_STATES, PartitionState
 from hmcpctl.operations.systems.fleet import FleetListing, read_fleet
 
 from ...audit import records as audit
-from ...documents import (
+from ...documents.lpar import (
     Keylock,
     LparResources,
     PartitionType,
     build_lpar_document,
     partition_updates,
+    validate_keylock,
+    validate_partition_type,
 )
-from ...documents.lpar import validate_keylock, validate_partition_type
 from ...errors import HMCError
 from ...jobs import (
     DEFAULT_JOB_POLL_INTERVAL,

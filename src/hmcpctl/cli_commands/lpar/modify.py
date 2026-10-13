@@ -7,7 +7,7 @@ from pathlib import Path
 
 import typer
 
-from ...documents import LparResources
+from ...documents.lpar import LparResources
 from ...operations.lpar.assignments import LparPcieAssignments
 from ...operations.lpar.dlpar import modify_lpar
 from ..output import console, partition_not_found, print_json, usage_error

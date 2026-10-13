@@ -7,8 +7,7 @@ from pathlib import Path
 
 import typer
 
-from ...documents import PARTITION_TYPES, LparResources
-from ...documents.lpar import validate_partition_type
+from ...documents.lpar import PARTITION_TYPES, LparResources, validate_partition_type
 from ...operations.lpar.core import LparCreation
 from ...operations.lpar.workflows import create_lpar
 from ...ssh.lpar import validate_caller_token

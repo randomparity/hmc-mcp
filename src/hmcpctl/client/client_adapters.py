@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..documents import (
+from ..documents.adapters import (
     build_client_network_adapter_document,
     build_vfc_adapter_document,
     build_vscsi_adapter_document,

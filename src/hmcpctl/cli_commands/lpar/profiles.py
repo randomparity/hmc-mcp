@@ -7,7 +7,7 @@ from typing import Any
 import typer
 from rich.markup import escape
 
-from ...documents import join_boot_device_paths
+from ...documents.boot import join_boot_device_paths
 from ...operations.lpar.boot_order import (
     clear_lpar_boot_order,
     read_lpar_boot_order,

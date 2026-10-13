@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from hmcpctl.documents import LparResources
+from hmcpctl.documents.lpar import LparResources
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.lpar.assignments import (
     LparPcieAssignments,

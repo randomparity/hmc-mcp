@@ -14,7 +14,7 @@ from ..._app import (
 from ...config import (
     config_inventory,
 )
-from ...documents import (
+from ...documents.system import (
     MemoryMirroringMode,
     PowerOffPolicy,
     PowerOnLparStartPolicy,

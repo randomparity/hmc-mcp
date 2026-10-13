@@ -33,9 +33,21 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
   write when the target cannot be read. A partition of the same name on another managed system no
   longer blocks the create. An unscoped lookup of such a name reports the ambiguity, except while
   one of the two systems cannot be read, when it finds the other; pass the system selector (#1309).
+- `hmcpctl.documents` no longer re-exports its builders: import each from its owning submodule.
+  The logon document builder is now in `hmcpctl.documents.logon` and the RemoteAccess builders
+  in `hmcpctl.documents.remote_access`; `hmcpctl.documents.access` keeps the UserProfile builder.
+  A change to the UserProfile builder no longer marks every operation's live verification
+  stale, only those of the operations that import it (#1495).
 
 ### Fixed
 
+- `hmc_create_lpar` and `hmc_provision_lpar` refuse promptly when the target managed system is not
+  operating. Their name check, and every listing or lookup that finds a system's partition or VIOS
+  feed empty, now reads the system's `State` from `ManagedSystem/quick/All` instead of
+  `ManagedSystem/{uuid}`, which can stall for a system with no connection until `HMC_TIMEOUT`. The
+  error names the system, its `State` and any non-blank `StateDetail` (it no longer carries
+  `DetailedState`), and asks you to retry when the system reconnects. A target given by name is
+  still resolved through the `ManagedSystem` name search first, unchanged (#1500).
 - A partition or VIOS name lookup without a managed-system selector no longer reports a name as
   not found while a managed system cannot be read. The HMC-wide name search answers "not found"
   for a partition on a system in `No Connection`, so a miss now reads the managed-system summary

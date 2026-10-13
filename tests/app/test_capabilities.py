@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from conftest import live_fixture, live_response
+from conftest import live_fixture, live_response, mock_system_summaries
 
 from hmcpctl.authorization.access_policy import DEFAULT_CONNECTION_TOKEN
 from hmcpctl.authorization.dispatch_scope import dispatch_authorizer
@@ -277,12 +277,9 @@ def test_closed_vocab_enum_matches_runtime_constant():
         ADAPTER_TYPES,
         VALID_AUTHENTICATION_FILTERS,
     )
-    from hmcpctl.documents import (
-        AUTHENTICATION_TYPES,
-        PARTITION_TYPES,
-        SHARING_MODES,
-        STORAGE_KINDS,
-    )
+    from hmcpctl.documents.access import AUTHENTICATION_TYPES
+    from hmcpctl.documents.lpar import PARTITION_TYPES, SHARING_MODES
+    from hmcpctl.documents.storage import STORAGE_KINDS
     from hmcpctl.jobs import DEVICE_TYPES, LU_TYPES
     from hmcpctl.operations.vios.core import _VALID_BACKUP_TYPES
     from hmcpctl.ssh.io_inventory import _VALID_PCI_CLASSES
@@ -1051,6 +1048,7 @@ def test_create_lpar_proceeds_when_no_collision(monkeypatch, mock_hmc):
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
+    mock_system_summaries(mock_hmc, (SYSTEM_UUID, "sys1", "operating"))
     create_route = mock_hmc.put(
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
     ).mock(return_value=httpx.Response(201, text=NEW_LPAR_FEED))

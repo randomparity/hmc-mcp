@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 
 from hmcpctl import cli
 from hmcpctl.config import HMCConfig
-from hmcpctl.documents import LparResources
+from hmcpctl.documents.lpar import LparResources
 from hmcpctl.operations.lpar.configuration import (
     configure_lpar_msp,
     configure_lpar_processor_compatibility,

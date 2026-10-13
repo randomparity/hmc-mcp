@@ -16,12 +16,17 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from conftest import LPAR_RESOURCE_CONFIG, live_fixture, live_response
+from conftest import (
+    LPAR_RESOURCE_CONFIG,
+    live_fixture,
+    live_response,
+    mock_system_summaries,
+)
 from defusedxml import ElementTree as DET
 
 from hmcpctl.config import HMCConfig
-from hmcpctl.documents import LparResources, build_lpar_document
 from hmcpctl.documents.common import UOM_NS
+from hmcpctl.documents.lpar import LparResources, build_lpar_document
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.lpar.core import LparCreation, create_and_stamp_lpar
 from hmcpctl.operations.lpar.ownership import _resolve_system_name as _system_name
@@ -190,6 +195,7 @@ def _mock_create_406(
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
+    mock_system_summaries(mock_hmc, (SYSTEM_UUID, "sys1", "operating"))
     mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=rejection or httpx.Response(406)
     )
@@ -331,6 +337,7 @@ def test_create_lpar_rest_success_reports_skipped_apply(
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
+    mock_system_summaries(mock_hmc, (SYSTEM_UUID, "sys1", "operating"))
     mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(200, text=LPAR_ENTRY)
     )
@@ -897,6 +904,7 @@ def _rest_create_body(mock_hmc, **kwargs) -> ET.Element:
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
+    mock_system_summaries(mock_hmc, (SYSTEM_UUID, "sys1", "operating"))
     put = mock_hmc.put(
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
     ).mock(return_value=httpx.Response(200, text=LPAR_ENTRY))

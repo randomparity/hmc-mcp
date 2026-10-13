@@ -10,7 +10,7 @@ from rich.text import Text
 
 from hmcpctl.client.core import HMCClient
 
-from ...documents import StorageKind
+from ...documents.storage import StorageKind
 from ...operations.lpar.profile_sync import ChangeLocation
 from ...operations.lpar.provision import (
     AttachDiskResult,

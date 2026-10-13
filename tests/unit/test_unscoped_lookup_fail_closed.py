@@ -21,7 +21,7 @@ from conftest import (
 )
 
 from hmcpctl.client.core import HMCClient
-from hmcpctl.documents import LparResources
+from hmcpctl.documents.lpar import LparResources
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.lpar.core import LparCreation, create_and_stamp_lpar
 from hmcpctl.operations.lpar.provision import (
@@ -31,7 +31,6 @@ from hmcpctl.operations.lpar.provision import (
     provision_lpar,
 )
 
-SYS_A = "aaaaaaaa-0000-4000-8000-00000000000a"
 SYS_B = "bbbbbbbb-0000-4000-8000-00000000000b"
 LPAR_UUID = "11111111-0000-4000-8000-000000000001"
 VIOS_UUID = "22222222-0000-4000-8000-000000000002"
@@ -137,38 +136,44 @@ async def test_a_failed_quick_all_read_fails_the_lookup(mock_hmc):
         await _lookup("LPAR")
 
 
+TARGET_NAME = "sys-R11"
+TARGET = DISCONNECTED[TARGET_NAME]
+
+
 def _disconnected_target(mock_hmc):
-    """sys-A: its scoped feed answers 204 and its own entry says no connection.
+    """The captured sys-R11: its scoped feed answers 204, quick/All says no connection.
 
     The 2026-10-13 capture saw ``ManagedSystem/{uuid}`` time out for such a
-    system rather than answer; the fast answer here is synthetic. Either way the
-    scoped check raises before any write: a timeout raises a transport error.
+    system (#1500), so that route raises a timeout here and must stay unread.
     """
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_A}/LogicalPartition").mock(
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{TARGET}/LogicalPartition").mock(
         return_value=httpx.Response(204)
     )
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_A}").mock(
-        return_value=httpx.Response(
-            200,
-            text='<entry xmlns="http://www.w3.org/2005/Atom">'
-            f"<id>urn:uuid:{SYS_A}</id>"
-            '<content type="application/vnd.ibm.powervm.uom+xml">'
-            '<ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/'
-            'firmware/uom/mc/2012_10/">'
-            "<SystemName>sys-A</SystemName><State>no connection</State>"
-            "</ManagedSystem></content></entry>",
-        )
+    _quick_all(mock_hmc, "rest-ms-quick-all-no-connection-v11r2")
+    entry = mock_hmc.get(f"/rest/api/uom/ManagedSystem/{TARGET}").mock(
+        side_effect=httpx.ReadTimeout("ManagedSystem/{uuid} stalled")
     )
-    return mock_hmc.get(url__regex=r"/rest/api/uom/LogicalPartition/search/.*").mock(
-        return_value=httpx.Response(204)
-    )
+    hmc_wide = mock_hmc.get(
+        url__regex=r"/rest/api/uom/LogicalPartition/search/.*"
+    ).mock(return_value=httpx.Response(204))
+    return entry, hmc_wide
+
+
+def _assert_prompt_refusal(raised, mock_hmc, entry, hmc_wide) -> None:
+    message = str(raised.value)
+    assert f"{TARGET_NAME!r} ({TARGET})" in message
+    assert "State 'no connection'" in message
+    assert message.endswith("retry when it reconnects")
+    assert not entry.called
+    assert not hmc_wide.called
+    assert_no_mutating_requests(mock_hmc)
 
 
 @pytest.mark.asyncio
 async def test_create_refuses_before_any_write_when_the_target_cannot_be_read(
     mock_hmc,
 ):
-    hmc_wide = _disconnected_target(mock_hmc)
+    entry, hmc_wide = _disconnected_target(mock_hmc)
     creation = LparCreation(
         name="lpar-1",
         partition_type="AIX/Linux",
@@ -177,21 +182,20 @@ async def test_create_refuses_before_any_write_when_the_target_cannot_be_read(
 
     with (
         patch("hmcpctl.operations.lpar.core.create_lpar_via_cli") as via_cli,
-        pytest.raises(HMCError, match="State 'no connection'"),
+        pytest.raises(HMCError) as raised,
     ):
         async with HMCClient(make_config()) as hmc:
-            await create_and_stamp_lpar(hmc, SYS_A, creation)
+            await create_and_stamp_lpar(hmc, TARGET, creation)
 
     via_cli.assert_not_called()
-    assert not hmc_wide.called
-    assert_no_mutating_requests(mock_hmc)
+    _assert_prompt_refusal(raised, mock_hmc, entry, hmc_wide)
 
 
 @pytest.mark.asyncio
 async def test_provision_refuses_before_any_write_when_the_target_cannot_be_read(
     mock_hmc,
 ):
-    hmc_wide = _disconnected_target(mock_hmc)
+    entry, hmc_wide = _disconnected_target(mock_hmc)
     request = ProvisionRequest(
         name="lpar-1",
         adapters=ProvisionAdapters(port_vlan_id=100),
@@ -203,14 +207,13 @@ async def test_provision_refuses_before_any_write_when_the_target_cannot_be_read
         patch(
             "hmcpctl.operations.lpar.core.create_lpar_via_cli", new=AsyncMock()
         ) as via_cli,
-        pytest.raises(HMCError, match="State 'no connection'"),
+        pytest.raises(HMCError) as raised,
     ):
         async with HMCClient(make_config()) as hmc:
-            await provision_lpar(hmc, SYS_A, request)
+            await provision_lpar(hmc, TARGET, request)
 
     via_cli.assert_not_awaited()
-    assert not hmc_wide.called
-    assert_no_mutating_requests(mock_hmc)
+    _assert_prompt_refusal(raised, mock_hmc, entry, hmc_wide)
 
 
 @pytest.mark.asyncio

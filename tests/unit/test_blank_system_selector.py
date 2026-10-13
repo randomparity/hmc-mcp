@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from hmcpctl.documents import LparResources
+from hmcpctl.documents.lpar import LparResources
 from hmcpctl.operations.affinity.rest import ProvisionAffinityAssessment
 from hmcpctl.operations.lpar.assignments import LparPcieAssignments
 from hmcpctl.operations.lpar.boot_order import read_lpar_boot_order

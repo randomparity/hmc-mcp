@@ -8,7 +8,7 @@ from typing import Any
 from hmcpctl.client.core import HMCClient
 from hmcpctl.operations.lpar.ownership import resolve_and_authorize_lpar_mutation
 
-from ...documents import LparResources, partition_updates
+from ...documents.lpar import LparResources, partition_updates
 from ...errors import HMCError
 from ...resource_identity import optional_system_selector
 from ...xmlutil import escape_xml

@@ -8,7 +8,7 @@ from typing import Any, NoReturn
 from hmcpctl.client.core import HMCClient
 from hmcpctl.operations.lpar.ownership import resolve_and_authorize_lpar_mutation
 
-from ...documents import join_boot_device_paths
+from ...documents.boot import join_boot_device_paths
 from ...errors import HMCError
 from ...resource_identity import optional_system_selector, resolve_lpar_uuid
 from .errors import translate_lpar_write_error

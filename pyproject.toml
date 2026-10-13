@@ -87,7 +87,7 @@ extend-select = [
 extend-immutable-calls = [
     "typer.Option",
     "typer.Argument",
-    "hmcpctl.documents.LparResources",
+    "hmcpctl.documents.lpar.LparResources",
     "hmcpctl.operations.lpar.assignments.LparPcieAssignments",
 ]
 

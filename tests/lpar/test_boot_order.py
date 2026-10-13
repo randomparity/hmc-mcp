@@ -14,7 +14,7 @@ from conftest import make_config
 from defusedxml import ElementTree as DET
 
 from hmcpctl.client.core import HMCClient
-from hmcpctl.documents import join_boot_device_paths
+from hmcpctl.documents.boot import join_boot_device_paths
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.lpar.boot_order import (
     clear_lpar_boot_order,

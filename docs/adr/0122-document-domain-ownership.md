@@ -2,6 +2,8 @@
 
 ## Status
 
+> **Superseded in part by [0211](0211-document-builders-imported-from-owning-module.md)** (2026-10-13): the package facade only; the ownership rule stands.
+
 Accepted (2026-09-05)
 
 ## Context

@@ -5,7 +5,7 @@ import xml.etree.ElementTree as ET
 import pytest
 from conftest import live_fixture
 
-from hmcpctl.documents import (
+from hmcpctl.documents.adapters import (
     build_client_network_adapter_document,
     build_vfc_adapter_document,
     build_vscsi_adapter_document,

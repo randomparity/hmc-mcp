@@ -104,7 +104,7 @@ def _state_text(value: object) -> str:
 
 
 async def require_operating_system(
-    get_managed_system: Callable[[str], Awaitable[dict[str, Any] | None]],
+    list_system_summaries: Callable[[], Awaitable[list[Any]]],
     system_uuid: str,
     resources: str,
 ) -> None:
@@ -112,20 +112,32 @@ async def require_operating_system(
 
     A managed system in recovery or with no connection answers its partition
     and VIOS feeds with HTTP 204 and no body (#1289), which reads the same as
-    a system with none.
+    a system with none. Its ``State`` comes from ``ManagedSystem/quick/All``:
+    ``ManagedSystem/{uuid}`` can time out for a system with no connection (#1500).
     """
-    system = await get_managed_system(system_uuid)
-    resource = (system or {}).get("Resource") or {}
-    state = _state_text(resource.get("State"))
-    if state.lower() == "operating":
+    summary = next(
+        (
+            item
+            for item in await list_system_summaries()
+            if isinstance(item, dict)
+            and isinstance(item.get("UUID"), str)
+            and item["UUID"].lower() == system_uuid.lower()
+        ),
+        {},
+    )
+    if system_operating(summary.get("State")):
         return
-    detailed = _state_text(resource.get("DetailedState"))
-    name = _state_text(resource.get("SystemName"))
+    state = _state_text(summary.get("State"))
+    detail = _state_text(summary.get("StateDetail"))
+    state_label = f"State {state!r}" + (
+        "" if detail == "unknown" else f" (StateDetail {detail!r})"
+    )
+    name = _state_text(summary.get("SystemName"))
     system_label = system_uuid if name == "unknown" else f"{name!r} ({system_uuid})"
     raise HMCError(
         f"Cannot list {resources} on managed system {system_label}: it is in "
-        f"State {state!r} (DetailedState {detailed!r}), and an empty {resources} "
-        "feed cannot be trusted unless the system is operating"
+        f"{state_label}, and an empty {resources} feed cannot be trusted unless "
+        "the system is operating; retry when it reconnects"
     )
 
 

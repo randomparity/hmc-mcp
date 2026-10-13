@@ -6,7 +6,7 @@ from typing import Any
 
 from ..._app import with_client
 from ...client.client_contracts import AuthenticationFilter
-from ...documents import AuthenticationType
+from ...documents.access import AuthenticationType
 from ...operations.users.core import (
     CreateUserRequest,
     ModifyUserPatch,

@@ -9,7 +9,7 @@ from pydantic import BeforeValidator, Field
 
 from hmcpctl.client.core import HMCClient
 
-from ...documents import (
+from ...documents.access import (
     AUTHENTICATION_TYPES,
     DEFAULT_USER_DESCRIPTION,
     AuthenticationType,
