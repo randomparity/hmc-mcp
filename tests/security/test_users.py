@@ -6,6 +6,7 @@ from conftest import live_fixture, make_config
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.documents.access import build_hmc_user_document
+from hmcpctl.xmlutil import leaf_text
 
 CONSOLE = "console-1"
 PROFILE = "profile-1"
@@ -287,6 +288,25 @@ async def test_user_profile_crud_uses_nested_uom_paths(mock_hmc) -> None:
         and delete_route.called
     )
     assert "type=UserProfile" in put_route.calls[0].request.headers["content-type"]
+
+
+@pytest.mark.asyncio
+async def test_user_read_strips_the_newline_the_hmc_appends_to_remote_user_id(
+    mock_hmc,
+) -> None:
+    """ADR 0076 (#1538): the HMC serves a Kerberos principal with a trailing newline
+    the create did not send; the shared parser strips leaf text, so a user read
+    returns the principal without it."""
+    body = live_fixture("rest-user-profile-kerberos")["body"]
+    assert "@example.test\n</RemoteUserID>" in body
+    mock_hmc.get(
+        f"/rest/api/uom/ManagementConsole/{CONSOLE}/UserProfile/{PROFILE}"
+    ).mock(return_value=httpx.Response(200, text=body))
+    async with HMCClient(make_config()) as hmc:
+        profile = await hmc.get_hmc_user(CONSOLE, PROFILE)
+
+    remote_user_id = leaf_text(profile["Resource"]["RemoteUserID"])
+    assert remote_user_id == "hmcpctl-test/user@example.test"
 
 
 @pytest.mark.asyncio
