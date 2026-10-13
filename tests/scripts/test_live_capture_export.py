@@ -275,6 +275,36 @@ def test_identifier_elements(element: str, value: str, token: str) -> None:
     assert corpus[-1]["body"] == f"<{element}>{token}</{element}>"
 
 
+def test_vios_mac_address_prefix_is_scrubbed() -> None:
+    """Regression #1497: `MACAddress\\b` let a VIOS's `<MACAddressPrefix>` through."""
+    body = (
+        '<VirtualIOServer><MACAddressPrefix kb="ROR" kxe="false">'
+        "0A1B2C3D4E5F</MACAddressPrefix></VirtualIOServer>"  # pragma: allowlist secret
+    )
+    corpus = export.tokenize_records(_records(_rest("/vios", body)))
+    assert corpus[-1]["body"] == body.replace("0A1B2C3D4E5F", "000000000000")
+
+
+@pytest.mark.parametrize(
+    ("element", "value", "token"),
+    [
+        ("VirtualEthernetAdapterMACAddressPrefix", "0A1B2C", "000000"),
+        ("VirtualEthernetAdapterMACAddressPrefix", "6765100", "0000000"),
+        ("MacAddressValue", "0a1b2c3d4e5f", "000000000000"),  # pragma: allowlist secret
+        ("AllowedMACAddresses", "0A1B2C3D4E5F,1A2B3C", "000000000000,000000"),
+        ("AllowedMACAddresses", "ALL", "ALL"),
+        ("AllowedMACAddresses", "NONE", "NONE"),
+        ("AllowedOperatingSystemMACAddresses", "ALL", "ALL"),
+        ("VirtualEthernetCustomMACAddressCapable", "true", "true"),
+    ],
+)
+def test_mac_elements_scrub_only_hex(element: str, value: str, token: str) -> None:
+    """Every MAC-bearing element is scrubbed; a keyword or boolean value survives."""
+    body = f"<{element}>{value}</{element}>"
+    corpus = export.tokenize_records(_records(_rest("/ms", body)))
+    assert corpus[-1]["body"] == f"<{element}>{token}</{element}>"
+
+
 def test_uuid_tokens_keep_case_and_are_consistent() -> None:
     corpus = export.tokenize_records(_records(_ssh("lssyscfg", LPAR_UUID.lower())))
     upper = corpus[1]["path"].rsplit("/", 1)[1]
