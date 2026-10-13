@@ -8,8 +8,12 @@ import pytest
 from conftest import live_fixture, make_config
 
 from hmcpctl.client.core import HMCClient
-from hmcpctl.documents import LparResources, build_vios_document
-from hmcpctl.documents.lpar import _partition_body, lpar_envelope
+from hmcpctl.documents.lpar import (
+    LparResources,
+    _partition_body,
+    build_vios_document,
+    lpar_envelope,
+)
 from hmcpctl.errors import HMCError
 from hmcpctl.ssh.install import (
     INSTALLIOS_PID_PREFIX,

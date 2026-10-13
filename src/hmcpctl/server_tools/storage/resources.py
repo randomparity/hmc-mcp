@@ -11,7 +11,7 @@ from ..._app import (
     with_client,
 )
 from ...client.core import HMCClient
-from ...documents import StorageKind
+from ...documents.storage import StorageKind
 from ...jobs import (
     DeviceType,
     LuType,

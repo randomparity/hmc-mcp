@@ -1272,7 +1272,7 @@ async def test_create_logical_partition(mock_hmc):
     route = mock_hmc.put(
         f"/rest/api/uom/ManagedSystem/{_PARENT_UUID}/LogicalPartition"
     ).mock(return_value=httpx.Response(201, text=CREATED_LPAR))
-    from hmcpctl.documents import LparResources, build_lpar_document
+    from hmcpctl.documents.lpar import LparResources, build_lpar_document
 
     xml = build_lpar_document(
         name="newlpar",

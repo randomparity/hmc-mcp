@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from hmcpctl.client.core import HMCClient
-from hmcpctl.documents import LparResources
+from hmcpctl.documents.lpar import LparResources
 from hmcpctl.resource_identity import optional_system_selector, resolve_system_uuid
 
 _MEMORY_CONTAINER = "AssociatedSystemMemoryConfiguration"

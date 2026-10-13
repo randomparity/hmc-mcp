@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import quote
 
-from ..documents import merge_remote_access_document
+from ..documents.remote_access import merge_remote_access_document
 from ..errors import HMCError
 from ..xmlutil import leaf_text
 from .client_contracts import (

@@ -5,7 +5,7 @@ import pytest
 from conftest import live_fixture, make_config
 
 from hmcpctl.client.core import HMCClient
-from hmcpctl.documents import build_hmc_user_document
+from hmcpctl.documents.access import build_hmc_user_document
 
 CONSOLE = "console-1"
 PROFILE = "profile-1"

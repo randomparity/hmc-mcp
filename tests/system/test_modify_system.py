@@ -5,7 +5,7 @@ import pytest
 from conftest import make_config
 
 from hmcpctl.client.core import HMCClient
-from hmcpctl.documents import build_managed_system_document
+from hmcpctl.documents.system import build_managed_system_document
 
 SYSTEM_UUID = "00000000-0000-0000-0000-000000000001"
 

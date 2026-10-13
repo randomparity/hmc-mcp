@@ -30,7 +30,7 @@ from conftest import (
     mock_system_summaries,
 )
 
-from hmcpctl.documents import LparResources
+from hmcpctl.documents.lpar import LparResources
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.updates.models import (
     PlatformUpdateParameter,

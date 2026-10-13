@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from hmcpctl.client.core import HMCClient
-from hmcpctl.documents import LparResources
+from hmcpctl.documents.lpar import LparResources
 from hmcpctl.operations.lpar.core import LparCreation, create_and_stamp_lpar
 from hmcpctl.operations.lpar.dlpar import set_lpar_memory
 

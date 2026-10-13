@@ -15,7 +15,7 @@ import httpx
 import pytest
 from conftest import JOB_ENTRY, JOB_ID, LPAR_RESOURCE_CONFIG, SYSTEM_ENTRY
 
-from hmcpctl.documents import LparResources
+from hmcpctl.documents.lpar import LparResources
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.systems.core import power_system
 from hmcpctl.server_tools.lpar.lifecycle import (

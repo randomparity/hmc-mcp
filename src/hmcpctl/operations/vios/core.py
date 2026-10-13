@@ -12,7 +12,7 @@ from hmcpctl.client.core import HMCClient
 from hmcpctl.operations.partition_state import PARTITION_STATES, PartitionState
 from hmcpctl.operations.systems.fleet import FleetListing, read_fleet
 
-from ...documents import LparResources, build_vios_document
+from ...documents.lpar import LparResources, build_vios_document
 from ...errors import HMCError
 from ...jobs import (
     DEFAULT_JOB_POLL_INTERVAL,

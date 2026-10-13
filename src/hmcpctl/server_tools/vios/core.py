@@ -7,7 +7,7 @@ from typing import Any
 from ..._app import (
     with_client,
 )
-from ...documents import VIOS_DEFAULT_RESOURCES, LparResources
+from ...documents.lpar import VIOS_DEFAULT_RESOURCES, LparResources
 from ...operations.vios.core import (
     BackupType,
     RestoreBackupType,

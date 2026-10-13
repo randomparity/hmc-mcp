@@ -24,7 +24,7 @@ from conftest import LPAR_RESOURCE_CONFIG, live_response, make_config
 from hmcpctl.audit import sink as audit_sink
 from hmcpctl.client.client_resolution import MAX_PARENT_DISCOVERY_SYSTEMS
 from hmcpctl.client.core import HMCClient
-from hmcpctl.documents import LparResources
+from hmcpctl.documents.lpar import LparResources
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.lpar.dlpar import set_lpar_memory, set_lpar_processors
 

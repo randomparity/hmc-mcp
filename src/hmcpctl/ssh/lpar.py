@@ -6,8 +6,12 @@ import shlex
 from dataclasses import replace
 
 from ..config import HMCConfig
-from ..documents import SHARING_MODES, LparResources
-from ..documents.lpar import shared_units_over_vcpus, shared_vcpu_defaults
+from ..documents.lpar import (
+    SHARING_MODES,
+    LparResources,
+    shared_units_over_vcpus,
+    shared_vcpu_defaults,
+)
 from .commands import build_attribute_record
 from .description_validation import validate_lpar_description
 from .profiles import set_lpar_description
