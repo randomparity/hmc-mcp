@@ -41,8 +41,8 @@ synthetic partition name the HMC does not know.
 prefix `2026-10-13-q1250/`) come from an operator-authorized window for #1250 on the V10R3 HMC
 and POWER9 system above. One vSCSI server adapter was DLPAR-added to the VIOS toward the test
 partition with no mapping, read while it existed, and removed. The REST body is the VIOS's
-`ViosSCSIMapping` group, and the listing is the #1237 `lshwres` command. Their token map is their
-own, as for the exports above.
+`ViosSCSIMapping` group, and the listing is the #1237 `lshwres` command. Its `MACAddressPrefix`
+is zeroed, which the exporter does not do. Their token map is their own, as for the exports above.
 
 ## Format
 
