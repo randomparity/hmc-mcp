@@ -9,6 +9,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 from hmcpctl.audit import records as audit
+from hmcpctl.client.client_resolution import system_operating
 from hmcpctl.client.core import HMCClient
 from hmcpctl.discovery_limits import (
     MAX_PARENT_DISCOVERY_SYSTEMS,
@@ -33,9 +34,7 @@ from hmcpctl.xmlutil import leaf_text
 _logger = logging.getLogger(__name__)
 
 
-def _fleet_within_discovery_bound(
-    systems: list[dict[str, Any]], lpar_label: str
-) -> list[dict[str, Any]]:
+def _fleet_within_discovery_bound(systems: list[Any], lpar_label: str) -> list[Any]:
     """Reject an owning-system search whose request fan-out is too large.
 
     The shared bound also protects ambiguous-name resolution. Its message is
@@ -51,10 +50,12 @@ def _fleet_within_discovery_bound(
     return systems
 
 
-def _discovery_candidate(system: dict[str, Any]) -> tuple[str, str] | None:
-    """Return one fleet entry's UUID and CLI name, or None if unusable."""
+def _discovery_candidate(system: object) -> tuple[str, str] | None:
+    """Return one quick/All summary's UUID and CLI name, or None if unusable."""
+    if not isinstance(system, dict):
+        return None
     system_uuid = system.get("UUID")
-    system_name = (system.get("Resource") or {}).get("SystemName")
+    system_name = system.get("SystemName")
     if not isinstance(system_uuid, str) or not system_uuid:
         return None
     if not isinstance(system_name, str) or not system_name:
@@ -104,18 +105,17 @@ class _SkippedFrames:
 _MAX_REPORTED_SKIPS = 5
 
 
-async def _fleet_inventory(hmc: HMCClient, lpar_label: str) -> list[dict[str, Any]]:
+async def _fleet_inventory(hmc: HMCClient, lpar_label: str) -> list[Any]:
     """Read the fleet, translating an inventory failure into the same remedy.
 
-    The unfiltered ``ManagedSystem`` feed is the one some HMC firmware builds
-    answer with HTTP 500 (``client_systems.list_managed_systems``), and a
-    selector-less DLPAR call reads it where it previously read nothing. Every
-    other discovery failure names ``supply managed-system scope``; without this
-    the one degraded-dependency case that the selector *does* fix would be the
-    only one that never mentions it.
+    The systems come from ``ManagedSystem/quick/All``: the full ``ManagedSystem``
+    feed times out while a system has no connection (#1501). Every other
+    discovery failure names ``supply managed-system scope``; without this the
+    one degraded-dependency case that the selector *does* fix would be the only
+    one that never mentions it.
     """
     try:
-        return await hmc.list_managed_systems()
+        return await hmc.list_system_summaries()
     except HMCError as exc:
         raise ValueError(
             f"Cannot identify the managed system owning LPAR {lpar_label!r}: "
@@ -136,6 +136,11 @@ async def _search_fleet_for_partition(
             skipped.unusable_entries += 1
             continue
         system_uuid, system_name = candidate
+        state = system.get("State")
+        if not system_operating(state):
+            state_text = state.strip()[:100] if isinstance(state, str) else "unknown"
+            skipped.unreadable.append(f"{system_uuid} in State {state_text!r}")
+            continue
         try:
             partitions = await hmc.list_logical_partitions(system_uuid)
         except HMCError as exc:

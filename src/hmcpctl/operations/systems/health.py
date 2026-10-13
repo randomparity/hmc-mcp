@@ -58,14 +58,13 @@ def _check_issue_budget(*categories: Collection[object]) -> None:
         )
 
 
-def _system_issue(system: dict[str, Any]) -> dict[str, Any] | None:
-    resource = _resource(system)
-    state = _bounded_text_or_unknown(resource.get("State")).lower()
+def _system_issue(summary: dict[str, Any]) -> dict[str, Any] | None:
+    state = _bounded_text_or_unknown(summary.get("State")).lower()
     if state == "operating":
         return None
     return {
-        "uuid": _bounded_text_or_unknown(system.get("UUID")),
-        "name": _bounded_text_or_unknown(resource.get("SystemName")),
+        "uuid": _bounded_text_or_unknown(summary.get("UUID")),
+        "name": _bounded_text_or_unknown(summary.get("SystemName")),
         "state": state,
     }
 
@@ -172,8 +171,12 @@ async def _system_inventory(
 
 
 async def fetch_fleet_health(hmc: HMCClient) -> FleetHealthResult:
-    """Return curated unhealthy resources from the configured HMC estate."""
-    systems = await hmc.list_managed_systems()
+    """Return curated unhealthy resources from the configured HMC estate.
+
+    The systems and their ``State`` come from ``ManagedSystem/quick/All``: the
+    full ``ManagedSystem`` feed times out while a system has no connection (#1501).
+    """
+    systems = await hmc.list_system_summaries()
     if len(systems) > _MAX_SYSTEMS:
         raise ValueError(
             f"Fleet health inventory exceeds the safe limit of {_MAX_SYSTEMS} "
@@ -182,11 +185,11 @@ async def fetch_fleet_health(hmc: HMCClient) -> FleetHealthResult:
     queue: asyncio.Queue[tuple[dict[str, Any], str, str]] = asyncio.Queue()
     system_issues: list[dict[str, Any]] = []
     for system in systems:
-        uuid_value = system.get("UUID")
+        uuid_value = system.get("UUID") if isinstance(system, dict) else None
         if not isinstance(uuid_value, str) or not uuid_value.strip():
             raise ValueError("Managed system entry must contain a valid UUID")
         system_uuid = _bounded_text_or_unknown(uuid_value)
-        system_name = _bounded_text_or_unknown(_resource(system).get("SystemName"))
+        system_name = _bounded_text_or_unknown(system.get("SystemName"))
         queue.put_nowait((system, system_uuid, system_name))
         issue = _system_issue(system)
         if issue is not None:

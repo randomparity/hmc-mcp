@@ -17,6 +17,7 @@ from dataclasses import dataclass, fields
 from typing import Any, Protocol
 
 from hmcpctl.errors import HMCError
+from hmcpctl.operations.systems.fleet import UnreadableSystem, unreadable_system
 from hmcpctl.xmlutil import leaf_text, mtms_parts
 
 _logger = logging.getLogger(__name__)
@@ -36,7 +37,9 @@ _UNCONFIGURED_PORTS = "UnconfiguredLogicalPorts"
 class SurveyClient(Protocol):
     """The HMC reads a survey makes; ``HMCClient`` satisfies it."""
 
-    async def list_managed_systems(self) -> list[dict[str, Any]]: ...
+    async def list_system_summaries(self) -> list[Any]: ...
+
+    async def get_managed_system(self, uuid: str) -> dict[str, Any] | None: ...
 
     async def list_logical_partitions(
         self, system_uuid: str
@@ -639,12 +642,49 @@ async def read_system(
     )
 
 
+def _all_unknown(kind: type[Any]) -> Any:
+    return kind(**dict.fromkeys(item.name for item in fields(kind)))
+
+
+def _unread_system(profile: str, skipped: UnreadableSystem) -> SystemReading:
+    """A system that is not operating, reported from its quick/All summary alone."""
+    unknown = {name: _all_unknown(kind) for name, kind in FIGURE_GROUPS.items()}
+    return SystemReading(
+        profile=profile,
+        name=skipped.system_name or skipped.system_uuid or "unknown system",
+        machine_type=None,
+        model=None,
+        serial=None,
+        firmware=None,
+        state=skipped.state,
+        shared_pools=(),
+        gaps=(
+            f"ManagedSystem: not read, because the system is in State {skipped.state!r}",
+        ),
+        **unknown,
+    )
+
+
 async def survey_hmc(hmc: SurveyClient, profile: str) -> list[SystemReading]:
-    """Read every managed system one profile's HMC reports, one at a time."""
-    return [
-        await read_system(hmc, profile, system)
-        for system in await hmc.list_managed_systems()
-    ]
+    """Read every managed system one profile's HMC reports, one at a time.
+
+    The systems come from ``ManagedSystem/quick/All``: the full ``ManagedSystem``
+    feed, and a non-operating system's own entry, time out while a system has no
+    connection (#1501). A system that is not operating is not read; its reading
+    carries every figure unknown and a gap naming its ``State``.
+    """
+    readings = []
+    for summary in await hmc.list_system_summaries():
+        skipped = unreadable_system(summary)
+        if skipped is not None:
+            readings.append(_unread_system(profile, skipped))
+            continue
+        uuid = summary["UUID"]
+        system = await hmc.get_managed_system(uuid)
+        if system is None:
+            raise HMCError(f"Managed system {uuid} listed by quick/All has no entry")
+        readings.append(await read_system(hmc, profile, system))
+    return readings
 
 
 async def survey_fleet(

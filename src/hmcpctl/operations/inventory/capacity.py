@@ -9,6 +9,7 @@ from typing import Any, TypeVar
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.errors import HMCError
+from hmcpctl.operations.systems.fleet import UnreadableSystem, unreadable_system
 from hmcpctl.xmlutil import leaf_text
 
 _logger = logging.getLogger(__name__)
@@ -129,35 +130,40 @@ def calculate_system_capacity(
     )
 
 
-def _is_operating(system: dict[str, Any]) -> bool:
-    state = (system.get("Resource") or {}).get("State")
-    return isinstance(state, str) and state.strip().lower() == "operating"
+def _label(system: UnreadableSystem) -> str:
+    return f"{system.system_name!r} ({system.system_uuid}) in State {system.state!r}"
 
 
 async def fetch_capacity_report(hmc: HMCClient) -> list[CapacitySummary]:
-    """Return capacity statistics for every readable managed system.
+    """Return capacity statistics for every operating managed system.
 
-    A system that is not operating refuses its partition feed (#1301); it is
-    left out with a logged warning rather than read as one with no partitions.
-    When every system is left out, the first refusal is raised instead of an
-    empty report that would read as an estate with no systems.
+    The systems and their ``State`` come from ``ManagedSystem/quick/All``: the
+    full ``ManagedSystem`` feed, and a non-operating system's own entry, time out
+    while a system has no connection (#1501). A system that is not operating is
+    not read; it is left out with a logged warning rather than read as one with
+    no capacity. When every system is left out, an error naming them is raised
+    instead of an empty report that would read as an estate with no systems.
     """
-    systems = await hmc.list_managed_systems()
     result = []
-    omitted: list[HMCError] = []
-    for system in systems:
-        uuid = system.get("UUID")
-        try:
-            lpars = await hmc.list_logical_partitions(uuid) if uuid else []
-        except HMCError as exc:
-            if _is_operating(system):
-                raise
-            _logger.warning("Capacity report omits managed system %s: %s", uuid, exc)
-            omitted.append(exc)
+    omitted: list[UnreadableSystem] = []
+    for summary in await hmc.list_system_summaries():
+        skipped = unreadable_system(summary)
+        if skipped is not None:
+            _logger.warning("Capacity report omits managed system %s", _label(skipped))
+            omitted.append(skipped)
             continue
-        result.append(calculate_system_capacity(system, lpars))
+        uuid = summary["UUID"]
+        system = await hmc.get_managed_system(uuid)
+        if system is None:
+            raise HMCError(f"Managed system {uuid} listed by quick/All has no entry")
+        result.append(
+            calculate_system_capacity(system, await hmc.list_logical_partitions(uuid))
+        )
     if omitted and not result:
-        raise omitted[0]
+        raise HMCError(
+            "No managed system is operating, so no capacity can be reported: "
+            + ", ".join(_label(system) for system in omitted)
+        )
     return result
 
 

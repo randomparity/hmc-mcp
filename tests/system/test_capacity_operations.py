@@ -90,20 +90,29 @@ def test_capacity_reads_a_figure_carrying_an_attribute():
     assert calculate_system_capacity(system, []).free_memory_mib == 4096
 
 
+ROOMY = "00000000-0000-4000-8000-00000000000a"
+TIGHT = "00000000-0000-4000-8000-00000000000b"
+
+
+_CAPACITY_ENTRIES = {
+    ROOMY: captured_system_entry(
+        ROOMY, "roomy", available_mem="32768", available_proc="12"
+    ),
+    TIGHT: captured_system_entry(
+        TIGHT, "tight", available_mem="8192", available_proc="4"
+    ),
+}
+
+
 class _CapacityClient:
-    async def list_managed_systems(self):
+    async def list_system_summaries(self):
         return [
-            _parsed(
-                captured_system_entry(
-                    "roomy", "roomy", available_mem="32768", available_proc="12"
-                )
-            ),
-            _parsed(
-                captured_system_entry(
-                    "tight", "tight", available_mem="8192", available_proc="4"
-                )
-            ),
+            {"UUID": uuid, "SystemName": name, "State": "operating"}
+            for uuid, name in ((ROOMY, "roomy"), (TIGHT, "tight"))
         ]
+
+    async def get_managed_system(self, uuid):
+        return _parsed(_CAPACITY_ENTRIES[uuid])
 
     async def list_logical_partitions(self, _system_uuid):
         return []
@@ -115,4 +124,4 @@ async def test_find_placement_orders_smallest_sufficient_capacity_first():
         _CapacityClient(), desired_memory_mib=4096, desired_proc_units=1
     )
 
-    assert [candidate.system_uuid for candidate in result] == ["tight", "roomy"]
+    assert [candidate.system_uuid for candidate in result] == [TIGHT, ROOMY]

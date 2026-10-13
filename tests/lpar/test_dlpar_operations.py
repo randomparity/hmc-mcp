@@ -120,16 +120,12 @@ def _mock_partition_feed(router, system_uuid: str, *lpar_uuids: str) -> None:
 
 def _mock_fleet(router) -> None:
     """Bounded parent discovery: the fleet, then each system's partition feed."""
-    router.get("/rest/api/uom/ManagedSystem").mock(
-        return_value=httpx.Response(
-            200,
-            text=_feed(
-                SYSTEM_ENTRY.format(uuid=OTHER_SYSTEM_UUID, name="server0"),
-                SYSTEM_ENTRY.format(uuid=SYSTEM_UUID, name=SYSTEM_NAME),
-            ),
-        )
-    )
     _mock_empty_other_system(router)
+    mock_system_summaries(
+        router,
+        (OTHER_SYSTEM_UUID, "server0", "operating"),
+        (SYSTEM_UUID, SYSTEM_NAME, "operating"),
+    )
     router.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(
             200, text=_feed(LPAR_ENTRY.format(uuid=LPAR_UUID, name=LPAR_NAME))
@@ -374,6 +370,9 @@ async def test_a_supplied_system_skips_fleet_discovery(mock_hmc):
 
     paths = [call.request.url.path for call in mock_hmc.calls]
     assert "/rest/api/uom/ManagedSystem" not in paths
+    assert (
+        f"/rest/api/uom/ManagedSystem/{OTHER_SYSTEM_UUID}/LogicalPartition" not in paths
+    )
 
 
 @pytest.mark.parametrize("operation", [set_lpar_processors, set_lpar_memory])
@@ -532,15 +531,17 @@ async def test_discovery_reports_frames_it_could_not_read(mock_hmc):
     than as an absent partition.
     """
     _mock_lpar_detail(mock_hmc)
-    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(
         return_value=httpx.Response(
             200,
-            text=_feed(
-                SYSTEM_ENTRY.format(uuid=SYSTEM_UUID, name=SYSTEM_NAME).replace(
-                    f"<id>urn:uuid:{SYSTEM_UUID}</id>", "<id></id>"
-                ),
-                SYSTEM_ENTRY.format(uuid=OTHER_SYSTEM_UUID, name="server0"),
-            ),
+            json=[
+                {"SystemName": SYSTEM_NAME, "State": "operating"},
+                {
+                    "UUID": OTHER_SYSTEM_UUID,
+                    "SystemName": "server0",
+                    "State": "operating",
+                },
+            ],
         )
     )
     mock_hmc.get(
@@ -569,20 +570,16 @@ async def test_an_unhealthy_frame_does_not_block_a_healthy_one(mock_hmc):
     own; a walk that aborted on the first unhealthy frame would make every
     DLPAR call hostage to an unrelated system's health, ordered by inventory.
     """
-    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
-        return_value=httpx.Response(
-            200,
-            text=_feed(
-                SYSTEM_ENTRY.format(uuid=OTHER_SYSTEM_UUID, name="server0"),
-                SYSTEM_ENTRY.format(uuid=SYSTEM_UUID, name=SYSTEM_NAME),
-            ),
-        )
-    )
-    mock_hmc.get(
-        f"/rest/api/uom/ManagedSystem/{OTHER_SYSTEM_UUID}/LogicalPartition"
-    ).mock(return_value=httpx.Response(500))
     _mock_lpar_detail(mock_hmc)
     _mock_system_detail(mock_hmc)
+    mock_system_summaries(
+        mock_hmc,
+        (OTHER_SYSTEM_UUID, "server0", "operating"),
+        (SYSTEM_UUID, SYSTEM_NAME, "operating"),
+    )
+    other = mock_hmc.get(
+        f"/rest/api/uom/ManagedSystem/{OTHER_SYSTEM_UUID}/LogicalPartition"
+    ).mock(return_value=httpx.Response(500))
     route = _mock_modify(mock_hmc)
     read = _owned_by("hmcpctl")
 
@@ -592,6 +589,7 @@ async def test_an_unhealthy_frame_does_not_block_a_healthy_one(mock_hmc):
                 hmc, None, LPAR_UUID, LparResources(desired_procs=1.0)
             )
 
+    assert other.called
     assert route.called
     assert read.await_args.args[1:] == (SYSTEM_NAME, LPAR_NAME)
 
@@ -600,19 +598,12 @@ async def test_an_unhealthy_frame_does_not_block_a_healthy_one(mock_hmc):
 async def test_discovery_rejects_an_oversized_fleet(mock_hmc):
     """The fan-out cap names the fleet size, not a partition-name ambiguity."""
     _mock_lpar_detail(mock_hmc)
-    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
-        return_value=httpx.Response(
-            200,
-            text=_feed(
-                *(
-                    SYSTEM_ENTRY.format(
-                        uuid=f"cccc0000-0000-0000-0000-{index:012d}",
-                        name=f"server{index}",
-                    )
-                    for index in range(MAX_PARENT_DISCOVERY_SYSTEMS + 1)
-                )
-            ),
-        )
+    mock_system_summaries(
+        mock_hmc,
+        *(
+            (f"cccc0000-0000-0000-0000-{index:012d}", f"server{index}", "operating")
+            for index in range(MAX_PARENT_DISCOVERY_SYSTEMS + 1)
+        ),
     )
     route = _mock_modify(mock_hmc)
 
@@ -643,7 +634,7 @@ async def test_discovery_translates_its_own_timeout(mock_hmc, monkeypatch):
         await asyncio.sleep(1)
         raise AssertionError("the deadline should have fired first")
 
-    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(side_effect=_slow_fleet)
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(side_effect=_slow_fleet)
     route = _mock_modify(mock_hmc)
 
     async with HMCClient(make_config()) as hmc:
@@ -828,13 +819,14 @@ async def test_an_unreadable_feed_carries_its_error(mock_hmc, operation):
 async def test_an_unavailable_fleet_inventory_names_the_operator_remedy(mock_hmc):
     """A firmware-fragile inventory read still points at the selector.
 
-    ``list_managed_systems`` documents HTTP 500 on this feed for some firmware
-    builds, and a selector-less DLPAR call reads it where it previously read
-    nothing — so the one degraded dependency the selector actually fixes must
-    not be the one failure that never mentions it.
+    A selector-less DLPAR call reads the managed-system inventory where it
+    previously read nothing — so the one degraded dependency the selector
+    actually fixes must not be the one failure that never mentions it.
     """
     _mock_lpar_detail(mock_hmc)
-    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(return_value=httpx.Response(503))
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(
+        return_value=httpx.Response(503)
+    )
     route = _mock_modify(mock_hmc)
 
     async with HMCClient(make_config()) as hmc:
@@ -852,11 +844,7 @@ async def test_an_unavailable_fleet_inventory_names_the_operator_remedy(mock_hmc
 async def test_undiscoverable_system_names_the_operator_remedy(mock_hmc):
     """No owning system found: the error names the selector that fixes it."""
     _mock_lpar_detail(mock_hmc)
-    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
-        return_value=httpx.Response(
-            200, text=_feed(SYSTEM_ENTRY.format(uuid=OTHER_SYSTEM_UUID, name="server0"))
-        )
-    )
+    mock_system_summaries(mock_hmc, (OTHER_SYSTEM_UUID, "server0", "operating"))
     _mock_empty_other_system(mock_hmc)
     route = _mock_modify(mock_hmc)
 

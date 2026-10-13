@@ -20,10 +20,15 @@ def _entry(uuid: object, **resource: object) -> dict:
     return {"UUID": uuid, "Resource": resource}
 
 
+def _summary(uuid: object, **fields: object) -> dict:
+    """One ``ManagedSystem/quick/All`` item."""
+    return {"UUID": uuid, **fields}
+
+
 def _healthy_client() -> AsyncMock:
     client = AsyncMock()
-    client.list_managed_systems.return_value = [
-        _entry("sys-1", SystemName="system-a", State="operating")
+    client.list_system_summaries.return_value = [
+        _summary("sys-1", SystemName="system-a", State="operating")
     ]
     client.list_logical_partitions.return_value = [
         _entry(
@@ -49,9 +54,9 @@ async def test_healthy_estate_returns_empty_collections() -> None:
 @pytest.mark.asyncio
 async def test_degraded_estate_returns_curated_sorted_issues() -> None:
     client = _healthy_client()
-    client.list_managed_systems.return_value = [
-        _entry("sys-b", SystemName="system-b", State="standby"),
-        _entry("sys-a", SystemName="system-a", State="OPERATING"),
+    client.list_system_summaries.return_value = [
+        _summary("sys-b", SystemName="system-b", State="standby"),
+        _summary("sys-a", SystemName="system-a", State="OPERATING"),
     ]
 
     async def lpars(system_uuid: str) -> list[dict]:
@@ -139,9 +144,9 @@ async def test_core_inventory_error_propagates_without_partial_result() -> None:
 @pytest.mark.asyncio
 async def test_core_inventory_error_cancels_sibling_reads() -> None:
     client = _healthy_client()
-    client.list_managed_systems.return_value = [
-        _entry("sys-fail", SystemName="failing", State="operating"),
-        _entry("sys-block", SystemName="blocked", State="operating"),
+    client.list_system_summaries.return_value = [
+        _summary("sys-fail", SystemName="failing", State="operating"),
+        _summary("sys-block", SystemName="blocked", State="operating"),
     ]
     sibling_started = asyncio.Event()
     sibling_cancelled = asyncio.Event()
@@ -204,7 +209,7 @@ async def test_core_inventory_error_cancels_same_system_sibling_read() -> None:
 @pytest.mark.asyncio
 async def test_malformed_system_identity_fails_before_child_reads(uuid: object) -> None:
     client = _healthy_client()
-    client.list_managed_systems.return_value = [_entry(uuid, SystemName="broken")]
+    client.list_system_summaries.return_value = [_summary(uuid, SystemName="broken")]
 
     with pytest.raises(ValueError, match="Managed system.*valid UUID"):
         await fleet_health(client)
@@ -217,7 +222,7 @@ async def test_malformed_system_identity_fails_before_child_reads(uuid: object) 
 async def test_oversized_estate_fails_before_child_reads(monkeypatch) -> None:
     monkeypatch.setattr(operations_health, "_MAX_SYSTEMS", 1)
     client = _healthy_client()
-    client.list_managed_systems.return_value *= 2
+    client.list_system_summaries.return_value *= 2
 
     with pytest.raises(ValueError, match="safe limit of 1 managed systems"):
         await fleet_health(client)
@@ -240,9 +245,9 @@ async def test_oversized_system_inventory_fails_closed(monkeypatch) -> None:
 async def test_aggregate_issue_budget_fails_closed(monkeypatch) -> None:
     monkeypatch.setattr(operations_health, "_MAX_ISSUES", 1)
     client = _healthy_client()
-    client.list_managed_systems.return_value = [
-        _entry("sys-1", SystemName="one", State="error"),
-        _entry("sys-2", SystemName="two", State="standby"),
+    client.list_system_summaries.return_value = [
+        _summary("sys-1", SystemName="one", State="error"),
+        _summary("sys-2", SystemName="two", State="standby"),
     ]
 
     with pytest.raises(ValueError, match="safe limit of 1 issues"):
@@ -256,8 +261,8 @@ async def test_aggregate_issue_budget_fails_closed(monkeypatch) -> None:
 async def test_oversized_scalar_fails_closed(monkeypatch) -> None:
     monkeypatch.setattr(operations_health, "_MAX_SCALAR_LENGTH", 5)
     client = _healthy_client()
-    client.list_managed_systems.return_value = [
-        _entry("sys-1", SystemName="too-long", State="operating")
+    client.list_system_summaries.return_value = [
+        _summary("sys-1", SystemName="too-long", State="operating")
     ]
 
     with pytest.raises(ValueError, match="safe limit of 5 characters"):
@@ -268,8 +273,8 @@ async def test_oversized_scalar_fails_closed(monkeypatch) -> None:
 async def test_oversized_system_uuid_fails_before_child_reads(monkeypatch) -> None:
     monkeypatch.setattr(operations_health, "_MAX_SCALAR_LENGTH", 5)
     client = _healthy_client()
-    client.list_managed_systems.return_value = [
-        _entry("uuid-too-long", SystemName="sys", State="operating")
+    client.list_system_summaries.return_value = [
+        _summary("uuid-too-long", SystemName="sys", State="operating")
     ]
 
     with pytest.raises(ValueError, match="safe limit of 5 characters"):
@@ -295,10 +300,12 @@ async def test_system_workers_and_active_inspections_are_bounded(monkeypatch) ->
     monkeypatch.setattr(operations_health.asyncio, "create_task", recording_create_task)
 
     class RecordingClient:
-        async def list_managed_systems(self) -> list[dict]:
-            calls.append("list_managed_systems")
+        async def list_system_summaries(self) -> list[dict]:
+            calls.append("list_system_summaries")
             return [
-                _entry(f"sys-{index}", SystemName=f"system-{index}", State="operating")
+                _summary(
+                    f"sys-{index}", SystemName=f"system-{index}", State="operating"
+                )
                 for index in range(30)
             ]
 
@@ -325,7 +332,7 @@ async def test_system_workers_and_active_inspections_are_bounded(monkeypatch) ->
     assert scheduled_coroutines.count("inspect_systems") == 8
     assert Counter(calls) == Counter(
         {
-            "list_managed_systems": 1,
+            "list_system_summaries": 1,
             "list_logical_partitions": 30,
             "list_vios": 30,
         }
@@ -367,9 +374,9 @@ async def test_refused_vios_feed_becomes_a_warning_not_a_failure() -> None:
 async def test_non_operating_system_lpar_feed_becomes_a_warning() -> None:
     """A system not operating answers its feeds with 204 (#1289, #1301)."""
     client = _healthy_client()
-    client.list_managed_systems.return_value = [
-        _entry("sys-1", SystemName="sys-R1", State="no connection"),
-        _entry("sys-2", SystemName="sys-R2", State="operating"),
+    client.list_system_summaries.return_value = [
+        _summary("sys-1", SystemName="sys-R1", State="no connection"),
+        _summary("sys-2", SystemName="sys-R2", State="operating"),
     ]
     refused = HMCError("Cannot list LPARs on managed system 'sys-R1'")
 
