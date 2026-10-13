@@ -1,7 +1,7 @@
 {
  "firmware": "v11r2-p11-9043-mru",
  "sources": [
-  "2026-10-13 read-only sweep while the system was No Connection: HMC V11R2 SP1120 managing a POWER11 9043-MRU (BMC)"
+  "2026-10-13 read-only sweep, taken while a 9043-MRU was No Connection for the whole capture; its HMC-wide reads also answered for the HMC's ten other managed systems, one of which (a 9824-42A) went No Connection during the run: HMC V11R2 SP1120 managing a POWER11 9043-MRU (BMC)"
  ],
  "rest": {
   "endpoints": [

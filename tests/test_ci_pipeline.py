@@ -56,6 +56,7 @@ BASELINED_FINDINGS = {
     "tests/fixtures/live/vocabulary/enums-v11r2-p10-9028-21b.json": 1,
     "tests/fixtures/live/vocabulary/enums-v11r2-p10-9043-mrx.json": 1,
     "tests/fixtures/live/vocabulary/enums-v11r2-p10-9080-hex.json": 1,
+    "tests/fixtures/live/vocabulary/enums-v11r2-p11-9043-mru.json": 1,
     "tests/fixtures/live/vocabulary/enums-v11r2-p11-9242-21b.json": 1,
     "tests/fixtures/live/vocabulary/enums-v11r2-p11-9824-42a.json": 1,
     "tests/fixtures/live/vocabulary/enums-v11r2-p9-9009-42a.json": 1,
