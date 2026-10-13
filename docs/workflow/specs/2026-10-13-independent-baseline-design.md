@@ -28,11 +28,17 @@ adapters, physical ports and configured logical ports. Profile reads preserve
 the ADR 0165 command and validate the ADR 0166 value grammar. Physical ports
 use the existing three-level read. Dedicated adapters have no active port reads.
 Read system name/model/serial through a header-bearing system query to bind identity.
-VIOS IDs must resolve to a listed `vioserver` partition. Reuse REST storage
-operations for SCSI mappings and volume groups; read each listed group's
+VIOS IDs must resolve to a listed `vioserver` partition. Use the existing authenticated REST GET and Atom parser below permissive list
+helpers: reject blank bodies, non-Atom envelopes, absent resources or missing
+SCSI mapping containers before projection. An explicit empty Atom volume-group
+feed or mapping container is valid. Preserve server/client/target/backing identity,
+including a valid server-only unmapped adapter or empty optical drive; absence
+of a server identity or malformed present target/backing data is unreadable.
+Read each listed group's
 volumes through the existing quoted `viosvrcmd`/`lsvg -lv` command builder.
 Capture volume identity, type, allocation counts, state and mount point; retain
-group identity even when no volumes exist. Reject incomplete mappings.
+group identity even when no volumes exist. Resolve selected VIOS UUIDs within
+the selected system; validate group UUID/name before issuing volume reads.
 
 The version-1 JSON document contains an effective-host/system/VIOS scope and
 named row tables: system, partitions, slots, profiles, SR-IOV adapters/physical/
