@@ -7462,7 +7462,7 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "network-adapter-on-vlan",
             "storage-mapping-listed",
             "partition-activated",
-            "pcie-slot-owned",
+            "dedicated-slot-refused",
             "dry-run-inventoried",
             "dry-run-changed-nothing",
             "resource-deleted",

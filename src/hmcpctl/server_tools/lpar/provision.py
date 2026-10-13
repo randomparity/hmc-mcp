@@ -13,6 +13,7 @@ from ...operations.lpar.provision import (
     ProvisionResult,
     ProvisionStorage,
     provision_lpar,
+    validate_provision_assignments,
 )
 from ...ssh.affinity import MinimumAffinityPolicy
 from ...tool_registry import tool_module
@@ -67,7 +68,12 @@ def hmc_provision_lpar(
             Server cannot be created here; use hmc_create_vios.
         power_on: Power on the partition after configuration succeeds.
         dry_run: Validate preconditions without creating or changing resources.
-        assignments: Declarative dedicated, direct SR-IOV, and vNIC requests.
+        assignments: Declarative direct SR-IOV and vNIC requests. A dedicated-slot
+            request is refused before any HMC call: power-on activates the current
+            configuration, so the partition would not own a slot written to its
+            profile. Create the partition, assign the slot with
+            hmc_assign_dedicated_pcie_slot (or create-time
+            ``assignments.dedicated``), then power on with that profile.
         caller_token: Optional caller tracking reference embedded in the partition
             description as ``[caller <token>]`` after the ownership stamp (ADR 0064);
             1–64 printable ASCII characters, no whitespace or , = " [ ] \\.
@@ -90,6 +96,7 @@ def hmc_provision_lpar(
         mapping step ran, or when the read itself failed (see ``warnings``).
     """
     validate_partition_type(partition_type)
+    validate_provision_assignments(assignments)
     return with_client(
         lambda hmc: provision_lpar(
             hmc,
