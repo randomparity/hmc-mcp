@@ -24,6 +24,15 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
   with `hmc_assign_dedicated_pcie_slot`, then power on with the partition profile, as the
   [bare-CEC LPAR recipe](docs/recipes/bare-cec-lpar.md) does. Profile-first provisioning, which
   would lift the refusal, is tracked in #1225.
+- `hmc_remove_memory_pool` and `hmcpctl memory-pools remove` no longer take a pool name. A
+  managed system has at most one shared memory pool, so the remove now sends the documented
+  `chhwres -r mempool -m <system> -o r`. It refuses when the system has no pool, and when any
+  partition or profile does not report `mem_mode=ded` (#1245).
+
+### Fixed
+
+- `hmc_list_memory_pools` no longer documents pool row field names that no capture has
+  confirmed (#1245).
 
 ## [0.1.0] - 2026-10-12
 

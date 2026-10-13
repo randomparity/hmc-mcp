@@ -5299,7 +5299,7 @@ def test_metrics_show_fetch_404_reports_empty(fake_hmc):
 
 def test_memory_pools_list_table(monkeypatch):
     async def fake_list(config, system_name):
-        return [{"pool_name": "pool1", "size": "1024", "lpar_names": "lpar1"}]
+        return [{"pool_mem": "4096", "max_pool_mem": "8192"}]
 
     monkeypatch.setattr(
         "hmcpctl.cli_commands.systems.memory_pools.list_memory_pools", fake_list
@@ -5307,13 +5307,13 @@ def test_memory_pools_list_table(monkeypatch):
     result = RUNNER.invoke(cli.app, ["memory-pools", "list", "sys1"])
 
     assert result.exit_code == 0
-    assert "pool1" in result.stdout
-    assert "1024" in result.stdout
+    assert "4096" in result.stdout
+    assert "8192" in result.stdout
 
 
 def test_memory_pools_list_json(monkeypatch):
     async def fake_list(config, system_name):
-        return [{"pool_name": "pool1", "size": "1024"}]
+        return [{"pool_mem": "4096", "max_pool_mem": "8192"}]
 
     monkeypatch.setattr(
         "hmcpctl.cli_commands.systems.memory_pools.list_memory_pools", fake_list
@@ -5321,7 +5321,7 @@ def test_memory_pools_list_json(monkeypatch):
     result = RUNNER.invoke(cli.app, ["memory-pools", "list", "sys1", "--json"])
 
     assert result.exit_code == 0
-    assert '"pool_name": "pool1"' in result.stdout
+    assert '"pool_mem": "4096"' in result.stdout
 
 
 def test_memory_pools_list_empty(monkeypatch):
@@ -5338,15 +5338,13 @@ def test_memory_pools_list_empty(monkeypatch):
 
 
 def test_memory_pools_remove_with_yes(monkeypatch):
-    async def fake_remove(config, system_name, pool_name):
+    async def fake_remove(config, system_name):
         return "pool removed\n"
 
     monkeypatch.setattr(
         "hmcpctl.cli_commands.systems.memory_pools.remove_memory_pool", fake_remove
     )
-    result = RUNNER.invoke(
-        cli.app, ["memory-pools", "remove", "sys1", "pool1", "--yes"]
-    )
+    result = RUNNER.invoke(cli.app, ["memory-pools", "remove", "sys1", "--yes"])
 
     assert result.exit_code == 0
     assert "removed" in result.stdout
@@ -5356,24 +5354,20 @@ def test_memory_pools_remove_with_yes(monkeypatch):
 def test_memory_pools_remove_preserves_bracketed_result(monkeypatch):
     """The trailing HMC result line round-trips a bracketed stamp intact -- #965."""
 
-    async def fake_remove(config, system_name, pool_name):
+    async def fake_remove(config, system_name):
         return OWNERSHIP_STAMP + "\n"
 
     monkeypatch.setattr(
         "hmcpctl.cli_commands.systems.memory_pools.remove_memory_pool", fake_remove
     )
-    result = RUNNER.invoke(
-        cli.app, ["memory-pools", "remove", "sys1", "pool1", "--yes"]
-    )
+    result = RUNNER.invoke(cli.app, ["memory-pools", "remove", "sys1", "--yes"])
 
     assert result.exit_code == 0
     assert OWNERSHIP_STAMP in result.stdout
 
 
 def test_memory_pools_remove_declined_confirm_aborts(monkeypatch):
-    result = RUNNER.invoke(
-        cli.app, ["memory-pools", "remove", "sys1", "pool1"], input="n\n"
-    )
+    result = RUNNER.invoke(cli.app, ["memory-pools", "remove", "sys1"], input="n\n")
 
     assert result.exit_code == 1
     assert "Aborted" in result.stderr
