@@ -431,7 +431,7 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
     assert permissions["body"] == "  contents: read\n"
     assert workflow.count("permissions:") == 1
     assert "cancel-in-progress: true" in workflow
-    assert workflow.count("runs-on: ubuntu-24.04") == 5
+    assert workflow.count("runs-on: ubuntu-24.04") == 4
     assert "runs-on: ${{ matrix.runner }}" in workflow
     assert "timeout-minutes: 20" in workflow
     assert "timeout-minutes: 5" in workflow
@@ -440,7 +440,7 @@ def test_github_ci_uses_the_local_gates_with_least_privilege() -> None:
     for action, (sha, version) in ACTION_PINS.items():
         assert f"uses: {action}@{sha}  # {version}" in workflow
     assert "persist-credentials: false" in workflow
-    assert workflow.count('version: "0.12.10"') == 6
+    assert workflow.count('version: "0.12.10"') == 5
     assert 'just-version: "1.58.0"' in workflow
     for command in (
         "just setup",
@@ -474,7 +474,7 @@ def test_active_ci_checkouts_with_project_uv_do_not_fetch_full_history() -> None
         active_workflow,
     )
 
-    assert len(checkout_settings) == 6
+    assert len(checkout_settings) == 5
     assert active_workflow.count("uv run") >= 2
     # Full history is no longer fetched: the version is declared statically and no
     # workflow step reads Git history (ADR 0033).
@@ -1371,29 +1371,23 @@ def test_coverage_gate_passes_a_total_exactly_on_the_floor(tmp_path: Path) -> No
     assert "FAIL" not in result.stdout, result.stdout
 
 
-def test_verification_report_job_warns_on_pull_requests_and_fails_on_schedule() -> None:
-    """Criterion 13: recording evidence never turns a pull request red.
-
-    Nothing else in this suite asserts the warn-on-PR / fail-on-schedule split or
-    that the job adds no `permissions:` block, so the narrowing that leaves both
-    untested is the one thing this test exists to prevent (charter amendment 3).
-    """
+def test_ci_omits_verification_report_and_keeps_read_only_maintenance() -> None:
+    """ADR 0212 removes clock-driven reporting, retaining least-privilege maintenance."""
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
-    job = re.search(r"\n  verification-report:\n(?P<body>(?:(?:    .*)?\n)+)", workflow)
 
+    assert "verification-report" not in workflow
+    assert "--fail-on-stale" not in workflow
+    assert re.search(r"schedule:\n\s+- cron: '[^']+'", workflow)
+    permissions = re.search(
+        r"^permissions:\n(?P<body>(?:  .+\n)+)\n", workflow, re.MULTILINE
+    )
+    assert permissions
+    assert permissions["body"] == "  contents: read\n"
+    job = re.search(
+        r"\n  python-support-drift:\n(?P<body>(?:(?:    .*)?\n)+)", workflow
+    )
     assert job
-    body = job["body"]
-    assert "timeout-minutes: 5" in body
-    assert (
-        "if: github.event_name != 'schedule'\n        run: just verification-report\n"
-        in body
-    )
-    assert (
-        "if: github.event_name == 'schedule'\n"
-        "        run: just verification-report --fail-on-stale\n" in body
-    )
-    assert "permissions:" not in body
-    assert not [line for line in body.splitlines() if "run:" in line and "${{" in line]
+    assert "permissions:" not in job["body"]
 
 
 RUNTIME_GATES = {"test", "smoke", "build", "verify-artifacts", "cli-root", "cli-groups"}
