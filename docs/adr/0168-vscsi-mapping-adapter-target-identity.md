@@ -46,6 +46,12 @@ a device pair, not a backing device: if the VIOS reuses a freed name for a new m
 same LPAR, a stale identity selects the new mapping; a reuse for another LPAR fails closed on
 the LPAR check. Renaming a device between list and detach makes the old identity not found.
 
+An unmapped vSCSI server adapter is one such mapping. A 2026-10-13 V10R3 capture (#1250)
+shows it as a `VirtualSCSIMapping` holding only its `ServerAdapter`, with slot, remote
+partition ID and remote slot but no `ClientAdapter`, `TargetDevice`, `Storage` or
+`AssociatedLogicalPartition`. An unscoped list therefore shows it with `id: null`, an
+LPAR-scoped list never shows it, and the `lshwres` server-adapter listing remains its witness.
+
 ## Considered & rejected
 
 - **Keep `mapping_uuid` and fall back to a derived value.** verified: the read-only V10R3

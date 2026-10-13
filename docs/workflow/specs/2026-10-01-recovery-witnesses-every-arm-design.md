@@ -55,9 +55,9 @@ slot_num,remote_lpar_name,remote_slot_num`. It counts rows naming the test parti
 the distinct server adapters (`id` before `/`) in `hmc_list_storage_mappings` for it. Mappings
 carry an adapter name, not a slot, so a count is the honest comparison; more mapped adapters
 than listed ones is unjudgeable, since the surplus could cancel an unmapped one. A mapping with no
-`<adapter>/<device>` id makes the class unjudgeable — the shape an unmapped adapter takes in
-REST is #1250's question — and the message still prints the slot rows and the listing to
-compare by hand.
+`<adapter>/<device>` id makes the class unjudgeable. #1250 later captured the REST shape of an
+unmapped adapter: a mapping with no partition link, so it never reaches the partition's list.
+The message still prints the slot rows and the listing to compare by hand.
 
 **Coverage is explicit.** Subtasks 16–22 are witnessed by the table and 24–25 by the existing
 PCIe checks. Every other dispatched subtask is listed as `NOT WITNESSED`, and the runbook says
@@ -101,7 +101,7 @@ whose step 4 carries the coverage and the by-hand list.
    file on disk is the previous run's; the header names that run, and the runbook sends an
    interrupted run to the by-hand list.
 4. **Covered elsewhere** — remediation: unowned, excluded. Joining adapters to mappings by
-   REST shape: #1250. Round2's partition, user, network and property changes, SR-IOV, and ad
+   REST shape: #1250 kept the count, since the projection carries no slot. Round2's partition, user, network and property changes, SR-IOV, and ad
    hoc windows: reported as `NOT WITNESSED` (exit 2); extending coverage is unowned.
 
 ## Threat model
