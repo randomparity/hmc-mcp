@@ -1,12 +1,24 @@
 {
  "firmware": "v10r3-p9",
  "sources": [
-  "2026-09-30 read-only sweep: HMC V10R3 M1060 managing a POWER9 8375-42A",
-  "2026-09-29/30 #1161 and #879 windows, same HMC (derived REST values and endpoints)",
-  "2026-10-12 read-only PCM metric-feed capture (#1242): HMC V10R3 M1060 managing a POWER9 8375-42A"
+  "2026-10-13 read-only sweep, with the retained raw 2026-09-29/30 #1161 and #879 window captures and the 2026-10-12 #1242 PCM metric-feed captures (#1310): HMC V10R3 M1060 managing a POWER9 8375-42A"
  ],
  "rest": {
   "endpoints": [
+   {
+    "method": "DELETE",
+    "path": "/rest/api/uom/LogicalPartition/{uuid}",
+    "accept": null,
+    "status": 204,
+    "content_type": null
+   },
+   {
+    "method": "DELETE",
+    "path": "/rest/api/uom/jobs/{value}",
+    "accept": null,
+    "status": 204,
+    "content_type": null
+   },
    {
     "method": "DELETE",
     "path": "/rest/api/uom/jobs/{value}",
@@ -30,17 +42,17 @@
    },
    {
     "method": "GET",
-    "path": "/rest/api/pcm/ManagedSystem/{uuid}/AggregatedMetrics?StartTS={value}",
+    "path": "/rest/api/pcm/AggregatedMetrics/{value}",
     "accept": "*/*",
     "status": 200,
-    "content_type": "application/atom+xml"
+    "content_type": "application/vnd.ibm.powervm.pcm.json"
    },
    {
     "method": "GET",
     "path": "/rest/api/pcm/ManagedSystem/{uuid}/AggregatedMetrics?StartTS={value}",
-    "accept": "application/vnd.ibm.powervm.uom+xml",
-    "status": 403,
-    "content_type": "application/atom+xml;charset=ISO-8859-1"
+    "accept": "*/*",
+    "status": 200,
+    "content_type": "application/atom+xml"
    },
    {
     "method": "GET",
@@ -51,24 +63,10 @@
    },
    {
     "method": "GET",
-    "path": "/rest/api/pcm/ManagedSystem/{uuid}/LogicalPartition/{uuid}/AggregatedMetrics?StartTS={value}",
-    "accept": "application/vnd.ibm.powervm.uom+xml",
-    "status": 403,
-    "content_type": "application/atom+xml;charset=ISO-8859-1"
-   },
-   {
-    "method": "GET",
     "path": "/rest/api/pcm/ManagedSystem/{uuid}/LogicalPartition/{uuid}/ProcessedMetrics?StartTS={value}",
     "accept": "*/*",
     "status": 200,
     "content_type": "application/atom+xml"
-   },
-   {
-    "method": "GET",
-    "path": "/rest/api/pcm/ManagedSystem/{uuid}/LogicalPartition/{uuid}/ProcessedMetrics?StartTS={value}",
-    "accept": "application/vnd.ibm.powervm.uom+xml",
-    "status": 403,
-    "content_type": "application/atom+xml;charset=ISO-8859-1"
    },
    {
     "method": "GET",
@@ -79,31 +77,10 @@
    },
    {
     "method": "GET",
-    "path": "/rest/api/pcm/ManagedSystem/{uuid}/ProcessedMetrics?StartTS={value}",
-    "accept": "application/vnd.ibm.powervm.uom+xml",
-    "status": 403,
-    "content_type": "application/atom+xml;charset=ISO-8859-1"
-   },
-   {
-    "method": "GET",
     "path": "/rest/api/pcm/ManagedSystem/{uuid}/preferences",
     "accept": "*/*",
     "status": 200,
     "content_type": "application/atom+xml"
-   },
-   {
-    "method": "GET",
-    "path": "/rest/api/pcm/ManagedSystem/{uuid}/preferences",
-    "accept": "application/vnd.ibm.powervm.uom+xml",
-    "status": 406,
-    "content_type": null
-   },
-   {
-    "method": "GET",
-    "path": "/rest/api/pcm/ManagedSystem/{uuid}/preferences",
-    "accept": "application/xml",
-    "status": 406,
-    "content_type": null
    },
    {
     "method": "GET",
@@ -114,13 +91,6 @@
    },
    {
     "method": "GET",
-    "path": "/rest/api/pcm/preferences",
-    "accept": "application/xml",
-    "status": 406,
-    "content_type": null
-   },
-   {
-    "method": "GET",
     "path": "/rest/api/templates/PartitionTemplate",
     "accept": "application/atom+xml",
     "status": 200,
@@ -128,10 +98,10 @@
    },
    {
     "method": "GET",
-    "path": "/rest/api/templates/PartitionTemplate",
-    "accept": "application/vnd.ibm.powervm.templates+xml; type=PartitionTemplate",
-    "status": 406,
-    "content_type": null
+    "path": "/rest/api/templates/PartitionTemplate/{uuid}",
+    "accept": "application/atom+xml",
+    "status": 200,
+    "content_type": "application/atom+xml"
    },
    {
     "method": "GET",
@@ -149,13 +119,6 @@
    },
    {
     "method": "GET",
-    "path": "/rest/api/uom/Job",
-    "accept": "application/vnd.ibm.powervm.uom+xml; type=Job",
-    "status": 400,
-    "content_type": "application/atom+xml"
-   },
-   {
-    "method": "GET",
     "path": "/rest/api/uom/LogicalPartition",
     "accept": "application/vnd.ibm.powervm.uom+xml; type=LogicalPartition",
     "status": 200,
@@ -170,13 +133,6 @@
    },
    {
     "method": "GET",
-    "path": "/rest/api/uom/LogicalPartition/search",
-    "accept": "*/*",
-    "status": 200,
-    "content_type": "application/atom+xml"
-   },
-   {
-    "method": "GET",
     "path": "/rest/api/uom/LogicalPartition/search/(PartitionName=={value})",
     "accept": null,
     "status": 200,
@@ -185,16 +141,9 @@
    {
     "method": "GET",
     "path": "/rest/api/uom/LogicalPartition/search/(PartitionName=={value})",
-    "accept": "application/vnd.ibm.powervm.uom+xml; type=LogicalPartition",
-    "status": 200,
-    "content_type": "application/vnd.ibm.powervm.uom+xml; type=LogicalPartition"
-   },
-   {
-    "method": "GET",
-    "path": "/rest/api/uom/LogicalPartition/search/(PartitionState=={value})",
-    "accept": "application/vnd.ibm.powervm.uom+xml; type=LogicalPartition",
-    "status": 200,
-    "content_type": "application/vnd.ibm.powervm.uom+xml; type=LogicalPartition"
+    "accept": null,
+    "status": 204,
+    "content_type": null
    },
    {
     "method": "GET",
@@ -235,8 +184,8 @@
     "method": "GET",
     "path": "/rest/api/uom/LogicalPartition/{uuid}/ClientNetworkAdapter",
     "accept": "application/vnd.ibm.powervm.uom+xml; type=ClientNetworkAdapter",
-    "status": 204,
-    "content_type": "text/plain"
+    "status": 200,
+    "content_type": "application/vnd.ibm.powervm.uom+xml; type=ClientNetworkAdapter"
    },
    {
     "method": "GET",
@@ -269,6 +218,13 @@
    {
     "method": "GET",
     "path": "/rest/api/uom/LogicalPartition/{uuid}/quick/PartitionState",
+    "accept": null,
+    "status": 200,
+    "content_type": null
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/LogicalPartition/{uuid}?group=Advanced",
     "accept": null,
     "status": 200,
     "content_type": null
@@ -415,17 +371,17 @@
    },
    {
     "method": "GET",
-    "path": "/rest/api/uom/ManagementConsole/{uuid}/UserProfile",
-    "accept": "application/vnd.ibm.powervm.uom+xml; type=UserProfile",
-    "status": 404,
-    "content_type": "application/atom+xml"
-   },
-   {
-    "method": "GET",
     "path": "/rest/api/uom/ManagementConsole/{uuid}/UserProfile/{uuid}",
     "accept": "application/vnd.ibm.powervm.uom+xml; type=UserProfile",
     "status": 200,
     "content_type": "application/vnd.ibm.powervm.uom+xml; type=UserProfile"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/ManagementConsole/{uuid}?group=RemoteAccess",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=ManagementConsole",
+    "status": 200,
+    "content_type": "application/vnd.ibm.powervm.uom+xml; type=ManagementConsole"
    },
    {
     "method": "GET",
@@ -457,10 +413,10 @@
    },
    {
     "method": "GET",
-    "path": "/rest/api/uom/VirtualIOServer/search",
-    "accept": "*/*",
+    "path": "/rest/api/uom/VirtualIOServer/search/(PartitionName=={value})",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer",
     "status": 200,
-    "content_type": "application/atom+xml"
+    "content_type": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer"
    },
    {
     "method": "GET",
@@ -555,24 +511,10 @@
    },
    {
     "method": "GET",
-    "path": "/rest/api/uom/schema/LogicalPartition.xsd",
-    "accept": "*/*",
-    "status": 400,
-    "content_type": "application/atom+xml"
-   },
-   {
-    "method": "GET",
     "path": "/rest/api/web/File",
     "accept": "application/vnd.ibm.powervm.web+xml",
     "status": 204,
     "content_type": "text/plain"
-   },
-   {
-    "method": "GET",
-    "path": "/rest/api/web/schema",
-    "accept": "*/*",
-    "status": 200,
-    "content_type": "application/javascript"
    },
    {
     "method": "GET",
@@ -590,21 +532,14 @@
    },
    {
     "method": "POST",
-    "path": "/rest/api/uom/LogicalPartition/{uuid}",
+    "path": "/rest/api/uom/LogicalPartition/{uuid}?group=Advanced",
     "accept": null,
     "status": 200,
     "content_type": null
    },
    {
     "method": "POST",
-    "path": "/rest/api/uom/LogicalPartition/{uuid}",
-    "accept": null,
-    "status": 400,
-    "content_type": null
-   },
-   {
-    "method": "POST",
-    "path": "/rest/api/uom/LogicalPartition/{uuid}",
+    "path": "/rest/api/uom/LogicalPartition/{uuid}?group=Advanced",
     "accept": null,
     "status": 500,
     "content_type": null
@@ -627,21 +562,7 @@
     "method": "PUT",
     "path": "/rest/api/uom/ManagedSystem/{uuid}/LogicalPartition",
     "accept": null,
-    "status": 200,
-    "content_type": null
-   },
-   {
-    "method": "PUT",
-    "path": "/rest/api/uom/ManagedSystem/{uuid}/LogicalPartition",
-    "accept": null,
     "status": 400,
-    "content_type": null
-   },
-   {
-    "method": "PUT",
-    "path": "/rest/api/uom/ManagedSystem/{uuid}/LogicalPartition",
-    "accept": null,
-    "status": 500,
     "content_type": null
    },
    {
@@ -671,39 +592,12 @@
    },
    {
     "method": "GET",
-    "path": "/rest/api/uom/schema/LogicalPartition.xsd",
-    "status": 400,
-    "content_type": "application/atom+xml",
-    "form": "HttpErrorResponse",
-    "reason_code": "INVALID_URL",
-    "message": "REST000B The URL presented to the Management Console REST Web Services is not valid."
-   },
-   {
-    "method": "GET",
-    "path": "/rest/api/uom/Job",
-    "status": 400,
-    "content_type": "application/atom+xml",
-    "form": "HttpErrorResponse",
-    "reason_code": "INVALID_URL",
-    "message": "REST000B The URL presented to the Management Console REST Web Services is not valid.REST000E Unrecognized root REST type of Job."
-   },
-   {
-    "method": "GET",
     "path": "/rest/api/uom/SRIOVAdapter",
     "status": 400,
     "content_type": "application/atom+xml",
     "form": "HttpErrorResponse",
     "reason_code": "INVALID_URL",
     "message": "REST000B The URL presented to the Management Console REST Web Services is not valid.REST000E Unrecognized root REST type of SRIOVAdapter."
-   },
-   {
-    "method": "GET",
-    "path": "/rest/api/uom/ManagementConsole/{uuid}/UserProfile",
-    "status": 404,
-    "content_type": "application/atom+xml",
-    "form": "HttpErrorResponse",
-    "reason_code": "The supplied URI does not identify a known resource.",
-    "message": "REST020F Unable to find a ROOT ManagementConsole with a UUID equal to {uuid}."
    },
    {
     "method": "GET",
@@ -734,42 +628,6 @@
    },
    {
     "method": "GET",
-    "path": "/rest/api/pcm/ManagedSystem/{uuid}/AggregatedMetrics?StartTS={value}",
-    "status": 403,
-    "content_type": "application/atom+xml;charset=ISO-8859-1",
-    "form": "<text>",
-    "reason_code": "The user does not have the role authority to perform the request.",
-    "message": "User does not have the requested authority to perform the request"
-   },
-   {
-    "method": "GET",
-    "path": "/rest/api/pcm/ManagedSystem/{uuid}/LogicalPartition/{uuid}/AggregatedMetrics?StartTS={value}",
-    "status": 403,
-    "content_type": "application/atom+xml;charset=ISO-8859-1",
-    "form": "<text>",
-    "reason_code": "The user does not have the role authority to perform the request.",
-    "message": "User does not have the requested authority to perform the request"
-   },
-   {
-    "method": "GET",
-    "path": "/rest/api/pcm/ManagedSystem/{uuid}/LogicalPartition/{uuid}/ProcessedMetrics?StartTS={value}",
-    "status": 403,
-    "content_type": "application/atom+xml;charset=ISO-8859-1",
-    "form": "<text>",
-    "reason_code": "The user does not have the role authority to perform the request.",
-    "message": "User does not have the requested authority to perform the request"
-   },
-   {
-    "method": "GET",
-    "path": "/rest/api/pcm/ManagedSystem/{uuid}/ProcessedMetrics?StartTS={value}",
-    "status": 403,
-    "content_type": "application/atom+xml;charset=ISO-8859-1",
-    "form": "<text>",
-    "reason_code": "The user does not have the role authority to perform the request.",
-    "message": "User does not have the requested authority to perform the request"
-   },
-   {
-    "method": "GET",
     "path": "/rest/api/uom/ManagementConsole/{uuid}?group=RemoteAccess",
     "status": 406,
     "content_type": "text/html;charset=ISO-8859-1",
@@ -779,30 +637,120 @@
    },
    {
     "method": "GET",
-    "path": "/rest/api/pcm/ManagedSystem/{uuid}/preferences",
+    "path": "/rest/api/uom/jobs/{uuid}",
     "status": 406,
     "content_type": null,
-    "form": "<empty>",
+    "form": "Console Internal Error",
     "reason_code": null,
     "message": null
    },
    {
-    "method": "GET",
-    "path": "/rest/api/pcm/preferences",
-    "status": 406,
+    "method": "PUT",
+    "path": "/rest/api/uom/ManagedSystem/{uuid}/LogicalPartition",
+    "status": 400,
     "content_type": null,
-    "form": "<empty>",
-    "reason_code": null,
-    "message": null
+    "form": "HttpErrorResponse",
+    "reason_code": "The supplied XML request body did not pass XML validation.",
+    "message": "REST0001 Failed to unmarshal input payload.\n Attribute 'schemaVersion' must appear on element 'PartitionProcessorConfiguration'."
+   },
+   {
+    "method": "DELETE",
+    "path": "/rest/api/uom/jobs/{value}",
+    "status": 404,
+    "content_type": null,
+    "form": "HttpErrorResponse",
+    "reason_code": "The supplied URI does not identify a known resource.",
+    "message": "REST0005 No such Job"
    },
    {
     "method": "GET",
-    "path": "/rest/api/templates/PartitionTemplate",
-    "status": 406,
+    "path": "/rest/api/uom/jobs/{value}",
+    "status": 404,
     "content_type": null,
-    "form": "<empty>",
-    "reason_code": null,
-    "message": null
+    "form": "HttpErrorResponse",
+    "reason_code": "The supplied URI does not identify a known resource.",
+    "message": "REST0005 No such Job"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/jobs/{value}/{uuid}",
+    "status": 400,
+    "content_type": null,
+    "form": "HttpErrorResponse",
+    "reason_code": "INVALID_URL",
+    "message": "REST000B The URL presented to the Management Console REST Web Services is not valid."
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/Job",
+    "status": 400,
+    "content_type": null,
+    "form": "HttpErrorResponse",
+    "reason_code": "INVALID_URL",
+    "message": "REST000B The URL presented to the Management Console REST Web Services is not valid.REST000E Unrecognized root REST type of Job."
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/jobs/{uuid}",
+    "status": 400,
+    "content_type": null,
+    "form": "HttpErrorResponse",
+    "reason_code": "INVALID_URL",
+    "message": "REST000B The URL presented to the Management Console REST Web Services is not valid.REST000E Unrecognized root REST type of jobs."
+   },
+   {
+    "method": "POST",
+    "path": "/rest/api/uom/LogicalPartition/{uuid}?group=Advanced",
+    "status": 500,
+    "content_type": null,
+    "form": "HttpErrorResponse",
+    "reason_code": "Unknown internal error.",
+    "message": "REST0126 Please find error details below\n[An error occurred while changing the partition with ID 2.\n, HSCL05DE A partition in the managed system already uses the name {name}. Provide another name for this partition.\n]"
+   },
+   {
+    "method": "POST",
+    "path": "/rest/api/uom/LogicalPartition/{uuid}?group=Advanced",
+    "status": 500,
+    "content_type": null,
+    "form": "HttpErrorResponse",
+    "reason_code": "Unknown internal error.",
+    "message": "REST0126 Please find error details below\n[HSCL0617 Cannot use the memory resource setting. Check whether the setting is valid or not.\n]"
+   },
+   {
+    "method": "POST",
+    "path": "/rest/api/uom/LogicalPartition/{uuid}?group=Advanced",
+    "status": 500,
+    "content_type": null,
+    "form": "HttpErrorResponse",
+    "reason_code": "Unknown internal error.",
+    "message": "REST0126 Please find error details below\n[The desired_mem amount cannot be greater than the max_mem amount.  Please correct the configuration data and retry the command.\n]"
+   },
+   {
+    "method": "POST",
+    "path": "/rest/api/uom/LogicalPartition/{uuid}?group=Advanced",
+    "status": 500,
+    "content_type": null,
+    "form": "HttpErrorResponse",
+    "reason_code": "Unknown internal error.",
+    "message": "REST012A Can not modify Maximum Memory in current state of the partition"
+   },
+   {
+    "method": "POST",
+    "path": "/rest/api/uom/LogicalPartition/{uuid}?group=Advanced",
+    "status": 500,
+    "content_type": null,
+    "form": "HttpErrorResponse",
+    "reason_code": "Unknown internal error.",
+    "message": "REST0264 The DesiredMemory amount cannot be greater than the MaximumMemory amount"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/LogicalPartition/{uuid}",
+    "status": 404,
+    "content_type": null,
+    "form": "HttpErrorResponse",
+    "reason_code": "The supplied URI does not identify a known resource.",
+    "message": "REST029B The URL presented to the Management Console REST Web Services is not valid. The supplied URI does not identify a known resource."
    }
   ],
   "values": {
@@ -889,7 +837,7 @@
     "<int>"
    ],
    "AggregationEnabled": [
-    "false"
+    "true"
    ],
    "AllocatedCapacity": [
     "<text>"
@@ -1054,7 +1002,6 @@
     "false"
    ],
    "Comparator": [
-    "Numeric",
     "Regular Expression or String Match"
    ],
    "ComputeLTMEnabled": [
@@ -1378,9 +1325,6 @@
    "DesiredCapacityPercentage": [
     "<text>"
    ],
-   "DesiredEntitledMemory": [
-    "AUTO"
-   ],
    "DesiredHugePageCount": [
     "<int>"
    ],
@@ -1482,7 +1426,7 @@
     "<text>"
    ],
    "EnergyMonitorEnabled": [
-    "false"
+    "true"
    ],
    "EnergyMonitoringCapable": [
     "true"
@@ -1535,9 +1479,6 @@
    "HCNID": [
     "<int>"
    ],
-   "HTTPStatus": [
-    "<int>"
-   ],
    "HardwareAcceleratorCapable": [
     "false",
     "true"
@@ -1563,7 +1504,6 @@
     "true"
    ],
    "HasDedicatedProcessorsForMigration": [
-    "false",
     "true"
    ],
    "HasPhysicalIO": [
@@ -1783,16 +1723,23 @@
    "IsPrimary": [
     "true"
    ],
+   "IsQualityOfServicePriorityEnabled": [
+    "false"
+   ],
    "IsRedundantErrorPathReportingEnabled": [
     "false"
    ],
    "IsRequired": [
-    "false"
+    "false",
+    "true"
    ],
    "IsSecureBootEnabled": [
     "false"
    ],
    "IsServicePartition": [
+    "false"
+   ],
+   "IsTaggedVLANSupported": [
     "false"
    ],
    "IsTierCapable": [
@@ -1964,7 +1911,7 @@
     "<text>"
    ],
    "LongTermMonitorEnabled": [
-    "false"
+    "true"
    ],
    "MACAddress": [
     "<int>"
@@ -2020,9 +1967,6 @@
    "ManagerPassthroughCapable": [
     "false",
     "true"
-   ],
-   "ManualEntitledModeEnabled": [
-    "false"
    ],
    "ManufacturingDefaultConfigurationEnabled": [
     "false"
@@ -2259,14 +2203,8 @@
    "MemoryUsedByHypervisor": [
     "<int>"
    ],
-   "MemoryWeight": [
-    "<int>"
-   ],
    "MergedReferenceCode": [
     "<empty>"
-   ],
-   "Message": [
-    "<text>"
    ],
    "MessageKey": [
     "<text>"
@@ -2759,10 +2697,6 @@
     "BasePartition",
     "LogicalPartition"
    ],
-   "ReasonCode": [
-    "<text>",
-    "INVALID_URL"
-   ],
    "RedundantErrorPathReportingCapable": [
     "true"
    ],
@@ -2814,12 +2748,6 @@
    ],
    "RepositorySize": [
     "<int>"
-   ],
-   "RequestHeaders": [
-    "<text>"
-   ],
-   "RequestURI": [
-    "<text>"
    ],
    "RequestedHugePages": [
     "<int>"
@@ -2998,6 +2926,9 @@
    ],
    "SimplifiedRemoteRestartCapable": [
     "false"
+   ],
+   "SimplifiedRemoteRestartEnable": [
+    "DISABLED"
    ],
    "Size": [
     "<float>",
@@ -3238,7 +3169,6 @@
     "<int>"
    ],
    "UniqueDeviceID": [
-    "<int>",
     "<text>"
    ],
    "UntranslatedMessage": [
@@ -3249,6 +3179,9 @@
    ],
    "Uptime": [
     "<int>"
+   ],
+   "UseCapturedHeaInfo": [
+    "false"
    ],
    "UseNonAnonymousBinding": [
     "false"
@@ -3280,12 +3213,21 @@
    "UtilizationThresholdToExitIdlePower": [
     "<text>"
    ],
+   "VFCConfigurationOption": [
+    "DeploymentTime"
+   ],
    "VLANStatisticsCapable": [
     "true"
    ],
    "VNICFailOverCapable": [
     "false",
     "true"
+   ],
+   "VODConfigurationOption": [
+    "DeploymentTime"
+   ],
+   "VSCSIConfigurationOption": [
+    "DeploymentTime"
    ],
    "VTPMVersion": [
     "<float>"
@@ -3330,9 +3272,6 @@
     "true"
    ],
    "VirtualNICSharedSRIOVCapable": [
-    "false"
-   ],
-   "VirtualOpticonnectPool": [
     "false"
    ],
    "VirtualSerialNumber": [
@@ -3412,6 +3351,24 @@
    "XPath": [
     "<text>"
    ],
+   "activeMemoryExpansionEnabled": [
+    "false"
+   ],
+   "activeMemorySharingEnabled": [
+    "false"
+   ],
+   "allowPerformanceDataCollection": [
+    "false"
+   ],
+   "autoEntitledMemoryEnabled": [
+    "false"
+   ],
+   "availabilityPriority": [
+    "<int>"
+   ],
+   "bsrArrays": [
+    "<int>"
+   ],
    "canLPM": [
     "false"
    ],
@@ -3422,21 +3379,71 @@
     "false",
     "true"
    ],
+   "currAllocatedBSRArrays": [
+    "<int>"
+   ],
+   "currBsrArrays": [
+    "<int>"
+   ],
+   "currExpansionFactor": [
+    "<float>"
+   ],
+   "currHPTRatio": [
+    "<int>"
+   ],
+   "currHasDedicatedProcessors": [
+    "true"
+   ],
+   "currHugePageCount": [
+    "<int>"
+   ],
+   "currMaxHugePageCount": [
+    "<int>"
+   ],
+   "currMaxMemory": [
+    "<int>"
+   ],
+   "currMaxVirtualIOSlots": [
+    "<int>"
+   ],
+   "currMemory": [
+    "<int>"
+   ],
+   "currMinHugePageCount": [
+    "<int>"
+   ],
+   "currMinMemory": [
+    "<int>"
+   ],
+   "currProcessorCompatibilityMode": [
+    "Default"
+   ],
+   "currSharingMode": [
+    "sre idle proces"
+   ],
    "description": [
     "<text>"
+   ],
+   "desiredHugePageCount": [
+    "<int>"
+   ],
+   "desiredMemory": [
+    "<int>"
+   ],
+   "desiredProcessors": [
+    "<int>"
+   ],
+   "enableCallHome": [
+    "false"
    ],
    "etag": [
     "<int>"
    ],
+   "expansionFactor": [
+    "<float>"
+   ],
    "generator": [
-    "<text>",
     "IBM Power Systems Management Console"
-   ],
-   "h1": [
-    "Console Internal Error"
-   ],
-   "h2": [
-    "<text>"
    ],
    "hasDedicatedAdapters": [
     "false"
@@ -3459,11 +3466,83 @@
    "hasVirtualSCSI": [
     "false"
    ],
+   "hptRatio": [
+    "<int>"
+   ],
    "id": [
     "<uuid-lower>",
     "<uuid-upper>"
    ],
+   "isConnectionMonitoringEnabled": [
+    "true"
+   ],
+   "isDLPARIOCapable": [
+    "false"
+   ],
+   "isDLPARMemoryCapable": [
+    "false"
+   ],
+   "isDLPARProcessorCapable": [
+    "false"
+   ],
+   "isDraft": [
+    "false"
+   ],
+   "isInternalAndExternalIntrusionDetectionCapable": [
+    "false"
+   ],
+   "isManualEntitledMode": [
+    "false"
+   ],
+   "isMemoryCompressionHardwareAccessEnabled": [
+    "true"
+   ],
+   "isRedundantErrorPathReportingEnabled": [
+    "false"
+   ],
+   "isRmcOsShutdownCapable": [
+    "false"
+   ],
+   "isSharedMemory": [
+    "false"
+   ],
+   "isTimeReferencePartition": [
+    "false"
+   ],
+   "isUseCapturedPhysicalIOInformationEnabled": [
+    "false"
+   ],
+   "maxHugePageCount": [
+    "<int>"
+   ],
+   "maxMemory": [
+    "<int>"
+   ],
+   "maxProcessors": [
+    "<int>"
+   ],
+   "memExpansionEnabled": [
+    "false"
+   ],
+   "minHugePageCount": [
+    "<int>"
+   ],
+   "minMemory": [
+    "<int>"
+   ],
+   "minProcessors": [
+    "<int>"
+   ],
    "name": [
+    "<text>"
+   ],
+   "osVersion": [
+    "Unknown"
+   ],
+   "partitionId": [
+    "<int>"
+   ],
+   "partitionName": [
     "<text>"
    ],
    "partitionTemplateName": [
@@ -3473,23 +3552,62 @@
     "<text>",
     "AIX/Linux"
    ],
+   "pendProcessorCompatibilityMode": [
+    "<text>"
+   ],
+   "progressPartitionDataRemaining": [
+    "<int>"
+   ],
+   "progressPartitionDataTotal": [
+    "<int>"
+   ],
    "published": [
     "<text>"
    ],
+   "redundantErrorPathReportingEnabled": [
+    "false"
+   ],
+   "runExpansionFactor": [
+    "<float>"
+   ],
+   "runHasDedicatedProcessors": [
+    "true"
+   ],
+   "runHugePageCount": [
+    "<int>"
+   ],
+   "runMemory": [
+    "<int>"
+   ],
+   "runMinMemory": [
+    "<int>"
+   ],
+   "sharingMode": [
+    "sre idle proces"
+   ],
+   "state": [
+    "running"
+   ],
    "subtitle": [
+    "<text>"
+   ],
+   "suspendEnable": [
+    "true"
+   ],
+   "syncCurrentProfile": [
     "<text>"
    ],
    "title": [
     "<text>",
     "AggregatedMetrics",
-    "Console Internal Error",
-    "HttpErrorResponse",
+    "ClientNetworkAdapter",
     "JobResponse",
     "LogicalPartition",
     "LogicalPartitionProfile",
     "ManagedSystem",
     "ManagementConsole",
     "NetworkBridge",
+    "PartitionTemplate",
     "PartitionTemplateSummary",
     "ProcessedMetrics",
     "QuickPropertyCollection",
@@ -3502,8 +3620,17 @@
     "VirtualSwitch",
     "VolumeGroup"
    ],
+   "uncappedWeight": [
+    "<int>"
+   ],
    "updated": [
     "<text>"
+   ],
+   "useCaptureInfoForNetwork": [
+    "false"
+   ],
+   "vtpmEnabled": [
+    "false"
    ]
   },
   "element_enums": {
@@ -3691,6 +3818,15 @@
     "error_streams": []
    },
    {
+    "command": "lshwres -r sriov --rsubtype physport -m {} --level eth --filter adapter_ids={} -F adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports,min_eth_capacity_granularity --header",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
     "command": "lshwres -r sriov --rsubtype physport -m {} --level ethc --filter adapter_ids={} -F adapter_id,phys_port_id,phys_port_type,phys_port_loc,state,config_logical_ports,phys_port_max_logical_ports,curr_eth_logical_ports,min_eth_capacity_granularity --header",
     "exit_status": [
      0
@@ -3710,15 +3846,6 @@
    },
    {
     "command": "lshwres -r virtualio --rsubtype eth --level lpar -m {}",
-    "exit_status": [
-     0
-    ],
-    "codes": [],
-    "outputs": [],
-    "error_streams": []
-   },
-   {
-    "command": "lshwres -r virtualio --rsubtype eth --level lpar -m {} --filter lpar_names={} -F lpar_name",
     "exit_status": [
      0
     ],
@@ -3759,6 +3886,17 @@
    },
    {
     "command": "lshwres -r virtualio --rsubtype vnic --level lpar -m {} --filter lpar_names={}",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [
+     "No results were found."
+    ],
+    "error_streams": []
+   },
+   {
+    "command": "lshwres -r virtualio --rsubtype vnicbkdev -m {}",
     "exit_status": [
      0
     ],
@@ -3858,6 +3996,15 @@
     "error_streams": []
    },
    {
+    "command": "lsrefcode -r lpar -m {} --filter lpar_names={} -n 20 -F lpar_name,time_stamp,refcode --header",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
     "command": "lsrefcode -r lpar -m {} -n 1",
     "exit_status": [
      0
@@ -3905,17 +4052,6 @@
     "error_streams": []
    },
    {
-    "command": "lssyscfg -r lpar -m {} --filter lpar_names={} -F min_affinity_score,min_affinity_score_action --header",
-    "exit_status": [
-     1
-    ],
-    "codes": [],
-    "outputs": [],
-    "error_streams": [
-     "stdout"
-    ]
-   },
-   {
     "command": "lssyscfg -r lpar -m {} --filter lpar_names={} -F msp",
     "exit_status": [
      0
@@ -3936,15 +4072,6 @@
     "error_streams": [
      "stdout"
     ]
-   },
-   {
-    "command": "lssyscfg -r lpar -m {} -F name,lpar_id,state,rmc_state,lpar_env,msp,uuid --header",
-    "exit_status": [
-     0
-    ],
-    "codes": [],
-    "outputs": [],
-    "error_streams": []
    },
    {
     "command": "lssyscfg -r prof -m {}",
@@ -3976,7 +4103,16 @@
     "error_streams": []
    },
    {
-    "command": "lssyscfg -r prof -m {} -F lpar_name,name,io_slots,sriov_eth_logical_ports,virtual_eth_adapters --header",
+    "command": "lssyscfg -r sys -F name",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
+    "command": "lssyscfg -r sys -F uuid,name",
     "exit_status": [
      0
     ],
@@ -4550,14 +4686,14 @@
     "<int>"
    ],
    "lshwres -r virtualio --rsubtype eth --level lpar :: trunk_priority": [
-    "<int>"
+    "<int>",
+    "unavailable"
    ],
    "lshwres -r virtualio --rsubtype eth --level lpar :: vswitch": [
     "<text>"
    ],
    "lsmemopt -r lpar -o calcscore :: curr_lpar_score": [
-    "<int>",
-    "none"
+    "<int>"
    ],
    "lsmemopt -r lpar -o calcscore :: lpar_id": [
     "<int>"
@@ -4566,12 +4702,10 @@
     "<text>"
    ],
    "lsmemopt -r lpar -o calcscore :: predicted_lpar_score": [
-    "<int>",
-    "none"
+    "<int>"
    ],
    "lsmemopt -r lpar -o currscore :: curr_lpar_score": [
-    "<int>",
-    "none"
+    "<int>"
    ],
    "lsmemopt -r lpar -o currscore :: lpar_id": [
     "<int>"
@@ -4605,7 +4739,8 @@
    ],
    "lsrefcode -r lpar :: refcode": [
     "<empty>",
-    "<int>"
+    "<int>",
+    "<text>"
    ],
    "lsrefcode -r lpar :: time_stamp": [
     "<text>"
@@ -4677,7 +4812,7 @@
     "<text>"
    ],
    "lssyscfg -r lpar :: os": [
-    "aixlinux",
+    "linux",
     "vios"
    ],
    "lssyscfg -r lpar :: os_version": [
@@ -4722,9 +4857,6 @@
    ],
    "lssyscfg -r lpar :: time_ref": [
     "<int>"
-   ],
-   "lssyscfg -r lpar :: uuid": [
-    "<uuid-upper>"
    ],
    "lssyscfg -r lpar :: virtual_serial_num": [
     "<text>"
@@ -4851,9 +4983,6 @@
     "<text>",
     "none"
    ],
-   "lssyscfg -r prof :: sriov_eth_logical_ports=config_id:adapter_id:phys_port_id:logical_port_id:diag_mode:huge_dma_window_mode:promisc_mode:allowed_vlan_ids:mac_addr:allowed_os_mac_addrs:port_vlan_id:pvid_priority:capacity:max_capacity:allowed_priorities:migratable:backup_device_type:backup_device_slot_num:backup_veth_vnetwork:backup_vnic_backing_device": [
-    "<text>"
-   ],
    "lssyscfg -r prof :: sriov_roce_logical_ports": [
     "none"
    ],
@@ -4861,8 +4990,7 @@
     "<int>"
    ],
    "lssyscfg -r prof :: virtual_eth_adapters": [
-    "<text>",
-    "none"
+    "<text>"
    ],
    "lssyscfg -r prof :: virtual_eth_vsi_profiles": [
     "none"
@@ -5115,6 +5243,9 @@
    ],
    "lssyscfg -r sys :: type_model": [
     "<text>"
+   ],
+   "lssyscfg -r sys :: uuid": [
+    "<uuid-lower>"
    ],
    "lssyscfg -r sys :: vet_activation_capable": [
     "<int>"

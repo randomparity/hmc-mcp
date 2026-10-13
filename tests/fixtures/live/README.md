@@ -95,16 +95,24 @@ fixtures across the two exports by UUID. Other names in that export (`lpar-N`,
 
 `vocabulary/` holds what was derived from the read-only corpora, not captured
 records: one vocabulary and one schema enum list per HMC release and system.
-From the 2026-09-30 prototype export: `v10r3-p9` and the V11R2 pairs
-`v11r2-p9-9009-42a`, `v11r2-p10-9028-21b`, `v11r2-p11-9824-42a` and
+From the 2026-09-30 prototype export: the `v10r3-p9` enum list and the V11R2
+pairs `v11r2-p9-9009-42a`, `v11r2-p10-9028-21b`, `v11r2-p11-9824-42a` and
 `v11r2-p11-9242-21b`. From the first run of the tracked sweep and exporter on
 2026-10-01: `v10r3-p8-8247-22l`, `v11r2-p10-9080-hex` and `v11r2-p10-9043-mrx`
 (two HMCs folded together). Beside them sit the
 documented job statuses (`enums-documented-jobs.json`, names cited to
 `docs/refs/`, each marked captured or documented-only) and the allowlist of
-`just live-vocabulary`. Each vocabulary names its sources;
-`v10r3-p9.json` also folds in the REST values and endpoints derived from the
-#1161 and #879 mutation windows on the same HMC, which is where its job statuses
-come from. Regenerate them with `scripts/live_capture_export.py`, as
+`just live-vocabulary`. Each vocabulary names its sources.
+
+`v10r3-p9.json` was re-derived on 2026-10-13 (#1310) from one corpus, tokenized
+in one pass from three raw captures of the same HMC: a tracked read-only sweep
+that day, the 2026-09-29/30 #1161 and #879 mutation windows (where its job
+statuses come from), and the 2026-10-12 #1242 PCM metric-feed reads. The window
+captures predate the tracked harness, so their REST rows have a null `accept`
+and `content_type`, and their CLI records contribute nothing. The raw captures,
+the corpus and the `export.sh` that re-runs the derivation are private, on the
+live-test host under `~/hmc-live-evidence/2026-10-13-q1310/`.
+
+Regenerate them with `scripts/live_capture_export.py`, as
 `docs/live-testing.md` ("Capturing an HMC's vocabulary") describes; do not edit
 them by hand, apart from an allowlist entry's `reason`.
