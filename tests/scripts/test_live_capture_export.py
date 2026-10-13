@@ -328,13 +328,14 @@ def test_self_closing_element_keeps_the_text_after_it(
     assert corpus[-1]["body"] == body
 
 
-def test_valued_element_with_a_slash_attribute_is_still_scrubbed() -> None:
-    """Only a `/` directly before `>` marks a self-closing tag; one in a value does not."""
-    body = '<SerialNumber href="a/">1234ABC</SerialNumber>'
+@pytest.mark.parametrize("attribute", ['href="a/"', 'kb="x/>"', "kb='x/>'"])
+def test_valued_element_with_a_slash_attribute_is_still_scrubbed(
+    attribute: str,
+) -> None:
+    """A `/>` inside a quoted attribute value does not make the tag self-closing."""
+    body = f"<SerialNumber {attribute}>1234ABC</SerialNumber>"
     corpus = export.tokenize_records(_records(_rest("/e", body)))
-    assert corpus[-1]["body"] == (
-        '<SerialNumber href="a/">&lt;REDACTED-SERIAL&gt;</SerialNumber>'
-    )
+    assert corpus[-1]["body"] == body.replace("1234ABC", "&lt;REDACTED-SERIAL&gt;")
 
 
 def test_uuid_tokens_keep_case_and_are_consistent() -> None:
