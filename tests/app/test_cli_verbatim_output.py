@@ -390,7 +390,7 @@ def _rg_result(mode):
             cli_memory_pools,
             "",
             ("run_cli_coroutine",),
-            ["memory-pools", "remove", "sys1", MARKED, "--yes"],
+            ["memory-pools", "remove", MARKED, "--yes"],
         ),
     ),
 )
