@@ -787,18 +787,19 @@ def _sentinel(command: str, stdout: str) -> str | None:
 def _bound_enum(
     element: str, literals: set[str], types: dict[str, list[str]]
 ) -> str | None:
-    """The one enum type whose values hold every literal observed for *element*.
+    """The one enum type named for *element* whose values hold every literal observed for it.
 
-    A same-named enum binds on one literal. Any looser match needs two, because one
-    value is weak evidence: `Status` observed only as `OPERATIONAL` would otherwise bind
-    to a VNIC enum and then judge every job status against it.
+    A same-named enum binds on one literal. A name-related one (`_named_for`) needs two,
+    because one value is weak evidence: `Status` observed only as `OPERATIONAL` would
+    otherwise bind to a VNIC enum and then judge every job status against it. An enum
+    the name does not relate to never binds, however many literals it holds (#1498).
     """
     if not literals:
         return None
     candidates = [t for t, values in types.items() if literals <= set(values)]
     rules = [lambda base: base == element]
     if len(literals) >= 2:
-        rules += [lambda base: _named_for(base, element), lambda base: True]
+        rules.append(lambda base: _named_for(base, element))
     for rule in rules:
         matches = [t for t in candidates if rule(t.removesuffix(".Enum"))]
         if len(matches) == 1:
