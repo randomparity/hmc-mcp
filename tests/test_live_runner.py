@@ -1545,7 +1545,7 @@ async def test_profile_inventory_promotes_reads_with_assertions(monkeypatch) -> 
         ("hmc_get_lpar_msp", ("FAIL", "ssh lost"), "lpar.get_msp"),
         (
             "hmc_list_memory_pools",
-            ("PASS", [{"size": "4096"}]),
+            ("PASS", [{}]),
             "memory_pool.list",
         ),
         (
@@ -1599,9 +1599,10 @@ def _st10_answers(
             "PASS",
             {"profile": "default_profile", "profile_mode": next(profile_mode)},
         ),
+        "hmc_list_memory_pools": ("PASS", []),
         "hmc_remove_memory_pool": (
             "FAIL",
-            "Cannot remove memory pool — no pool with that name exists",
+            "Cannot remove the shared memory pool — the system has no shared memory pool",
         ),
     }
     answers.update(overrides)
@@ -1670,6 +1671,24 @@ async def test_st10_round_trips_pass_and_restore_each_value(monkeypatch) -> None
     )
     assert refusal["status"] == "PASS"
     assert "memory_pool.remove" not in observations
+
+
+@pytest.mark.asyncio
+async def test_st10_never_removes_a_pool_the_system_has(monkeypatch) -> None:
+    """The remove names no pool, so a listed pool skips the refusal probe."""
+    calls, scripted = _answer(
+        _st10_answers(hmc_list_memory_pools=("PASS", [{"pool_mem": "4096"}]))
+    )
+    monkeypatch.setattr(runner.RunState, "call", scripted)
+    state = _st10_state()
+
+    await lpar.mutate_lpar_properties(None, state)
+
+    assert _tool_calls(calls, "hmc_remove_memory_pool") == []
+    probe = next(
+        row for row in state.results if row["tool"].startswith("hmc_remove_memory_pool")
+    )
+    assert probe["status"] == "SKIP"
 
 
 @pytest.mark.asyncio
@@ -7187,7 +7206,7 @@ def test_scenarios_declare_their_expected_assertion_ids():
             "current-mode-supported",
             "profile-mode-supported",
             "memory-pools-empty-branch",
-            "memory-pool-rows-named",
+            "memory-pool-rows-parsed",
         },
         "st4-affinity-reads": {
             "score-names-partition",

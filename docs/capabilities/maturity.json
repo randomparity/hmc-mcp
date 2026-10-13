@@ -1655,19 +1655,18 @@
     {
       "operation": "memory_pool.remove",
       "implementation": {
-        "state": "partial",
+        "state": "implemented",
         "implemented_scope": [
           {
-            "variant": "unassigned-pool-precheck",
+            "variant": "dedicated-memory-precheck",
             "parameters": []
-          }
-        ],
-        "missing_scope": [
+          },
           {
             "variant": "reference-syntax-remove",
             "parameters": []
           }
-        ]
+        ],
+        "missing_scope": []
       },
       "evidence": []
     },

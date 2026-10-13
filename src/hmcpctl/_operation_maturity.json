@@ -466,7 +466,7 @@
     },
     {
       "operation": "memory_pool.remove",
-      "implementation": "partial",
+      "implementation": "implemented",
       "verification": "unevidenced",
       "reason": null,
       "observed_at": null
