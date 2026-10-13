@@ -137,12 +137,35 @@ the arm selects or mutates. An empty SR-IOV or vNIC listing records an
 reads. The bare-cec arm
 reuses the dedicated baseline without these reads.
 
-Before and after the run, save three read-only snapshots outside the
-repository: slot ownership (`lshwres -r io --rsubtype slot -m <system> -F
-drc_index,lpar_name`), the partition list (`lssyscfg -r lpar -m <system> -F
-name,state`), and the SR-IOV adapters and logical ports (`lshwres -r sriov
---rsubtype adapter -m <system>` and `lshwres -r sriov --rsubtype logport -m
-<system> --level eth`). After the recovery check, all three must match.
+Before the run, capture an independent baseline outside the repository. After
+recovery, capture again with the same selectors and compare:
+
+```sh
+uv run --no-sync python scripts/live_test_baseline.py capture --system sys-R1 --output /private/before.json --dry-run
+uv run --no-sync python scripts/live_test_baseline.py capture --system sys-R1 --output /private/before.json
+# Run the authorized arm and its recovery check, then:
+uv run --no-sync python scripts/live_test_baseline.py capture --system sys-R1 --output /private/after.json
+uv run --no-sync python scripts/live_test_baseline.py compare /private/before.json /private/after.json
+```
+
+Use an existing private directory and new filenames. Capture reads system identity,
+partitions/states, slot owners, every profile's `io_slots`, and SR-IOV adapters and
+ports. Repeat `--vios-id ID` only for VIOS partitions whose mapping and volume-group
+reads are authorized; without it there are no VIOS-side reads. `--profile NAME`
+uses the normal connection configuration and environment precedence. VIOS capture
+refuses surrounding system-name whitespace and UUID-shaped system or partition
+names because the shared resolver cannot
+distinguish those names from resource UUIDs. Keep other
+changes quiescent during these sequential reads. Dry-run opens no connections.
+Snapshots contain private infrastructure identifiers, are created mode 0600,
+and must stay local. Inherited transport/configuration diagnostics may also contain
+private identifiers; keep terminal output local or redact it before publication.
+Existing files and symlinks are refused. Comparison ignores
+row order and profile slot order, but preserves structural identity and state.
+Exit 0 means capture succeeded or snapshots match, 1 means drift, and 2 means
+unreadable/incomplete evidence. Only category names appear in comparison output.
+Drift or unreadable evidence requires operator inspection; this script performs
+no recovery or mutation.
 
 ### The io_slots scenario
 
