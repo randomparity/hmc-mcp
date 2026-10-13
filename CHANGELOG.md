@@ -46,8 +46,12 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
   feed empty, now reads the system's `State` from `ManagedSystem/quick/All` instead of
   `ManagedSystem/{uuid}`, which can stall for a system with no connection until `HMC_TIMEOUT`. The
   error names the system, its `State` and any non-blank `StateDetail` (it no longer carries
-  `DetailedState`), and asks you to retry when the system reconnects. A target given by name is
-  still resolved through the `ManagedSystem` name search first, unchanged (#1500).
+  `DetailedState`), and asks you to retry when the system reconnects (#1500).
+- A managed system given by name is resolved from `ManagedSystem/quick/All` instead of the
+  `SystemName` search, and an ambiguous LPAR or VIOS name without a managed-system selector finds
+  each candidate's system from `quick/All` and reads only the operating systems. Both stalled for
+  minutes on an HMC with a system in `No Connection`. A candidate found on no operating system
+  now names the systems that were not read (#1501).
 - A partition or VIOS name lookup without a managed-system selector no longer reports a name as
   not found while a managed system cannot be read. The HMC-wide name search answers "not found"
   for a partition on a system in `No Connection`, so a miss now reads the managed-system summary

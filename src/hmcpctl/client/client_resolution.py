@@ -98,7 +98,7 @@ async def ambiguous_parent_details(
     invalid = sorted(uuid for uuid, matches in parents.items() if len(matches) != 1)
     if invalid:
         skipped = (
-            "; these managed systems cannot be read: "
+            "; these managed systems are not operating, so were not read: "
             + ", ".join(_summary_label(system) for system in unreadable)
             if unreadable
             else ""

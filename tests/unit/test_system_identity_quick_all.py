@@ -93,6 +93,23 @@ async def test_a_name_quick_all_does_not_list_is_not_found(mock_hmc):
 
 
 @pytest.mark.asyncio
+async def test_a_name_matches_only_in_its_exact_case(mock_hmc):
+    _quick_all(mock_hmc)
+
+    with pytest.raises(ResourceNotFoundError, match="'SYS-R1'"):
+        await _resolve("SYS-R1")
+
+
+@pytest.mark.asyncio
+async def test_a_repeated_summary_is_one_match(mock_hmc):
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(
+        return_value=httpx.Response(200, json=[*SUMMARIES, SUMMARIES[0]])
+    )
+
+    assert await _resolve("sys-R1") == UUIDS["sys-R1"]
+
+
+@pytest.mark.asyncio
 async def test_a_name_two_summaries_share_is_ambiguous(mock_hmc):
     duplicate = {**SUMMARIES[0], "UUID": UUIDS["sys-R2"]}
     mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(
@@ -195,6 +212,7 @@ async def test_an_unplaced_candidate_names_the_unreadable_systems(mock_hmc, labe
     assert f"candidates {LPAR_B} must each belong to exactly one" in message
     for name in DISCONNECTED:
         assert f"'{name}' ({UUIDS[name]}) in State 'no connection'" in message
+    assert "not operating, so were not read" in message
     _assert_unread(stalling)
 
 

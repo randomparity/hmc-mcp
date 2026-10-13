@@ -62,6 +62,7 @@ async def resolve_system_uuid(hmc: HMCClient, value: str) -> str:
             f"Cannot resolve managed-system name {value!r}: its UUID metadata is "
             "incomplete"
         )
+    uuids = list(dict.fromkeys(uuids))
     if len(uuids) > 1:
         details = ", ".join(f"{value!r} ({uuid})" for uuid in sorted(uuids))
         raise ValueError(f"Ambiguous managed-system name {value!r}: {details}")

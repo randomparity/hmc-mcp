@@ -8,7 +8,9 @@ The 2026-10-13 capture (#1290, V11R2 SP1120) saw the full `ManagedSystem` feed, 
 system's `UUID`, `SystemName` and `State`. Three identity reads still use the stalling endpoints:
 
 - `resolve_system_uuid` (`resource_identity.py`) resolves a system name through the
-  `SystemName` search. Every tool that accepts a system name reaches it.
+  `SystemName` search. Most tools that accept a system name reach it; `get_system`,
+  logical inventory and the LPAR plan call `find_system_by_name` directly, because they need the
+  full entry, and move with the other full-entry readers in a later part.
 - The unscoped ambiguous-name path of `find_partition_by_name` and `find_vios_by_name` reads the
   full `ManagedSystem` feed to find each candidate's parent system.
 - The scoped ambiguous-name path of the same two finders reads `ManagedSystem/{uuid}` only to
@@ -18,8 +20,9 @@ system's `UUID`, `SystemName` and `State`. Three identity reads still use the st
 
 1. `resolve_system_uuid` matches the name exactly against `quick/All`'s `SystemName`. One match
    returns its `UUID`. None raises the existing `ResourceNotFoundError`. More than one raises
-   `ValueError("Ambiguous managed-system name …")` listing each UUID, as `find_system_by_name`
-   does. A matching row whose `UUID` is not a non-empty string is refused as incomplete metadata.
+   `ValueError("Ambiguous managed-system name …")` listing each distinct UUID, as
+   `find_system_by_name` does; a row repeated with the same UUID is one match. A matching row
+   whose `UUID` is not a non-empty string is refused as incomplete metadata.
    It does not consult `State`: resolution is identity only, and the caller's own read refuses a
    system that is not operating (#1500).
 2. `ambiguous_parent_details` takes `quick/All` summaries. It skips a summary whose `State` is not
@@ -42,8 +45,9 @@ system's `UUID`, `SystemName` and `State`. Three identity reads still use the st
 3. Accepted failure classes: a `quick/All` read failure propagates its `HMCError`, where the
    search's failure did before. The exact-match comparison is done locally, so its case and
    whitespace semantics are Python string equality; the HMC search was documented as exact match.
-   A candidate partition on a non-operating system is reported as unplaced with that system named,
-   rather than placed.
+   A candidate partition on a system that is not operating, `Standby` and `Power Off` included, is
+   reported as unplaced with that system named as not read, rather than placed, as the fleet
+   listings (ADR 0197) treat such a system.
 
 ## Success
 
