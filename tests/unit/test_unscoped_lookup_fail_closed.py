@@ -1,9 +1,10 @@
 """Unscoped name lookups and create-time name checks fail closed (#1309).
 
-The fixtures mirror a 2026-10-13 read-only capture: the HMC-wide
-``PartitionName`` searches answer 204 for a name on a ``No Connection`` system,
-exactly as for a name that exists nowhere, while ``ManagedSystem/quick/All``
-answers and reports that system's ``State`` as ``no connection``.
+A 2026-10-13 read-only capture found the HMC-wide ``PartitionName`` searches
+answering 204 for a name on a ``No Connection`` system, exactly as for a name
+that exists nowhere. ``ManagedSystem/quick/All`` answered, and the captured
+``rest-ms-quick-all-no-connection-v11r2`` record reports two of eleven systems
+with ``State`` ``no connection``; ``rest-ms-quick-all`` is an all-operating fleet.
 """
 
 from __future__ import annotations
@@ -15,8 +16,8 @@ import pytest
 from conftest import (
     assert_no_mutating_requests,
     captured_lpar_entry,
+    live_response,
     make_config,
-    mock_system_summaries,
 )
 
 from hmcpctl.client.core import HMCClient
@@ -40,8 +41,15 @@ SEARCHES = {
     "VIOS": ("find_vios_by_name", "VirtualIOServer", "vios-1"),
 }
 
-ONE_DISCONNECTED = ((SYS_A, "sys-A", "no connection"), (SYS_B, "sys-B", "operating"))
-ALL_OPERATING = ((SYS_A, "sys-A", "operating"), (SYS_B, "sys-B", "operating"))
+DISCONNECTED = {
+    "sys-R11": "000002ff-abcd-4ef0-8abc-0000000002ff",
+    "sys-R8": "00000219-abcd-4ef0-8abc-000000000219",
+}
+
+
+def _quick_all(mock_hmc, fixture: str):
+    path, response = live_response(fixture)
+    return mock_hmc.get(path).mock(return_value=response)
 
 
 def _feed(*entries: str) -> str:
@@ -65,15 +73,16 @@ async def _lookup(label: str):
 async def test_a_miss_while_a_system_has_no_connection_names_it(mock_hmc, label):
     _, collection, name = SEARCHES[label]
     _search(mock_hmc, collection, name, httpx.Response(204))
-    mock_system_summaries(mock_hmc, *ONE_DISCONNECTED)
+    _quick_all(mock_hmc, "rest-ms-quick-all-no-connection-v11r2")
 
     with pytest.raises(HMCError) as raised:
         await _lookup(label)
 
     message = str(raised.value)
     assert f"No {label} named {name!r} was found on the readable managed" in message
-    assert f"'sys-A' ({SYS_A}) in State 'no connection'" in message
-    assert "sys-B" not in message
+    for system, uuid in DISCONNECTED.items():
+        assert f"'{system}' ({uuid}) in State 'no connection'" in message
+    assert "'sys-R1'" not in message and "'sys-R2'" not in message
     assert "supply a managed-system selector" in message
 
 
@@ -82,7 +91,7 @@ async def test_a_miss_while_a_system_has_no_connection_names_it(mock_hmc, label)
 async def test_a_miss_on_an_all_operating_fleet_is_not_found(mock_hmc, label):
     _, collection, name = SEARCHES[label]
     _search(mock_hmc, collection, name, httpx.Response(204))
-    quick_all = mock_system_summaries(mock_hmc, *ALL_OPERATING)
+    quick_all = _quick_all(mock_hmc, "rest-ms-quick-all")
 
     assert await _lookup(label) is None
     assert quick_all.call_count == 1
@@ -98,7 +107,7 @@ async def test_a_hit_is_returned_without_reading_quick_all(mock_hmc, label):
         name,
         httpx.Response(200, text=_feed(captured_lpar_entry(LPAR_UUID, name))),
     )
-    quick_all = mock_system_summaries(mock_hmc, *ONE_DISCONNECTED)
+    quick_all = _quick_all(mock_hmc, "rest-ms-quick-all-no-connection-v11r2")
 
     found = await _lookup(label)
 

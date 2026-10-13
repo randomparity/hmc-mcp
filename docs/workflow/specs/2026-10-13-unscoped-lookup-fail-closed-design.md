@@ -49,11 +49,13 @@ check, call the unscoped lookup even though both already know the target system.
 ### Field evidence
 
 The `quick/All` keys used — `UUID`, `SystemName`, `State`, `StateDetail` — are in the committed
-capture `tests/fixtures/live/rest-ms-quick-all.json` (V10R3). Its systems are all `operating`,
-with `StateDetail` empty. The `no connection` value is in the captured `SystemState` vocabulary
-(`tests/fixtures/live/vocabulary/enums-*.json`). No committed fixture shows `quick/All` for a
-non-operating system, and none shows a non-empty `StateDetail`, so the mapping of `StateDetail` to
-`detailed_state` is by name only. The tests use synthetic fixtures that mirror the evidence.
+captures `tests/fixtures/live/rest-ms-quick-all.json` (V10R3, every system `operating`) and
+`tests/fixtures/live/rest-ms-quick-all-no-connection-v11r2.json` (V11R2 SP1120, #1290's
+2026-10-13 sweep), where two of eleven systems read `State` `no connection` with an empty
+`StateDetail`. The decision keys on `State` alone, case-insensitively: a `ReferenceCode` was blank
+for a disconnected system on the other HMC and blank on operating rows, so it is not a signal. No
+capture shows a non-empty `StateDetail`, so mapping it to `detailed_state` is by name only. The
+tests drive `quick/All` from both captures where they can.
 
 ### Failure model
 

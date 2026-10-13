@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock
 
 import pytest
+from conftest import live_fixture
 
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.systems.fleet import (
@@ -201,3 +203,20 @@ async def test_the_reread_matches_the_failed_system_by_uuid():
     with pytest.raises(HMCError) as raised:
         await read_fleet(hmc, _reader({R1_UUID: [], E2_UUID: error}), "LPARs")
     assert raised.value is error
+
+
+@pytest.mark.asyncio
+async def test_the_captured_no_connection_systems_are_named_and_not_read():
+    """quick/All as captured while two systems had no connection (#1309)."""
+    body = json.loads(live_fixture("rest-ms-quick-all-no-connection-v11r2")["body"])
+    read = AsyncMock(return_value=[])
+
+    listing = await read_fleet(_hmc(body), read, "LPARs")
+
+    assert [
+        (s.system_name, s.state, s.detailed_state) for s in listing.unreadable_systems
+    ] == [
+        ("sys-R11", "no connection", None),
+        ("sys-R8", "no connection", None),
+    ]
+    assert read.await_count == 9

@@ -55,6 +55,10 @@ before tokenizing. The exporter's e-mail rule rewrote the principal to
 the create did not send; the fixture keeps it, and hmcpctl does not strip it on read. Their
 token map is their own, as for the exports above.
 
+`rest-ms-quick-all-no-connection-v11r2` is record `#5` of #1290's read-only 2026-10-13 No
+Connection sweep of its second HMC (V11R2 SP1120): `ManagedSystem/quick/All` while two of its
+eleven systems read `State` `no connection`; its `sys-R` tokens are local to this file.
+
 ## Format
 
 Every file is a JSON object with these keys:
