@@ -59,9 +59,10 @@ def build_hmc_user_document(
 ) -> str:
     """Build a documented UOM ``UserProfile`` create or update document.
 
-    Children follow the documented response order, and roles are names rather
-    than links (ADR 0202): ``203-userprofile.md`` in the reference and the V10R3
-    capture carry ``AssociatedTaskRole`` and ``AssociatedResourceRole`` as text.
+    Children follow the V10R3 schema's ``UserProfile`` sequence, which the
+    captured profiles also serve, and roles are names rather than links (ADR 0202):
+    ``203-userprofile.md`` in the reference and the V10R3 capture carry
+    ``AssociatedTaskRole`` and ``AssociatedResourceRole`` as text.
     """
     if authentication_type is not None and authentication_type not in (
         AUTHENTICATION_TYPES
@@ -83,6 +84,9 @@ def build_hmc_user_document(
         ),
         ("UserProfilePassword", password),
         ("PasswordExpiry", password_expiry),
+        # The V10R3 schema places it here, before AssociatedTaskRole; sent last,
+        # a create failed REST0001 (#1414).
+        ("RemoteUserID", remote_user_id),
     ):
         if value is not None:
             parts.append(f"  <{name} {_MODIFIABLE_ATTRS}>{value}</{name}>")
@@ -120,7 +124,6 @@ def build_hmc_user_document(
         ("MinimumPasswordAge", minimum_password_age),
         ("AllowWebRemoteAccess", allow_web_remote_access),
         ("AllowSSHRemoteAccess", allow_ssh_remote_access),
-        ("RemoteUserID", remote_user_id),
     ):
         if value is not None:
             rendered = str(value).lower() if isinstance(value, bool) else value

@@ -14,6 +14,12 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
 
 ## [Unreleased]
 
+### Fixed
+
+- Creating or modifying an HMC user with `remote_user_id` no longer fails with REST0001 on
+  V10R3: the `UserProfile` document now sends `RemoteUserID` where the HMC's schema expects it,
+  before `AssociatedTaskRole` (#1414).
+
 ## [0.1.0] - 2026-10-12
 
 First tagged release of `hmcpctl`: a CLI, an MCP server and a Python library for the IBM HMC.

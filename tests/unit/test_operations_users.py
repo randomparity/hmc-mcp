@@ -140,6 +140,39 @@ async def test_modify_user_sends_a_supplied_authentication_type_over_the_profile
 
 
 @pytest.mark.asyncio
+async def test_modify_user_sends_remote_user_id_before_the_task_role():
+    """A modify builds the create's document, so it carries the schema position
+    a V10R3 create needed for RemoteUserID (REST0001 when sent last, #1414)."""
+    hmc = AsyncMock()
+    hmc.get_hmc_user.return_value = _PROFILE
+
+    await modify_user(
+        hmc,
+        "console-1",
+        "profile-1",
+        ModifyUserPatch(
+            authentication_type="Kerberos",
+            associated_task_role="hmcviewer",
+            remote_user_id="primary/instance@EXAMPLE.TEST",
+            allow_ssh_remote_access=False,
+        ),
+    )
+
+    document = hmc.modify_hmc_user.await_args.args[2]
+    order = [
+        document.index(f"<{name} ")
+        for name in (
+            "AuthenticationType",
+            "UserProfilePassword",
+            "RemoteUserID",
+            "AssociatedTaskRole",
+            "AllowSSHRemoteAccess",
+        )
+    ]
+    assert order == sorted(order)
+
+
+@pytest.mark.asyncio
 async def test_modify_user_needs_no_profile_authentication_type_when_supplied():
     hmc = AsyncMock()
     hmc.get_hmc_user.return_value = {"Resource": {"UserID": "alice"}}

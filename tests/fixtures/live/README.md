@@ -37,6 +37,14 @@ name's suffix and these were not synthetic, and its `MACAddressPrefix` values an
 on an HMC at V10R3 SP1060 managing a POWER8 8247-22L: the reader's `lsrefcode` command against a
 synthetic partition name the HMC does not know.
 
+`rest-user-profile-kerberos` and `rest-user-create-remote-user-id-refused` (`capture` prefix
+`2026-10-13-q1414/`) come from an operator-authorized window for #1414 on the V10R3 HMC: one
+disposable Kerberos-type user with a synthetic principal. hmcpctl's create was refused with
+REST0001 because it sent `RemoteUserID` after `AssociatedTaskRole`; the user was then made with
+`mkhmcusr`, read back, and deleted. The exporter's e-mail rule rewrote the principal to
+`hmcpctl-test/user@example.test`; the HMC served the value with a trailing newline, kept here.
+Their token map is their own, as for the exports above.
+
 ## Format
 
 Every file is a JSON object with these keys:
