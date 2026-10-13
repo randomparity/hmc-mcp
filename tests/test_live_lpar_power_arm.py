@@ -22,7 +22,10 @@ from live_test import lpar_config, lpar_power, pcie  # noqa: E402
 from pydantic import TypeAdapter  # noqa: E402
 
 from hmcpctl.errors import HMCError  # noqa: E402
-from hmcpctl.ssh.profiles import profile_io_slot_rows_command  # noqa: E402
+from hmcpctl.operations.lpar.assignments import LparPcieAssignments  # noqa: E402
+from hmcpctl.operations.lpar.provision import (  # noqa: E402
+    validate_provision_assignments,
+)
 
 SYSTEM = "sys-A"
 OTHER = "lpar-A"
@@ -102,7 +105,6 @@ class World:
             }
         ]
         self.adapters = {"2,lpar-A,3"}
-        self.slot_owner = "null"
         self.operations: dict[str, dict[str, Any]] = {}
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.overrides: dict[str, Any] = {}
@@ -152,8 +154,6 @@ class World:
 
     def _hmc_run_command(self, kwargs: dict[str, Any]) -> Any:
         cmd = kwargs["cmd"]
-        if cmd == profile_io_slot_rows_command(SYSTEM):
-            return "lpar_name,name,io_slots\n" + f"{OTHER},default_profile,none\n"
         if cmd.startswith("lssyscfg -r lpar") and cmd.endswith("name,state"):
             rows = [f"{OTHER},Running"]
             rows += [f"{n},{e['state']}" for n, e in self.partitions.items()]
@@ -165,7 +165,7 @@ class World:
         if "-r mem" in cmd:
             return "100000,256\n"
         if "--rsubtype slot" in cmd:
-            return f"{DRC},{self.slot_owner}\n"
+            return f"{DRC},null\n"
         if "virtualio" in cmd:
             return "\n".join(sorted(self.adapters)) + "\n"
         if cmd.startswith("viosvrcmd") and f"lsvg -lv {GROUP}" in cmd:
@@ -364,10 +364,14 @@ class World:
             self.adapters.discard("3,run,2")
         return {"mapping_id": kwargs["mapping_id"]}
 
-    def _hmc_list_dedicated_pcie_slots(self, kwargs: dict[str, Any]) -> Any:
-        return {"items": [{"drc_index": DRC, "owner_lpar": self.slot_owner}]}
-
     def _hmc_provision_lpar(self, kwargs: dict[str, Any]) -> Any:
+        assignments = kwargs.get("assignments", {})
+        try:
+            validate_provision_assignments(
+                TypeAdapter(LparPcieAssignments).validate_python(assignments)
+            )
+        except ValueError as exc:
+            return exc
         uuid = self._new(kwargs["name"], kwargs["caller_token"], kwargs["resources"])
         self.mappings.append(
             {
@@ -389,8 +393,6 @@ class World:
         else:
             self.partitions[kwargs["name"]]["state"] = "Open Firmware"
             steps.append({"step": "power_on", "status": "ok"})
-        if kwargs["assignments"]["dedicated"]:
-            self.slot_owner = kwargs["name"]
         return {
             "resource_created": True,
             "workflow_completed": not self.provision_fails_after_storage,
@@ -468,8 +470,6 @@ class World:
             if mapping["lpar_uuid"] == entry["uuid"]:
                 self._hmc_detach_storage_mapping({"mapping_id": mapping["id"]})
         del self.partitions[self.name_of(entry)]
-        if self.slot_owner != "null":
-            self.slot_owner = "null"
         return {
             "resource_deleted": True,
             "workflow_completed": True,
@@ -584,10 +584,6 @@ _OBSERVED = {
     "lpar.delete",
     "provision.lpar",
     "lpar.decommission",
-}
-_PCIE = {
-    "dedicated_pcie_system_name": SYSTEM,
-    "dedicated_pcie_lpar_prefix": "live-",
 }
 
 
@@ -794,54 +790,17 @@ def test_without_the_vlan_provision_is_skipped(schemas):
     )
 
 
-def test_no_pcie_configuration_sends_no_dedicated_slot(schemas):
+def test_a_dry_run_dedicated_slot_is_refused_and_never_sent_for_real(schemas):
     world = World()
     state = _run(schemas, world)
 
-    (call,) = world.calls_to("hmc_provision_lpar")
-    assert call["assignments"] == {"dedicated": []}
+    probe, real = world.calls_to("hmc_provision_lpar")
+    assert probe["dry_run"] is True and probe["assignments"]["dedicated"]
+    assert "assignments" not in real and "dry_run" not in real
     (row,) = _rows(state, "hmc_provision_lpar (dedicated PCIe argument)")
-    assert row["status"] == "SKIP"
+    assert row["status"] == "PASS"
+    assert "dedicated-slot-refused" in _held(state, "provision.lpar")
     assert "pcie-slot-owned" not in _held(state, "provision.lpar")
-
-
-def test_an_eligible_slot_is_sent_and_its_ownership_asserted(schemas):
-    world = World()
-    state = _run(schemas, world, **_PCIE)
-
-    (call,) = world.calls_to("hmc_provision_lpar")
-    assert call["assignments"]["dedicated"] == [
-        {"profile_name": "default_profile", "drc_index": DRC}
-    ]
-    assert "pcie-slot-owned" in _held(state, "provision.lpar")
-    assert world.slot_owner == "null"
-
-
-def _listed_by_a_profile(world: World) -> None:
-    def answer(kwargs: dict[str, Any]) -> Any:
-        if kwargs["cmd"] == profile_io_slot_rows_command(SYSTEM):
-            return f'lpar_name,name,io_slots\n{OTHER},default_profile,"{DRC}/none/0"\n'
-        return World._hmc_run_command(world, kwargs)
-
-    world.overrides["hmc_run_command"] = answer
-
-
-@pytest.mark.parametrize(
-    ("change", "system"),
-    [
-        (lambda w: setattr(w, "slot_owner", OTHER), SYSTEM),
-        (_listed_by_a_profile, SYSTEM),
-        (lambda w: None, "sys-B"),
-    ],
-    ids=["owned", "listed-by-a-profile", "configured-for-another-system"],
-)
-def test_an_ineligible_slot_is_never_sent(schemas, change, system):
-    world = World()
-    change(world)
-    _run(schemas, world, **{**_PCIE, "dedicated_pcie_system_name": system})
-
-    (call,) = world.calls_to("hmc_provision_lpar")
-    assert call["assignments"] == {"dedicated": []}
 
 
 def test_product_decommission_runs_without_prior_detach(schemas):
@@ -1118,10 +1077,24 @@ def _mapping_elsewhere(w: World) -> None:
 def _p_not_activated(w: World) -> None:
     def change(k, real):
         answer = real(k)
+        if k.get("dry_run"):
+            return answer
         w.partitions[k["name"]]["state"] = "Not Activated"
         return answer
 
     _wrap(w, "hmc_provision_lpar", change)
+
+
+def _dedicated_dry_run_accepted(w: World) -> None:
+    _wrap(
+        w,
+        "hmc_provision_lpar",
+        lambda k, real: (
+            {"dry_run": True, "workflow_completed": False, "steps": []}
+            if k.get("dry_run")
+            else real(k)
+        ),
+    )
 
 
 def _decommission_answer(dry_run: bool, **fields: Any):
@@ -1197,6 +1170,7 @@ _DEVIATIONS = [
     ("provision.lpar", "network-adapter-on-vlan", _other_vlan),
     ("provision.lpar", "storage-mapping-listed", _mapping_elsewhere),
     ("provision.lpar", "partition-activated", _p_not_activated),
+    ("provision.lpar", "dedicated-slot-refused", _dedicated_dry_run_accepted),
     (
         "lpar.decommission",
         "dry-run-inventoried",
@@ -1246,6 +1220,8 @@ def test_a_run_mapping_without_an_id_is_never_read_as_detached(schemas):
 
     def provision(k, real):
         answer = real(k)
+        if k.get("dry_run"):
+            return answer
         world.mappings[-1]["id"] = None
         return answer
 

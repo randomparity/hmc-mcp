@@ -36,18 +36,42 @@ def _hmc_env(monkeypatch):
     monkeypatch.setenv("HMC_PASSWORD", "abc123")
 
 
-# A pool attribute whose value is a list prints as one quoted pair, the way
-# the captured `lssyscfg -r sys` prints `"lpar_proc_compat_modes=..."`
-# (tests/fixtures/live/cli-sys-attrs.json). The pool attribute names themselves
-# are uncaptured: the V10R3 POWER9 capture has no pool (#1202).
-_POOL_OUTPUT_WITH_LPARS = (
-    'pool_name=SharedMemPool1,size=4096,lpar_names=lpar1 lpar2,"curr_lpar_names=lpar1,lpar2"\n'
-    "pool_name=SharedMemPool2,size=2048,lpar_names=,curr_lpar_names=\n"
+# A synthetic pool row. The real row's field names are uncaptured: no swept
+# system had a pool (#1245), so nothing here may be read as the HMC's shape.
+_POOL_ROW = "pool_mem=4096,max_pool_mem=8192\n"
+
+
+def _run_results(*stdouts: str) -> list[MagicMock]:
+    results = []
+    for stdout in stdouts:
+        result = MagicMock()
+        result.stdout = stdout
+        results.append(result)
+    return results
+
+
+def _sequenced_ssh_mock(*stdouts: str) -> MagicMock:
+    conn = _make_ssh_mock()
+    conn.run = AsyncMock(side_effect=_run_results(*stdouts))
+    return conn
+
+
+def _sent(conn: MagicMock) -> list[str]:
+    return [call[0][0] for call in conn.run.call_args_list]
+
+
+# `lpar_name` and `mem_mode` are captured `lshwres -r mem --level lpar` field
+# names on every swept system (tests/fixtures/live/vocabulary/); `ded` is the
+# captured value and `shared` the documented one (lslparutil, mem_mode).
+_DEDICATED_PARTITIONS = (
+    "lpar_name=lpar-a,lpar_id=1,mem_mode=ded,curr_mem=4096\n"
+    "lpar_name=vios-a,lpar_id=2,mem_mode=ded,curr_mem=8192\n"
 )
 
-_POOL_OUTPUT_SINGLE_EMPTY = (
-    "pool_name=SharedMemPool1,size=4096,lpar_names=,curr_lpar_names=\n"
-)
+
+def _dedicated_profiles() -> str:
+    """Every captured profile reads ``mem_mode=ded``."""
+    return live_fixture("cli-prof-all")["stdout"]
 
 
 # ---------------------------------------------------------------------- #
@@ -59,7 +83,7 @@ def test_list_memory_pools_runs_correct_command(monkeypatch, mock_hmc):
     """hmc_list_memory_pools issues lshwres -r mempool -m <system_name>."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
-    conn_mock = _make_ssh_mock(_POOL_OUTPUT_WITH_LPARS)
+    conn_mock = _make_ssh_mock(_POOL_ROW)
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_list_memory_pools(SYSTEM_UUID)
@@ -67,25 +91,14 @@ def test_list_memory_pools_runs_correct_command(monkeypatch, mock_hmc):
     conn_mock.run.assert_called_once_with(
         f"lshwres -r mempool -m {SYSTEM_NAME}", check=True, timeout=300.0
     )
-    assert isinstance(result, list)
-    assert len(result) >= 1
-
-
-def test_list_memory_pools_returns_parsed_dicts(monkeypatch, mock_hmc):
-    """hmc_list_memory_pools parses key=value rows into list of dicts."""
-    _hmc_env(monkeypatch)
-    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
-    conn_mock = _make_ssh_mock("pool_name=Pool1,size=8192,curr_lpar_names=\n")
-
-    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
-        result = hmc_list_memory_pools(SYSTEM_UUID)
-
-    assert result[0]["pool_name"] == "Pool1"
-    assert result[0]["size"] == "8192"
+    assert result == [{"pool_mem": "4096", "max_pool_mem": "8192"}]
 
 
 def test_list_memory_pools_empty_output(monkeypatch, mock_hmc):
-    """A system with no pool prints the empty-result sentinel, which is no pools."""
+    """No pool answers ``No results were found.`` with exit 0: an empty list.
+
+    Captured on a V10R3 POWER9 that is Active Memory Sharing capable.
+    """
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
     conn_mock = _make_ssh_mock(live_fixture("cli-mempool-empty")["stdout"])
@@ -130,114 +143,109 @@ def test_list_memory_pools_raises_other_refusals(monkeypatch, mock_hmc):
         hmc_list_memory_pools(SYSTEM_UUID)
 
 
-def test_remove_memory_pool_on_ams_unsupported_system_finds_no_pool(
-    monkeypatch, mock_hmc
+# ---------------------------------------------------------------------- #
+# hmc_remove_memory_pool
+# ---------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "conn_factory",
+    [
+        lambda: _make_ssh_mock(live_fixture("cli-mempool-empty")["stdout"]),
+        lambda: _refusing_ssh_mock("cli-mempool-ams-unsupported"),
+    ],
+    ids=["no-results", "ams-unsupported"],
+)
+def test_remove_memory_pool_without_a_pool_refuses_before_chhwres(
+    monkeypatch, mock_hmc, conn_factory
 ):
-    """With no pool to find, the remove is refused before any chhwres."""
+    """With no pool on the system, the remove refuses after the one list read."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
-    conn_mock = _refusing_ssh_mock("cli-mempool-ams-unsupported")
+    conn_mock = conn_factory()
 
     with (
         patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock),
-        pytest.raises(HMCCLIError, match="no pool with that name exists"),
+        pytest.raises(HMCCLIError, match="has no shared memory pool"),
     ):
-        hmc_remove_memory_pool(SYSTEM_UUID, "SharedMemPool1")
+        hmc_remove_memory_pool(SYSTEM_UUID)
 
-    assert conn_mock.run.call_count == 1
-
-
-# ---------------------------------------------------------------------- #
-# hmc_remove_memory_pool -- safety check (LPAR-present -> error path)
-# ---------------------------------------------------------------------- #
+    assert _sent(conn_mock) == [f"lshwres -r mempool -m {SYSTEM_NAME}"]
 
 
-def test_remove_memory_pool_blocks_when_lpars_assigned(monkeypatch, mock_hmc):
-    """hmc_remove_memory_pool raises HMCCLIError and does NOT remove when LPARs are assigned."""
+def test_remove_memory_pool_sends_the_documented_remove(monkeypatch, mock_hmc):
+    """With a pool and every partition dedicated, the remove names no pool."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
-
-    # lshwres output: SharedMemPool1 has curr_lpar_names=lpar1,lpar2, quoted
-    pool_list_output = (
-        'pool_name=SharedMemPool1,size=4096,"curr_lpar_names=lpar1,lpar2"\n'
+    conn_mock = _sequenced_ssh_mock(
+        _POOL_ROW, _DEDICATED_PARTITIONS, _dedicated_profiles(), ""
     )
-    list_result = MagicMock()
-    list_result.stdout = pool_list_output
-
-    conn_mock = AsyncMock()
-    conn_mock.run = AsyncMock(return_value=list_result)
-    conn_mock.__aenter__ = AsyncMock(return_value=conn_mock)
-    conn_mock.__aexit__ = AsyncMock(return_value=False)
-
-    with (
-        patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock),
-        pytest.raises(HMCCLIError) as exc_info,
-    ):
-        hmc_remove_memory_pool(SYSTEM_UUID, "SharedMemPool1")
-
-    # Only the safety-check lshwres should have been called -- no chhwres.
-    assert conn_mock.run.call_count == 1
-    called_cmd = conn_mock.run.call_args[0][0]
-    assert "lshwres" in called_cmd
-    assert "chhwres" not in called_cmd
-
-    # Exception must be a structured error naming the blocking LPARs.
-    assert "lpar1" in str(exc_info.value)
-    assert "lpar2" in str(exc_info.value)
-
-
-def test_remove_memory_pool_proceeds_when_no_lpars(monkeypatch, mock_hmc):
-    """hmc_remove_memory_pool issues chhwres when no LPARs are assigned."""
-    _hmc_env(monkeypatch)
-    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
-
-    list_result = MagicMock()
-    list_result.stdout = _POOL_OUTPUT_SINGLE_EMPTY
-    remove_result = MagicMock()
-    remove_result.stdout = "Operation successful.\n"
-
-    conn_mock = AsyncMock()
-    conn_mock.run = AsyncMock(side_effect=[list_result, remove_result])
-    conn_mock.__aenter__ = AsyncMock(return_value=conn_mock)
-    conn_mock.__aexit__ = AsyncMock(return_value=False)
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
-        result = hmc_remove_memory_pool(SYSTEM_UUID, "SharedMemPool1")
+        result = hmc_remove_memory_pool(SYSTEM_UUID)
 
-    assert conn_mock.run.call_count == 2
-    remove_cmd = conn_mock.run.call_args_list[1][0][0]
-    assert "chhwres" in remove_cmd
-    assert "-r mempool" in remove_cmd
-    assert "-o r" in remove_cmd
-    assert "SharedMemPool1" in remove_cmd
-    assert "Operation successful" in result
+    assert _sent(conn_mock) == [
+        f"lshwres -r mempool -m {SYSTEM_NAME}",
+        f"lshwres -r mem --level lpar -m {SYSTEM_NAME}",
+        f"lssyscfg -r prof -m {SYSTEM_NAME}",
+        f"chhwres -r mempool -m {SYSTEM_NAME} -o r",
+    ]
+    assert result == ""
 
 
-def test_remove_memory_pool_unknown_pool_raises(monkeypatch, mock_hmc):
-    """hmc_remove_memory_pool raises HMCCLIError and does NOT remove when pool is not in the list."""
+@pytest.mark.parametrize(
+    "partitions,profiles,named",
+    [
+        (
+            "lpar_name=lpar-s,lpar_id=3,mem_mode=shared",
+            "",
+            "partition lpar-s (mem_mode=shared)",
+        ),
+        (
+            "lpar_name=lpar-u,lpar_id=4,curr_mem=2048",
+            "",
+            "partition lpar-u (mem_mode=<absent>)",
+        ),
+        ("lpar_name=lpar-x,lpar_id=5,mem_mode=", "", "partition lpar-x (mem_mode=)"),
+        (
+            "",
+            "name=prof-s,lpar_name=lpar-p,lpar_id=6,mem_mode=shared",
+            "profile prof-s of lpar-p (mem_mode=shared)",
+        ),
+        (
+            "",
+            "name=prof-u,lpar_name=lpar-q,lpar_id=7,min_mem=1024",
+            "profile prof-u of lpar-q (mem_mode=<absent>)",
+        ),
+    ],
+    ids=[
+        "partition-shared",
+        "partition-field-absent",
+        "partition-field-empty",
+        "profile-shared",
+        "profile-field-absent",
+    ],
+)
+def test_remove_memory_pool_refuses_unless_everything_is_dedicated(
+    monkeypatch, mock_hmc, partitions, profiles, named
+):
+    """A partition or profile not confirmed as ``mem_mode=ded`` blocks the remove."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
-
-    list_result = MagicMock()
-    list_result.stdout = _POOL_OUTPUT_SINGLE_EMPTY
-
-    conn_mock = AsyncMock()
-    conn_mock.run = AsyncMock(return_value=list_result)
-    conn_mock.__aenter__ = AsyncMock(return_value=conn_mock)
-    conn_mock.__aexit__ = AsyncMock(return_value=False)
+    conn_mock = _sequenced_ssh_mock(
+        _POOL_ROW,
+        _DEDICATED_PARTITIONS + partitions + "\n",
+        _dedicated_profiles() + profiles + "\n",
+    )
 
     with (
         patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock),
         pytest.raises(HMCCLIError) as exc_info,
     ):
-        hmc_remove_memory_pool(SYSTEM_UUID, "MissingPool")
+        hmc_remove_memory_pool(SYSTEM_UUID)
 
-    # Only the safety-check lshwres should have been called -- no chhwres.
-    assert conn_mock.run.call_count == 1
-    called_cmd = conn_mock.run.call_args[0][0]
-    assert "lshwres" in called_cmd
-    assert "chhwres" not in called_cmd
-
-    # Exception names the missing pool.
-    assert "no pool with that name exists" in str(exc_info.value)
-    assert "MissingPool" in str(exc_info.value)
+    message = str(exc_info.value)
+    assert named in message
+    assert "lpar-a" not in message
+    assert "default_profile" not in message
+    assert not any("chhwres" in cmd for cmd in _sent(conn_mock))

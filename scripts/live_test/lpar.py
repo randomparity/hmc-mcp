@@ -244,7 +244,6 @@ async def _restore_description(client: Client, state: RunState, scenario: int) -
 
 
 _PROBE_DESCRIPTION = "MCP live-test probe R2 safe to clear"
-_ABSENT_POOL = "hmcpctl-live-absent-pool"
 # A relative bkprofdata file lands in /var/hsc/profiles/<serial>/ on the HMC.
 _PROFILE_BACKUP_FILE = "hmcpctl-live-st10"
 # The modes hmc_set_lpar_proc_compat accepts. Both the CLI's `POWER9_base` and
@@ -752,21 +751,34 @@ async def _exercise_profile_backup_restore(client: Client, state: RunState) -> N
 
 
 async def _check_memory_pool_removal_refusal(client: Client, state: RunState) -> None:
-    """Removing an absent pool is refused before chhwres; a non-promoting check."""
+    """Removing the pool of a system without one is refused before chhwres.
+
+    The remove names no pool, so on a system that has one it would delete it:
+    the probe is skipped there rather than risking a real pool.
+    """
     config = state.config
-    status, data = await state.call(
-        client,
-        "hmc_remove_memory_pool",
-        system_name_or_uuid=config.system_name,
-        pool_name=_ABSENT_POOL,
+    tool = "hmc_remove_memory_pool (no-pool refusal)"
+    status, pools = await state.call(
+        client, "hmc_list_memory_pools", system_name_or_uuid=config.system_name
     )
-    refused = status == "FAIL" and "no pool with that name" in str(data)
+    if status != "PASS" or pools != []:
+        note = (
+            "the system lists a pool; not removing it"
+            if status == "PASS"
+            else "the pool list read failed; not removing"
+        )
+        state.record(10, tool, "SKIP", pools, note)
+        return
+    status, data = await state.call(
+        client, "hmc_remove_memory_pool", system_name_or_uuid=config.system_name
+    )
+    refused = status == "FAIL" and "has no shared memory pool" in str(data)
     state.record(
         10,
-        "hmc_remove_memory_pool (absent pool refusal)",
+        tool,
         "PASS" if refused else "FAIL",
         data,
-        "refused before chhwres" if refused else "expected the missing-pool refusal",
+        "refused before chhwres" if refused else "expected the no-pool refusal",
     )
 
 

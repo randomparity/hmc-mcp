@@ -35,7 +35,6 @@ from hmcpctl.server_tools.lpar.profiles import (
 )
 from hmcpctl.server_tools.systems.resources import (
     hmc_list_memory_pools,
-    hmc_remove_memory_pool,
 )
 from hmcpctl.server_tools.vios.core import (
     hmc_backup_vios,
@@ -148,23 +147,6 @@ def test_set_lpar_description_quotes_hostile_description(monkeypatch, mock_hmc):
     payload = f"name={LPAR_NAME},description={HOSTILE}"
     args = shlex.split(_captured_cmd(conn))
     assert _arg_after(args, "-i") == payload
-
-
-def test_remove_memory_pool_quotes_hostile_pool_name(monkeypatch, mock_hmc):
-    """hmc_remove_memory_pool quotes a hostile pool_name in the chhwres command."""
-    _hmc_env(monkeypatch)
-    mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
-    # Pool list contains the hostile name (unassigned) so the safety check
-    # finds it and proceeds to the remove command.
-    conn = _make_ssh_mock("pool_name=x; id,size=4096,curr_lpar_names=\n")
-
-    with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn):
-        hmc_remove_memory_pool(SYSTEM_UUID, HOSTILE)
-
-    cmd = _captured_cmd(conn)  # last run() call is the chhwres remove
-    assert "chhwres" in cmd
-    args = shlex.split(cmd)
-    assert _arg_after(args, "-a") == HOSTILE
 
 
 def test_backup_lpar_profiles_quotes_hostile_file_path(monkeypatch, mock_hmc):

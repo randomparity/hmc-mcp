@@ -113,14 +113,13 @@ own records (#630).
     1 GiB free; `LIVE_TEST_PROVISION_VLAN_ID` has a virtual network. The arm creates the
     1 GiB volume (`hmc_create_virtual_disk`, a plain row: #1348 owns its record), then
     `hmc_provision_lpar` with P's name, the run token, `VirtualDisk`, the VLAN, small
-    resources and `power_on=True`. PCIe argument: sent when `pcie._dedicated_config`
-    resolves and names this system, using its DRC index or else the first slot
-    `hmc_list_dedicated_pcie_slots` shows unowned (`pcie._slot_unowned`) that no profile
-    lists (`pcie._profile_lists_slot` over `profile_io_slot_rows_command`); otherwise a
-    SKIP row naming the gap. Observation `provision.lpar`: `workflow-completed` (every
-    step `ok`), `ownership-stamped`, `network-adapter-on-vlan`, `storage-mapping-listed`
-    (a VIOS mapping backed by the volume names P's UUID), `partition-activated` (state
-    polled to an activated state), and `pcie-slot-owned` only when the argument was sent.
+    resources and `power_on=True`, and no PCIe argument. Before it, one dry-run
+    provision carrying a dedicated slot must be refused before any HMC read (#1390,
+    docs/workflow/specs/2026-10-13-provision-dedicated-pcie-refusal-design.md).
+    Observation `provision.lpar`: `workflow-completed` (every step `ok`),
+    `ownership-stamped`, `network-adapter-on-vlan`, `storage-mapping-listed` (a VIOS
+    mapping backed by the volume names P's UUID), `partition-activated` (state polled to
+    an activated state), and `dedicated-slot-refused`.
     A provision that returns no UUID, or raises, adopts P by name and run token
     (`lpar_config._adopt_by_name` shape) for teardown.
 11. **Decommission (P)** — observation `lpar.decommission`: `dry-run-inventoried`
@@ -192,7 +191,7 @@ Defects the run confirms in `src/hmcpctl/operations/lpar/` are fixed here; one i
 | `lpar.power_on` network boot | #638 | not implemented |
 | `system.power_on`, `system.power_off` | an operator window to power the whole system | not run |
 | `lpar.power_on` with `operation_type` | an HMC release that accepts the `OperationType` PowerOn parameter | refused live (2026-10-07, V10R3): `FAILED_TO_START`, "Parameter 'OperationType' is not allowed for this Job."; the request without it reached Open Firmware; observation failed |
-| `provision.lpar` dedicated slot live after PowerOn | a decision on how provision activates when assignments are present (profile activation discards current-configuration changes, #1345) | observed live: the slot is in the profile, not owned by the running partition; observation failed |
+| `provision.lpar` dedicated slot live after PowerOn | profile-first provisioning (#1225); until then provision refuses the argument (#1390) | observed live: the slot is in the profile, not owned by the running partition; observation failed |
 | `hmc_detach_storage_mapping` answer when the VIOS reads RMC active | an explanation of `HSCL2957` on a detach that takes effect | observed live twice: error answer, mapping removed |
 
 ## Success
@@ -209,8 +208,8 @@ Defects the run confirms in `src/hmcpctl/operations/lpar/` are fixed here; one i
   volume exists (recovery exit 0 for subtask 41).
 - Unit tests over the scripted client pin: each assertion's pass and fail reading;
   every mutating call naming a run partition (UUID once known), the run volume or its
-  mapping; the PCIe gate (no config or no eligible slot: gap row and no `assignments`;
-  an eligible slot: `dedicated` sent); the gap SKIP rows of step 13 with no dump or
+  mapping; the dedicated-slot refusal (a dry run only, and no slot in the real
+  provision); the gap SKIP rows of step 13 with no dump or
   system-power call; teardown order (detach before partition delete) on a provision
   that fails after its storage step; adoption when provision returns no UUID; recovery
   rows.
