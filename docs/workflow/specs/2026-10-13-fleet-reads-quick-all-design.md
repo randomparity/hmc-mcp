@@ -51,6 +51,6 @@ every system's `UUID`, `SystemName` and `State`.
 Driven by `rest-ms-quick-all-no-connection-v11r2` with the full feed, the name search and a
 disconnected system's entry stalled: health reports the two disconnected systems; discovery finds
 an owner on an operating system, and names both disconnected systems when nothing owns the
-partition, without reading their feeds; capacity reports exactly the nine operating systems; the
+partition, after their partition feeds refuse; capacity reports exactly the nine operating systems; the
 survey returns eleven readings, two of them unread with the state gap. Discovery finds a
 partition on a `Standby` frame and passes over a row without a valid UUID.

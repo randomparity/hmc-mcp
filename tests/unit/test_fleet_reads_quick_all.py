@@ -239,6 +239,26 @@ async def test_an_unread_frame_another_hmc_reads_is_counted_once(mock_hmc):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("row", "gap"),
+    [
+        (
+            {"UUID": "not-a-uuid", "SystemName": "sys-R0", "State": "operating"},
+            "ManagedSystem: not read, because quick/All reports no valid UUID",
+        ),
+        ("sys-R0", "ManagedSystem: not read, because quick/All reports no State"),
+    ],
+)
+async def test_an_unread_row_names_why_it_was_not_read(mock_hmc, row, gap):
+    _quick_all_rows(mock_hmc, [row])
+
+    async with HMCClient(make_config()) as hmc:
+        (reading,) = await survey_hmc(hmc, "default")
+
+    assert reading.gaps == (gap,)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("operation", [fetch_capacity_report, survey_hmc])
 async def test_a_listed_system_without_an_entry_fails_the_read(mock_hmc, operation):
     path, response = live_response(QUICK_ALL)
