@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. Amended 2026-10-13 by #1482 — see *Amendment* below; the decision remains accepted.
 
 > **Partially superseded by [PR #738](https://github.com/randomparity/hmc-mcp/pull/738)**
 > for the startup stdlib reachability: `csv` is reached on CPython 3.11–3.12 and `json` on
@@ -136,7 +136,8 @@ asserts the answer is inside this checkout.
   launch directory. A `sys.path[0]` drop inside `__main__.py` would arrive after those ran, so
   it would cover only what `main` imports lazily, quite apart from being the logic this record
   forbids. `-P` / `PYTHONSAFEPATH=1` is the one remedy that covers both halves, which is why
-  L5's fixture uses it and why the changelog points operators at it.
+  L5's fixture uses it and why the [CLI guide](../cli.md#running-as-a-python-module) points
+  operators at it.
 - `tests/app/test_fail_closed_startup.py`'s L1 docstring argues from "there is no
   `__main__.py`". The shim falsifies that sentence, so this change corrects it; the test's
   own behaviour is untouched.
@@ -187,3 +188,9 @@ asserts the answer is inside this checkout.
 - **Do nothing.** verified: the measured table above. judgment: the failure is deterministic
   past the threshold and misattributes a harness artifact to the server, and it is invisible
   to CI — so it lands on whoever is least equipped to recognise it.
+
+## Amendment (2026-10-13, #1482)
+
+The operator guidance now points to the [CLI guide](../cli.md#running-as-a-python-module)
+instead of the changelog. The `-P` / `PYTHONSAFEPATH=1` recommendation and the launch decision
+are unchanged; this amendment keeps the pointer valid for release-tagged documentation.
