@@ -58,9 +58,10 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
 - Fleet health, the capacity report and placement, the utilization report, and the
   owning-system search a DLPAR or power operation runs without a managed-system selector take
   their systems from `ManagedSystem/quick/All` instead of the full `ManagedSystem` feed, which
-  stalled for minutes while a system was in `No Connection`. A system that is not operating is
-  not read: the owning-system search names it among the systems it could not read, and the
-  utilization report lists it with every figure unknown and a gap naming its state (#1501).
+  stalled for minutes while a system was in `No Connection`. The owning-system search names a
+  frame that refuses its partitions with its state. Capacity and utilization do not read a
+  system that is not operating: capacity leaves it out, and the utilization report lists it
+  with every figure unknown and a gap naming its state (#1501).
 - A partition or VIOS name lookup without a managed-system selector no longer reports a name as
   not found while a managed system cannot be read. The HMC-wide name search answers "not found"
   for a partition on a system in `No Connection`, so a miss now reads the managed-system summary

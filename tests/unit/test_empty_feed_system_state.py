@@ -456,7 +456,7 @@ async def test_owning_system_discovery_reports_a_non_operating_system(
     assert f"1 could not be read: {SYSTEM_UUID} in State 'no connection'" in str(
         caught.value
     )
-    assert not no_connection.called
+    assert no_connection.called
 
 
 @pytest.mark.asyncio

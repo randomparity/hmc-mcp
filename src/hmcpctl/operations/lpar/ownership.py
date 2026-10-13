@@ -56,7 +56,7 @@ def _discovery_candidate(system: object) -> tuple[str, str] | None:
         return None
     system_uuid = system.get("UUID")
     system_name = system.get("SystemName")
-    if not isinstance(system_uuid, str) or not system_uuid:
+    if not isinstance(system_uuid, str) or not is_uuid(system_uuid):
         return None
     if not isinstance(system_name, str) or not system_name:
         return None
@@ -136,11 +136,6 @@ async def _search_fleet_for_partition(
             skipped.unusable_entries += 1
             continue
         system_uuid, system_name = candidate
-        state = system.get("State")
-        if not system_operating(state):
-            state_text = state.strip()[:100] if isinstance(state, str) else "unknown"
-            skipped.unreadable.append(f"{system_uuid} in State {state_text!r}")
-            continue
         try:
             partitions = await hmc.list_logical_partitions(system_uuid)
         except HMCError as exc:
@@ -150,7 +145,14 @@ async def _search_fleet_for_partition(
                 exc,
                 exc_info=exc,
             )
-            skipped.unreadable.append(system_uuid)
+            state = system.get("State")
+            if system_operating(state):
+                skipped.unreadable.append(system_uuid)
+            else:
+                state_text = (
+                    state.strip()[:100] if isinstance(state, str) else "unknown"
+                )
+                skipped.unreadable.append(f"{system_uuid} in State {state_text!r}")
             continue
         if _hosts_partition(partitions, lpar_uuid):
             _logger.info(

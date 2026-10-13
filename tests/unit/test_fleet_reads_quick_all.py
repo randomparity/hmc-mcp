@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import fields
+from dataclasses import fields, replace
 
 import httpx
 import pytest
@@ -28,7 +28,11 @@ from conftest import (
 from hmcpctl.client.core import HMCClient
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.inventory.capacity import fetch_capacity_report
-from hmcpctl.operations.inventory.utilization import FIGURE_GROUPS, survey_hmc
+from hmcpctl.operations.inventory.utilization import (
+    FIGURE_GROUPS,
+    fleet_systems,
+    survey_hmc,
+)
 from hmcpctl.operations.lpar.ownership import _discover_owning_system
 from hmcpctl.operations.systems.health import fetch_fleet_health
 
@@ -106,6 +110,7 @@ async def test_fleet_health_reports_the_disconnected_systems(mock_hmc):
 
     assert sorted(system["name"] for system in result.systems) == ["sys-R11", "sys-R8"]
     assert {system["state"] for system in result.systems} == {"no connection"}
+    assert len(result.warnings) == 4
     assert all("State 'no connection'" in warning for warning in result.warnings)
     fleet.assert_disconnected_entries_unread()
 
@@ -118,8 +123,47 @@ async def test_owning_system_discovery_skips_the_disconnected_systems(mock_hmc):
         found = await _discover_owning_system(hmc, LPAR, "lpar-a")
 
     assert found == (UUIDS["sys-R3"], "sys-R3")
-    assert not fleet.read(fleet.scoped) & DISCONNECTED
     fleet.assert_disconnected_entries_unread()
+
+
+def _quick_all_rows(mock_hmc, rows: list[object]) -> None:
+    """Replace the captured quick/All answer; respx keeps the later registration."""
+    mock_hmc.get(live_response(QUICK_ALL)[0]).mock(
+        return_value=httpx.Response(200, json=rows)
+    )
+
+
+@pytest.mark.asyncio
+async def test_discovery_still_reads_a_standby_frame(mock_hmc):
+    """ADR 0197: a frame in Standby can still answer its partition feed."""
+    _Fleet(mock_hmc, owner=UUIDS["sys-R3"])
+    _quick_all_rows(
+        mock_hmc,
+        [
+            {**summary, "State": "standby"}
+            if summary["SystemName"] == "sys-R3"
+            else summary
+            for summary in SUMMARIES
+        ],
+    )
+
+    async with HMCClient(make_config()) as hmc:
+        found = await _discover_owning_system(hmc, LPAR, "lpar-a")
+
+    assert found == (UUIDS["sys-R3"], "sys-R3")
+
+
+@pytest.mark.asyncio
+async def test_discovery_counts_a_row_without_a_valid_uuid_as_unusable(mock_hmc):
+    fleet = _Fleet(mock_hmc, owner=UUIDS["sys-R3"])
+    rows = [{"UUID": "not-a-uuid", "SystemName": "sys-R0", "State": "operating"}]
+    _quick_all_rows(mock_hmc, [*rows, *SUMMARIES])
+
+    async with HMCClient(make_config()) as hmc:
+        found = await _discover_owning_system(hmc, LPAR, "lpar-a")
+
+    assert found == (UUIDS["sys-R3"], "sys-R3")
+    assert all("not-a-uuid" not in call.request.url.path for call in fleet.scoped.calls)
 
 
 @pytest.mark.asyncio
@@ -134,7 +178,7 @@ async def test_an_undiscovered_partition_names_the_disconnected_systems(mock_hmc
     assert "2 could not be read" in message
     for uuid in DISCONNECTED:
         assert f"{uuid} in State 'no connection'" in message
-    assert not fleet.read(fleet.scoped) & DISCONNECTED
+    fleet.assert_disconnected_entries_unread()
 
 
 @pytest.mark.asyncio
@@ -166,8 +210,32 @@ async def test_utilization_reports_the_disconnected_systems_unread(mock_hmc):
             "ManagedSystem: not read, because the system is in State 'no connection'",
         )
         assert reading.unknown_figures == EVERY_FIGURE
+    assert (unread["sys-R8"].machine_type, unread["sys-R8"].model) == ("9824", "42A")
+    assert unread["sys-R8"].firmware == "RB1110_fw1110.20 (130)"
     assert fleet.read(fleet.entries) == OPERATING
     fleet.assert_disconnected_entries_unread()
+
+
+@pytest.mark.asyncio
+async def test_an_unread_frame_another_hmc_reads_is_counted_once(mock_hmc):
+    _Fleet(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        readings = await survey_hmc(hmc, "hmc-a")
+
+    unread = next(reading for reading in readings if reading.name == "sys-R8")
+    read_elsewhere = replace(
+        unread,
+        profile="hmc-b",
+        state="operating",
+        gaps=(),
+        memory=replace(unread.memory, configurable=1024),
+    )
+
+    (system,) = fleet_systems([unread, read_elsewhere])
+
+    assert system.profiles == ("hmc-a", "hmc-b")
+    assert system.reading.profile == "hmc-b"
 
 
 @pytest.mark.asyncio

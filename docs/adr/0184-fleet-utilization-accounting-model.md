@@ -65,8 +65,9 @@ V11R2, POWER9 to POWER11; private evidence, public-safe summary here) establishe
 - *Update (#1501):* the survey lists systems from `ManagedSystem/quick/All` and reads the full
   entry and feeds of operating systems only, because the `ManagedSystem` feed and a
   `No Connection` system's own entry time out. A system that is not operating still gets a
-  reading: its name and `State` from `quick/All`, every figure unknown, and one gap naming the
-  state.
+  reading: its name, `State`, firmware and machine type, model and serial from `quick/All` where
+  it reports them, every figure unknown, and one gap naming the state. The machine identity
+  keeps it counted once when another HMC reads the same frame.
 
 ## Considered & rejected
 
