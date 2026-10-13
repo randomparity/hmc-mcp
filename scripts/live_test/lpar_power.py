@@ -30,11 +30,6 @@ from hmcpctl.operations.lpar.ownership import parse_lpar_ownership_caller_token
 from hmcpctl.operations.storage.resources import _storage_mapping
 from hmcpctl.ssh.commands import HMC_NO_RESULTS
 from hmcpctl.ssh.lpar import DEFAULT_PROFILE_NAME
-from hmcpctl.ssh.profiles import (
-    parse_profile_io_slot_rows,
-    profile_io_slot_rows_command,
-)
-from hmcpctl.ssh.transport import HMCCLIError
 
 from . import lpar_config, pcie
 from .bare_cec import _power_operations_authorized
@@ -938,42 +933,36 @@ async def _vlan_refusal(client: Client, state: RunState, run: Run) -> str | None
     return None if run.vlan in vlans else f"no virtual network on VLAN {run.vlan}"
 
 
-async def _eligible_slot(client: Client, state: RunState, run: Run) -> Any:
-    """The dedicated-slot request to send, or None after a gap row (spec step 10)."""
-    label = "hmc_provision_lpar (dedicated PCIe argument)"
-    arm = pcie._dedicated_config(state.config)
-    if arm is None or arm.system_name != run.system:
-        state.skip(
-            SUBTASK, label, "gap: no dedicated-PCIe configuration for this system"
-        )
-        return None
+async def _dedicated_slot_refused(client: Client, state: RunState, run: Run) -> bool:
+    """Provision refuses a dedicated slot before any HMC read (#1390).
+
+    A dry run, so a regressed refusal still writes nothing; the slot is never read,
+    so the probe needs no dedicated-PCIe configuration.
+    """
+    vios = run.vios
+    assert vios is not None
     st, data = await state.call(
-        client, "hmc_list_dedicated_pcie_slots", system_name_or_uuid=run.system
+        client,
+        "hmc_provision_lpar",
+        system_name_or_uuid=run.system,
+        name=run.p_name,
+        adapters={"port_vlan_id": run.vlan},
+        storage={"vios_uuid": vios.uuid, "storage_name": run.volume},
+        resources=RESOURCES,
+        dry_run=True,
+        assignments={
+            "dedicated": [{"profile_name": DEFAULT_PROFILE_NAME, "drc_index": "1"}]
+        },
     )
-    rows = [dict(row) for row in _items(data, "items")]
-    st_profiles, listing = await state.call(
-        client, "hmc_run_command", cmd=profile_io_slot_rows_command(run.system)
+    refused = _failed_with(st, data, "does not assign dedicated PCIe slots")
+    state.record(
+        SUBTASK,
+        "hmc_provision_lpar (dedicated PCIe argument)",
+        "PASS" if refused else "FAIL",
+        data,
+        "refused before any HMC read" if refused else "expected the dedicated refusal",
     )
-    try:
-        profiles = parse_profile_io_slot_rows(
-            listing if isinstance(listing, str) else ""
-        )
-    except HMCCLIError:
-        profiles = None
-    unowned = [str(row.get("drc_index")) for row in rows if pcie._slot_unowned(row)]
-    wanted = [arm.drc_index] if arm.drc_index else unowned
-    eligible = [
-        drc
-        for drc in wanted
-        if drc in unowned
-        and profiles is not None
-        and not pcie._profile_lists_slot(profiles, drc)
-    ]
-    if st != "PASS" or st_profiles != "PASS" or not eligible:
-        state.skip(SUBTASK, label, "gap: no slot is unowned and listed by no profile")
-        return None
-    # The profile the provision creates, not the dedicated arm's fixture profile.
-    return {"profile_name": DEFAULT_PROFILE_NAME, "drc_index": eligible[0]}
+    return refused
 
 
 async def _create_volume(client: Client, state: RunState, run: Run) -> bool:
@@ -996,7 +985,7 @@ async def _create_volume(client: Client, state: RunState, run: Run) -> bool:
 async def _provision(client: Client, state: RunState, run: Run) -> bool:
     vios = run.vios
     assert vios is not None
-    slot = await _eligible_slot(client, state, run)
+    refused = await _dedicated_slot_refused(client, state, run)
     if not await _create_volume(client, state, run):
         return False
     st, data = await state.call(
@@ -1014,7 +1003,6 @@ async def _provision(client: Client, state: RunState, run: Run) -> bool:
         },
         resources=RESOURCES,
         power_on=True,
-        assignments={"dedicated": [slot] if slot else []},
     )
     record_status, note = judge_create_result(st, data)
     state.record(SUBTASK, "hmc_provision_lpar", record_status, data, note)
@@ -1023,15 +1011,16 @@ async def _provision(client: Client, state: RunState, run: Run) -> bool:
     run.p_uuid = found if isinstance(found, str) else None
     if run.p_uuid is None:
         run.p_uuid = await _adopt(client, state, run, run.p_name)
+    run.hold("provision.lpar", "dedicated-slot-refused", refused)
     if run.p_uuid is None:
         run.ran.add("provision.lpar")
         return False
-    await _provision_checks(client, state, run, st, data, slot)
+    await _provision_checks(client, state, run, st, data)
     return True
 
 
 async def _provision_checks(
-    client: Client, state: RunState, run: Run, st: str, data: Any, slot: Any
+    client: Client, state: RunState, run: Run, st: str, data: Any
 ) -> None:
     op = "provision.lpar"
     run.hold(
@@ -1061,18 +1050,6 @@ async def _provision_checks(
         client, state, run, run.p_uuid or "", _FIRMWARE_STATES
     )
     run.hold(op, "partition-activated", reached in _FIRMWARE_STATES)
-    if slot:
-        quoted = shlex.quote(run.system)
-        owners = _lines(
-            await lpar_config._cli(
-                client,
-                state,
-                f"lshwres -r io --rsubtype slot -m {quoted} -F drc_index,lpar_name",
-            )
-        )
-        run.hold(
-            op, "pcie-slot-owned", f"{slot['drc_index']},{run.p_name}" in (owners or ())
-        )
 
 
 def _mapped(mappings: frozenset[tuple[str, ...]] | None, run: Run) -> bool:
@@ -1498,7 +1475,7 @@ def _report_left_adapters(
 
 
 def _provision_assertions(run: Run) -> list[Assertion]:
-    """`provision.lpar`'s assertions; the PCIe one only when the argument was sent."""
+    """`provision.lpar`'s assertions."""
     assertions = [
         Assertion(
             "workflow-completed", run.holds("provision.lpar", "workflow-completed")
@@ -1518,11 +1495,11 @@ def _provision_assertions(run: Run) -> list[Assertion]:
             "partition-activated",
             run.holds("provision.lpar", "partition-activated"),
         ),
+        Assertion(
+            "dedicated-slot-refused",
+            run.holds("provision.lpar", "dedicated-slot-refused"),
+        ),
     ]
-    if "provision.lpar:pcie-slot-owned" in run.held:
-        assertions.append(
-            Assertion("pcie-slot-owned", run.holds("provision.lpar", "pcie-slot-owned"))
-        )
     return assertions
 
 
