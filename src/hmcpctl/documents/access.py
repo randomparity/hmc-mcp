@@ -37,6 +37,9 @@ def build_logon_request_document(user: str, password: str) -> str:
 # A create missing ksv, or carrying any other kb, fails REST0001 (#1375).
 _USER_ID_ATTRS = 'ksv="V1_17_0" kb="COR" kxe="false"'
 _MODIFIABLE_ATTRS = 'ksv="V1_17_0" kb="CUD" kxe="false"'
+#: What a create sends when the caller gives no description: V10R3 refuses a create
+#: without UserDescription (REST0344, #1414), and `mkhmcusr` defaults it the same way.
+DEFAULT_USER_DESCRIPTION = "HMC User"
 
 
 @escapes_string_arguments

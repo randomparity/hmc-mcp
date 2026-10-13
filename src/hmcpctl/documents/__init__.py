@@ -3,6 +3,7 @@
 # The package intentionally re-exports the stable pre-release builder surface.
 from .access import (  # noqa: F401
     AUTHENTICATION_TYPES,
+    DEFAULT_USER_DESCRIPTION,
     AuthenticationType,
     build_hmc_user_document,
     build_logon_request_document,

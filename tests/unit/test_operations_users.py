@@ -38,6 +38,41 @@ async def test_create_user_builds_document_from_typed_request() -> None:
     assert result == {"Resource": {"UserID": "alice"}}
 
 
+@pytest.mark.asyncio
+async def test_create_user_without_a_description_sends_the_hmcs_default() -> None:
+    """V10R3 refused a create without UserDescription: REST0344, "UserDescription
+    is missing or invalid" (#1414). mkhmcusr's default is "HMC User"."""
+    hmc = AsyncMock()
+    request = CreateUserRequest(
+        user_id="alice",
+        password="",
+        authentication_type="Kerberos",
+        remote_user_id="primary/instance@EXAMPLE.TEST",
+    )
+
+    await create_user(hmc, "console-1", request)
+
+    document = hmc.create_hmc_user.await_args.args[1]
+    assert (
+        '<UserDescription ksv="V1_17_0" kb="CUD" kxe="false">HMC User</UserDescription>'
+        in document
+    )
+
+
+@pytest.mark.asyncio
+async def test_modify_user_without_a_description_leaves_it_unchanged() -> None:
+    hmc = AsyncMock()
+    hmc.get_hmc_user.return_value = {
+        "Resource": {"UserID": "alice", "AuthenticationType": "local"}
+    }
+
+    await modify_user(
+        hmc, "console-1", "profile-1", ModifyUserPatch(verify_session_timeout=0)
+    )
+
+    assert "UserDescription" not in hmc.modify_hmc_user.await_args.args[2]
+
+
 _PROFILE = {
     "UUID": "profile-1",
     "Resource": {"UserID": "alice", "AuthenticationType": "local"},

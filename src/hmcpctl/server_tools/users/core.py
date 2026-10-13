@@ -104,7 +104,8 @@ def hmc_create_user(
         user_id: Login identifier for the new profile.
         password: Initial profile password.
         authentication_type: Local, LDAP, or Kerberos authentication.
-        description: Optional human-readable profile description.
+        description: Human-readable profile description; "HMC User", the HMC's
+            own default, when omitted.
         associated_task_role: TaskRoleName from ``hmc_list_task_roles``.
         associated_resource_roles: ResourceRoleName values from
             ``hmc_list_resource_roles``.
