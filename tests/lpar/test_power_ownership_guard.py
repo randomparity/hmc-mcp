@@ -52,16 +52,13 @@ def _hmc(*, authorize: bool, agent_id: str = "alice") -> AsyncMock:
         }
     )
     hmc.list_system_summaries.return_value = [
-        {"UUID": SYSTEM_UUID, "SystemName": "sys1"}
+        {"UUID": SYSTEM_UUID, "SystemName": "sys1", "State": "operating"}
     ]
     hmc.get_logical_partition.return_value = {"Resource": {"PartitionName": "aix1"}}
     hmc.submit_job.return_value = {"UUID": "job-uuid"}
     # ADR 0094's resolve chain confirms the partition lives on the selected
     # system, and walks the fleet when no selector is given.
     hmc.list_logical_partitions.return_value = [{"UUID": LPAR_UUID}]
-    hmc.list_managed_systems.return_value = [
-        {"UUID": SYSTEM_UUID, "Resource": {"SystemName": "sys1"}}
-    ]
     return hmc
 
 
@@ -350,7 +347,7 @@ async def test_enabled_guard_discovers_the_owning_system_without_a_selector() ->
         result = await power_lpar(hmc, None, LPAR_UUID, power_on=False)
 
     assert result.job == {"UUID": "job-uuid"}
-    hmc.list_managed_systems.assert_awaited_once()
+    hmc.list_system_summaries.assert_awaited_once()
     read.assert_awaited_once_with(hmc.config, "sys1", "aix1")
 
 
@@ -389,7 +386,7 @@ async def test_override_without_a_selector_skips_the_fleet_walk() -> None:
 
     assert result.job == {"UUID": "job-uuid"}
     read.assert_not_awaited()
-    hmc.list_managed_systems.assert_not_awaited()
+    hmc.list_system_summaries.assert_not_awaited()
 
 
 @pytest.mark.asyncio

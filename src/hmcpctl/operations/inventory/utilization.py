@@ -11,12 +11,15 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import re
 from collections.abc import Callable, Iterable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, fields
 from typing import Any, Protocol
 
+from hmcpctl.client.client_resolution import system_operating
 from hmcpctl.errors import HMCError
+from hmcpctl.operations.systems.fleet import UnreadableSystem, unreadable_system
 from hmcpctl.xmlutil import leaf_text, mtms_parts
 
 _logger = logging.getLogger(__name__)
@@ -36,7 +39,9 @@ _UNCONFIGURED_PORTS = "UnconfiguredLogicalPorts"
 class SurveyClient(Protocol):
     """The HMC reads a survey makes; ``HMCClient`` satisfies it."""
 
-    async def list_managed_systems(self) -> list[dict[str, Any]]: ...
+    async def list_system_summaries(self) -> list[Any]: ...
+
+    async def get_managed_system(self, uuid: str) -> dict[str, Any] | None: ...
 
     async def list_logical_partitions(
         self, system_uuid: str
@@ -639,12 +644,76 @@ async def read_system(
     )
 
 
+def _all_unknown(kind: type[Any]) -> Any:
+    return kind(**dict.fromkeys(item.name for item in fields(kind)))
+
+
+def _summary_mtms(summary: dict[str, Any]) -> tuple[str | None, str | None, str | None]:
+    """(type, model, serial) from quick/All's ``MTMS``, captured on V11R2 as ``TTTT-MMM*SERIAL``."""
+    mtms = summary.get("MTMS")
+    match = (
+        re.fullmatch(r"([^-*\s]+)-([^*\s]+)\*(\S+)", mtms)
+        if isinstance(mtms, str)
+        else None
+    )
+    if match is None:
+        return None, None, None
+    machine_type, model, serial = match.groups()
+    return machine_type, model, serial
+
+
+def _unread_system(
+    profile: str, summary: object, skipped: UnreadableSystem
+) -> SystemReading:
+    """A system quick/All lists but that is not read, from its summary alone.
+
+    The machine type, model and serial keep a frame that one HMC can read and
+    another cannot counted once (ADR 0184).
+    """
+    fields_ = summary if isinstance(summary, dict) else {}
+    machine_type, model, serial = _summary_mtms(fields_)
+    firmware = fields_.get("SystemFirmware")
+    if skipped.state is None:
+        reason = "quick/All reports no State"
+    elif system_operating(skipped.state):
+        reason = "quick/All reports no valid UUID"
+    else:
+        reason = f"the system is in State {skipped.state!r}"
+    unknown = {name: _all_unknown(kind) for name, kind in FIGURE_GROUPS.items()}
+    return SystemReading(
+        profile=profile,
+        name=skipped.system_name or skipped.system_uuid or "unknown system",
+        machine_type=machine_type,
+        model=model,
+        serial=serial,
+        firmware=firmware if isinstance(firmware, str) and firmware.strip() else None,
+        state=skipped.state,
+        shared_pools=(),
+        gaps=(f"ManagedSystem: not read, because {reason}",),
+        **unknown,
+    )
+
+
 async def survey_hmc(hmc: SurveyClient, profile: str) -> list[SystemReading]:
-    """Read every managed system one profile's HMC reports, one at a time."""
-    return [
-        await read_system(hmc, profile, system)
-        for system in await hmc.list_managed_systems()
-    ]
+    """Read every managed system one profile's HMC reports, one at a time.
+
+    The systems come from ``ManagedSystem/quick/All``: the full ``ManagedSystem``
+    feed, and a non-operating system's own entry, time out while a system has no
+    connection (#1501). A system that is not operating is not read; its reading
+    carries every figure unknown and a gap naming its ``State``.
+    """
+    readings = []
+    for summary in await hmc.list_system_summaries():
+        skipped = unreadable_system(summary)
+        if skipped is not None:
+            readings.append(_unread_system(profile, summary, skipped))
+            continue
+        uuid = summary["UUID"]
+        system = await hmc.get_managed_system(uuid)
+        if system is None:
+            raise HMCError(f"Managed system {uuid} listed by quick/All has no entry")
+        readings.append(await read_system(hmc, profile, system))
+    return readings
 
 
 async def survey_fleet(

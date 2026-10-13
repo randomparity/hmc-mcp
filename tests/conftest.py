@@ -428,14 +428,7 @@ LPAR_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 def mock_system_summary(router, system_uuid: str, system_name: str):
     """Register ``ManagedSystem/quick/All`` listing one operating system."""
-    return router.get("/rest/api/uom/ManagedSystem/quick/All").mock(
-        return_value=httpx.Response(
-            200,
-            json=[
-                {"UUID": system_uuid, "SystemName": system_name, "State": "operating"}
-            ],
-        )
-    )
+    return mock_system_summaries(router, (system_uuid, system_name, "operating"))
 
 
 def mock_uuid_resolution(

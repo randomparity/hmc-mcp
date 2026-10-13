@@ -116,10 +116,16 @@ jobs:
           assert find_spec("typer") is None
           assert (package_path.parent / "py.typed").is_file(), package_path
 
+          SYSTEM = "00000000-0000-4000-8000-000000000001"
+
           class FakeHMC:
-              async def list_managed_systems(self):
-                  return [{
-                      "UUID": "system-1",
+              async def list_system_summaries(self):
+                  return [{"UUID": SYSTEM, "SystemName": "p10", "State": "operating"}]
+
+              async def get_managed_system(self, uuid):
+                  assert uuid == SYSTEM
+                  return {
+                      "UUID": SYSTEM,
                       "Resource": {
                           "SystemName": "p10",
                           "AssociatedSystemMemoryConfiguration": {
@@ -131,10 +137,10 @@ jobs:
                               "CurrentAvailableSystemProcessorUnits": "6",
                           },
                       },
-                  }]
+                  }
 
               async def list_logical_partitions(self, system_uuid):
-                  assert system_uuid == "system-1"
+                  assert system_uuid == SYSTEM
                   return [{
                       "UUID": "lpar-1",
                       "Resource": {"PartitionState": "running"},
@@ -142,7 +148,7 @@ jobs:
 
           report = asyncio.run(fetch_capacity_report(FakeHMC()))
           assert report == [CapacitySummary(
-              system_uuid="system-1",
+              system_uuid=SYSTEM,
               system_name="p10",
               total_memory_mib=32768,
               assigned_memory_mib=8192,
@@ -260,10 +266,16 @@ jobs:
           assert find_spec("rich") is None
           assert find_spec("typer") is None
 
+          SYSTEM = "00000000-0000-4000-8000-000000000001"
+
           class FakeHMC:
-              async def list_managed_systems(self):
-                  return [{
-                      "UUID": "system-1",
+              async def list_system_summaries(self):
+                  return [{"UUID": SYSTEM, "SystemName": "p10", "State": "operating"}]
+
+              async def get_managed_system(self, uuid):
+                  assert uuid == SYSTEM
+                  return {
+                      "UUID": SYSTEM,
                       "Resource": {
                           "SystemName": "p10",
                           "AssociatedSystemMemoryConfiguration": {
@@ -275,10 +287,10 @@ jobs:
                               "CurrentAvailableSystemProcessorUnits": "6",
                           },
                       },
-                  }]
+                  }
 
               async def list_logical_partitions(self, system_uuid):
-                  assert system_uuid == "system-1"
+                  assert system_uuid == SYSTEM
                   return [{
                       "UUID": "lpar-1",
                       "Resource": {"PartitionState": "running"},
@@ -286,7 +298,7 @@ jobs:
 
           report = asyncio.run(fetch_capacity_report(FakeHMC()))
           assert report == [CapacitySummary(
-              system_uuid="system-1",
+              system_uuid=SYSTEM,
               system_name="p10",
               total_memory_mib=32768,
               assigned_memory_mib=8192,

@@ -35,7 +35,7 @@ def _text(value: object) -> str | None:
     return value if isinstance(value, str) and value.strip() else None
 
 
-def _unreadable(system: object) -> UnreadableSystem | None:
+def unreadable_system(system: object) -> UnreadableSystem | None:
     """None when the quick/All *system* summary can be read; otherwise its record."""
     summary = system if isinstance(system, dict) else {}
     uuid = summary.get("UUID")
@@ -61,7 +61,7 @@ async def _stopped_operating(hmc: HMCClient, uuid: str) -> UnreadableSystem | No
         return None
     for summary in summaries:
         if isinstance(summary, dict) and summary.get("UUID") == uuid:
-            return _unreadable(summary)
+            return unreadable_system(summary)
     return None
 
 
@@ -85,7 +85,7 @@ async def read_fleet(
     entries: list[dict[str, Any]] = []
     unreadable: list[UnreadableSystem] = []
     for system in systems:
-        skipped = _unreadable(system)
+        skipped = unreadable_system(system)
         if skipped is None:
             try:
                 entries.extend(await read_system(system["UUID"]))

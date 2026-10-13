@@ -314,25 +314,24 @@ def _fleet_entry(state: str, uuid: str = SYSTEM_UUID, name: str = SYSTEM_NAME):
     return {"UUID": uuid, "Resource": {"SystemName": name, "State": state}}
 
 
-def _mock_no_connection_system(router) -> None:
-    router.get(LPAR_FEED).mock(return_value=httpx.Response(204))
+def _mock_no_connection_system(router):
+    """sys-R1 is ``no connection`` and sys-R2 operating; returns sys-R1's LPAR feed."""
+    lpar_feed = router.get(LPAR_FEED).mock(return_value=httpx.Response(204))
     router.get(VIOS_FEED).mock(return_value=httpx.Response(204))
     _quick_all(
         router,
         _summary("no connection"),
         _summary("operating", OPERATING_UUID, "sys-R2"),
     )
+    return lpar_feed
 
 
 @pytest.mark.asyncio
-async def test_fleet_health_warns_for_a_non_operating_system(
-    mock_hmc, monkeypatch
-) -> None:
+async def test_fleet_health_warns_for_a_non_operating_system(mock_hmc) -> None:
     _mock_no_connection_system(mock_hmc)
+    _quick_all(mock_hmc, _summary("no connection"))
 
     async with HMCClient(make_config()) as hmc:
-        fleet = AsyncMock(return_value=[_fleet_entry("no connection")])
-        monkeypatch.setattr(hmc, "list_managed_systems", fleet)
         result = await fetch_fleet_health(hmc)
 
     assert [system["state"] for system in result.systems] == ["no connection"]
@@ -356,26 +355,28 @@ def _capacity_entry(state: str, uuid: str, name: str) -> dict[str, Any]:
     return entry
 
 
-def _capacity_fleet(*states: str) -> list[dict[str, Any]]:
-    systems = [_capacity_entry(state, SYSTEM_UUID, SYSTEM_NAME) for state in states]
-    return [*systems, _capacity_entry("operating", OPERATING_UUID, "sys-R2")]
+def _operating_entry(monkeypatch, hmc: HMCClient) -> None:
+    """sys-R2's full entry, the only one the capacity report reads."""
+    entry = _capacity_entry("operating", OPERATING_UUID, "sys-R2")
+    read = AsyncMock(side_effect=lambda uuid: entry if uuid == OPERATING_UUID else None)
+    monkeypatch.setattr(hmc, "get_managed_system", read)
 
 
 @pytest.mark.asyncio
 async def test_capacity_report_omits_a_non_operating_system(
     mock_hmc, monkeypatch, caplog
 ) -> None:
-    _mock_no_connection_system(mock_hmc)
+    no_connection = _mock_no_connection_system(mock_hmc)
     mock_hmc.get(OPERATING_FEED).mock(return_value=httpx.Response(204))
 
     async with HMCClient(make_config()) as hmc:
-        fleet = AsyncMock(return_value=_capacity_fleet("no connection"))
-        monkeypatch.setattr(hmc, "list_managed_systems", fleet)
+        _operating_entry(monkeypatch, hmc)
         with caplog.at_level(logging.WARNING):
             report = await fetch_capacity_report(hmc)
 
     assert [(item.system_name, item.total_lpars) for item in report] == [("sys-R2", 0)]
     assert any(SYSTEM_UUID in record.getMessage() for record in caplog.records)
+    assert not no_connection.called
 
 
 @pytest.mark.asyncio
@@ -386,8 +387,7 @@ async def test_capacity_report_fails_on_an_operating_system_refusal(
     mock_hmc.get(OPERATING_FEED).mock(return_value=httpx.Response(500, text="failure"))
 
     async with HMCClient(make_config()) as hmc:
-        fleet = AsyncMock(return_value=_capacity_fleet("no connection"))
-        monkeypatch.setattr(hmc, "list_managed_systems", fleet)
+        _operating_entry(monkeypatch, hmc)
         with pytest.raises(HMCError) as caught:
             await fetch_capacity_report(hmc)
 
@@ -395,18 +395,17 @@ async def test_capacity_report_fails_on_an_operating_system_refusal(
 
 
 @pytest.mark.asyncio
-async def test_capacity_report_raises_when_every_system_is_omitted(
-    mock_hmc, monkeypatch
-) -> None:
+async def test_capacity_report_raises_when_every_system_is_omitted(mock_hmc) -> None:
     _mock_no_connection_system(mock_hmc)
+    _quick_all(mock_hmc, _summary("no connection"))
 
     async with HMCClient(make_config()) as hmc:
-        fleet = AsyncMock(
-            return_value=[_capacity_entry("no connection", SYSTEM_UUID, SYSTEM_NAME)]
-        )
-        monkeypatch.setattr(hmc, "list_managed_systems", fleet)
-        with pytest.raises(HMCError, match="State 'no connection'"):
+        with pytest.raises(HMCError) as caught:
             await fetch_capacity_report(hmc)
+
+    assert f"{SYSTEM_NAME!r} ({SYSTEM_UUID}) in State 'no connection'" in str(
+        caught.value
+    )
 
 
 @pytest.mark.asyncio
@@ -444,18 +443,20 @@ async def test_system_summary_warns_for_a_non_operating_system(mock_hmc) -> None
 
 @pytest.mark.asyncio
 async def test_owning_system_discovery_reports_a_non_operating_system(
-    mock_hmc, monkeypatch
+    mock_hmc,
 ) -> None:
-    _mock_no_connection_system(mock_hmc)
+    no_connection = _mock_no_connection_system(mock_hmc)
+    _quick_all(mock_hmc, _summary("no connection"))
     lpar_uuid = "22222222-2222-2222-2222-222222222222"
 
     async with HMCClient(make_config()) as hmc:
-        fleet = AsyncMock(return_value=[_fleet_entry("no connection")])
-        monkeypatch.setattr(hmc, "list_managed_systems", fleet)
         with pytest.raises(ValueError) as caught:
             await _discover_owning_system(hmc, lpar_uuid, "lpar-a")
 
-    assert f"1 could not be read: {SYSTEM_UUID}" in str(caught.value)
+    assert f"1 could not be read: {SYSTEM_UUID} in State 'no connection'" in str(
+        caught.value
+    )
+    assert no_connection.called
 
 
 @pytest.mark.asyncio

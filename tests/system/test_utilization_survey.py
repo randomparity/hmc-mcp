@@ -279,8 +279,18 @@ class FakeClient:
             raise value
         return value
 
-    async def list_managed_systems(self) -> list[dict[str, Any]]:
-        return self._answer("systems")
+    async def list_system_summaries(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "UUID": system["UUID"],
+                "SystemName": system["Resource"].get("SystemName"),
+                "State": system["Resource"].get("State"),
+            }
+            for system in self._answer("systems")
+        ]
+
+    async def get_managed_system(self, uuid: str) -> dict[str, Any] | None:
+        return next(s for s in self._answer("systems") if s["UUID"] == uuid)
 
     async def list_logical_partitions(self, system_uuid=None):
         return self._answer("lpars")
@@ -293,7 +303,7 @@ class FakeClient:
 
 
 async def _read(client: FakeClient) -> SystemReading:
-    system = (await client.list_managed_systems())[0]
+    system = client.answers["systems"][0]
     return await read_system(client, "hmc-1", system)
 
 
@@ -599,7 +609,18 @@ async def test_survey_hmc_through_client_issues_only_gets(mock_hmc) -> None:
         return httpx.Response(200, text=text)
 
     base = f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"
-    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(return_value=ok(_feed(_system())))
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"UUID": SYSTEM_UUID, "SystemName": "system-a", "State": "operating"}
+            ],
+        )
+    )
+    entry = _system().replace(
+        "<entry>", '<entry xmlns="http://www.w3.org/2005/Atom">', 1
+    )
+    mock_hmc.get(base).mock(return_value=ok(entry))
     mock_hmc.get(f"{base}/LogicalPartition").mock(return_value=ok(LPARS))
     mock_hmc.get(f"{base}/VirtualIOServer").mock(
         return_value=httpx.Response(500, text="ViosStorage")

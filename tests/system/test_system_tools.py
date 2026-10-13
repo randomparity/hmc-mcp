@@ -463,6 +463,17 @@ def _mock_operating_systems(router, *systems: tuple[str, str]) -> None:
     )
 
 
+def _mock_system_entries(router, *systems: tuple[str, str, dict[str, str]]) -> None:
+    """quick/All lists each system as operating; its own entry carries the figures."""
+    for uuid, name, figures in systems:
+        router.get(f"/rest/api/uom/ManagedSystem/{uuid}").mock(
+            return_value=httpx.Response(
+                200, text=captured_system_entry(uuid, name, **figures)
+            )
+        )
+    _mock_operating_systems(router, *((uuid, name) for uuid, name, _ in systems))
+
+
 def _sys_feed(*entries: str) -> str:
     """Wrap one or more entry XML strings in an Atom feed."""
     joined = "\n".join(entries)
@@ -476,21 +487,19 @@ def _sys_feed(*entries: str) -> str:
 def test_capacity_report_computes_per_system(monkeypatch, mock_hmc):
     """hmc_capacity_report reports each system's own configurable and free figures."""
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
-        return_value=httpx.Response(
-            200,
-            text=_sys_feed(
-                captured_system_entry(SYS_UUID_A, "p9-01"),
-                captured_system_entry(
-                    SYS_UUID_B,
-                    "p9-02",
-                    configurable_mem="65536",
-                    available_mem="61440",
-                    configurable_proc="8",
-                    available_proc="7.5",
-                ),
-            ),
-        )
+    _mock_system_entries(
+        mock_hmc,
+        (SYS_UUID_A, "p9-01", {}),
+        (
+            SYS_UUID_B,
+            "p9-02",
+            {
+                "configurable_mem": "65536",
+                "available_mem": "61440",
+                "configurable_proc": "8",
+                "available_proc": "7.5",
+            },
+        ),
     )
     # Inactive partitions read 0 everywhere, so they must not shape capacity.
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_A}/LogicalPartition").mock(
@@ -532,15 +541,10 @@ def test_capacity_report_computes_per_system(monkeypatch, mock_hmc):
 def test_capacity_report_empty_lpar_list(monkeypatch, mock_hmc):
     """hmc_capacity_report handles a system with no LPARs."""
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
-        return_value=httpx.Response(
-            200, text=_sys_feed(captured_system_entry(SYS_UUID_A, "empty-sys"))
-        )
-    )
+    _mock_system_entries(mock_hmc, (SYS_UUID_A, "empty-sys", {}))
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_A}/LogicalPartition").mock(
         return_value=httpx.Response(200, text=EMPTY_FEED)
     )
-    _mock_operating_systems(mock_hmc, (SYS_UUID_A, "empty-sys"))
 
     result = hmc_capacity_report()
     assert result[0].free_memory_mib == 112448
@@ -551,23 +555,15 @@ def test_capacity_report_empty_lpar_list(monkeypatch, mock_hmc):
 def test_find_placement_returns_candidates(monkeypatch, mock_hmc):
     """hmc_find_placement returns systems that can host the requested LPAR."""
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
-        return_value=httpx.Response(
-            200,
-            text=_sys_feed(
-                captured_system_entry(SYS_UUID_A, "big-sys"),
-                captured_system_entry(
-                    SYS_UUID_B, "small-sys", available_mem="2048", available_proc="0.5"
-                ),
-            ),
-        )
+    _mock_system_entries(
+        mock_hmc,
+        (SYS_UUID_A, "big-sys", {}),
+        (SYS_UUID_B, "small-sys", {"available_mem": "2048", "available_proc": "0.5"}),
     )
-    systems = ((SYS_UUID_A, "big-sys"), (SYS_UUID_B, "small-sys"))
-    for uuid, _ in systems:
+    for uuid in (SYS_UUID_A, SYS_UUID_B):
         mock_hmc.get(f"/rest/api/uom/ManagedSystem/{uuid}/LogicalPartition").mock(
             return_value=httpx.Response(200, text=EMPTY_FEED)
         )
-    _mock_operating_systems(mock_hmc, *systems)
 
     # Request 4096 MiB and 0.5 procs → only big-sys qualifies (small-sys has 2048 MiB free)
     result = hmc_find_placement(desired_memory_mib=4096, desired_proc_units=0.5)
@@ -579,20 +575,13 @@ def test_find_placement_returns_candidates(monkeypatch, mock_hmc):
 def test_find_placement_no_candidates(monkeypatch, mock_hmc):
     """hmc_find_placement returns empty list when no system has enough free resources."""
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
-        return_value=httpx.Response(
-            200,
-            text=_sys_feed(
-                captured_system_entry(
-                    SYS_UUID_A, "full-sys", available_mem="0", available_proc="0"
-                ),
-            ),
-        )
+    _mock_system_entries(
+        mock_hmc,
+        (SYS_UUID_A, "full-sys", {"available_mem": "0", "available_proc": "0"}),
     )
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_A}/LogicalPartition").mock(
         return_value=httpx.Response(200, text=EMPTY_FEED)
     )
-    _mock_operating_systems(mock_hmc, (SYS_UUID_A, "full-sys"))
 
     result = hmc_find_placement(desired_memory_mib=512)
     assert result == []
