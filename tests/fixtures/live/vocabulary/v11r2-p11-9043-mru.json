@@ -1,0 +1,3607 @@
+{
+ "firmware": "v11r2-p11-9043-mru",
+ "sources": [
+  "2026-10-13 read-only sweep, taken while a 9043-MRU was No Connection for the whole capture; its HMC-wide reads also answered for the HMC's ten other managed systems, one of which (a 9824-42A) went No Connection during the run: HMC V11R2 SP1120 managing a POWER11 9043-MRU (BMC)"
+ ],
+ "rest": {
+  "endpoints": [
+   {
+    "method": "DELETE",
+    "path": "/rest/api/web/Logon",
+    "accept": "application/vnd.ibm.powervm.web+xml",
+    "status": 204,
+    "content_type": null
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/pcm/ManagedSystem/{uuid}/preferences",
+    "accept": "*/*",
+    "status": 200,
+    "content_type": "application/atom+xml"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/templates/PartitionTemplate",
+    "accept": "application/atom+xml",
+    "status": 200,
+    "content_type": "application/atom+xml"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/templates/PartitionTemplate/{uuid}",
+    "accept": "application/atom+xml",
+    "status": 200,
+    "content_type": "application/atom+xml"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/Cluster",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=Cluster",
+    "status": 204,
+    "content_type": "text/plain"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/Cluster",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=Cluster",
+    "status": 500,
+    "content_type": "application/atom+xml"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/LogicalPartition",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=LogicalPartition",
+    "status": 200,
+    "content_type": "application/vnd.ibm.powervm.uom+xml; type=LogicalPartition"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/LogicalPartition/quick",
+    "accept": "*/*",
+    "status": 200,
+    "content_type": "application/atom+xml"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/LogicalPartition/search/(PartitionState=={value})",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=LogicalPartition",
+    "status": 500,
+    "content_type": "application/atom+xml"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/ManagedSystem/quick/All",
+    "accept": "*/*",
+    "status": 200,
+    "content_type": "application/json"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/ManagedSystem/search",
+    "accept": "*/*",
+    "status": 200,
+    "content_type": "application/atom+xml"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/ManagedSystem/search/(State=={value})",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=ManagedSystem",
+    "status": 200,
+    "content_type": "application/vnd.ibm.powervm.uom+xml; type=ManagedSystem"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/ManagedSystem/{uuid}/LogicalPartition",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=LogicalPartition",
+    "status": 204,
+    "content_type": "text/plain"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/ManagedSystem/{uuid}/NetworkBridge",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=NetworkBridge",
+    "status": 204,
+    "content_type": "text/plain"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/ManagedSystem/{uuid}/VirtualIOServer",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer",
+    "status": 204,
+    "content_type": "text/plain"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/ManagedSystem/{uuid}/VirtualNetwork",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=VirtualNetwork",
+    "status": 204,
+    "content_type": "text/plain"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/ManagedSystem/{uuid}/VirtualSwitch",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=VirtualSwitch",
+    "status": 204,
+    "content_type": "text/plain"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/ManagementConsole",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=ManagementConsole",
+    "status": 200,
+    "content_type": "application/vnd.ibm.powervm.uom+xml; type=ManagementConsole"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/ManagementConsole/{uuid}/ResourceRole",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=ResourceRole",
+    "status": 200,
+    "content_type": "application/vnd.ibm.powervm.uom+xml; type=ResourceRole"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/ManagementConsole/{uuid}/TaskRole",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=TaskRole",
+    "status": 200,
+    "content_type": "application/vnd.ibm.powervm.uom+xml; type=TaskRole"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/ManagementConsole/{uuid}/UserProfile",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=UserProfile",
+    "status": 200,
+    "content_type": "application/vnd.ibm.powervm.uom+xml; type=UserProfile"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/ManagementConsole/{uuid}/UserProfile/{uuid}",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=UserProfile",
+    "status": 200,
+    "content_type": "application/vnd.ibm.powervm.uom+xml; type=UserProfile"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/ManagementConsole/{uuid}?group=RemoteAccess",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=ManagementConsole",
+    "status": 200,
+    "content_type": "application/vnd.ibm.powervm.uom+xml; type=ManagementConsole"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/SRIOVAdapter",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=SRIOVAdapter",
+    "status": 400,
+    "content_type": "application/atom+xml"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/SharedStoragePool",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=SharedStoragePool",
+    "status": 204,
+    "content_type": "text/plain"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/SharedStoragePool",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=SharedStoragePool",
+    "status": 500,
+    "content_type": "application/atom+xml"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/VirtualIOServer",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer",
+    "status": 500,
+    "content_type": "application/atom+xml"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/VirtualIOServer/search/(PartitionState=={value})",
+    "accept": "application/vnd.ibm.powervm.uom+xml; type=VirtualIOServer",
+    "status": 500,
+    "content_type": "application/atom+xml"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/web/File",
+    "accept": "application/vnd.ibm.powervm.web+xml",
+    "status": 204,
+    "content_type": "text/plain"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/web/schema/LogicalPartition.xsd",
+    "accept": "*/*",
+    "status": 200,
+    "content_type": "application/xml"
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/web/schema/inc/Enumerations.xsd",
+    "accept": "*/*",
+    "status": 200,
+    "content_type": "application/xml"
+   },
+   {
+    "method": "PUT",
+    "path": "/rest/api/web/Logon",
+    "accept": "application/vnd.ibm.powervm.web+xml; type=LogonResponse",
+    "status": 200,
+    "content_type": "application/vnd.ibm.powervm.web+xml; type=LogonResponse"
+   }
+  ],
+  "errors": [
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/VirtualIOServer",
+    "status": 500,
+    "content_type": "application/atom+xml",
+    "form": "HttpErrorResponse",
+    "reason_code": "Unknown internal error.",
+    "message": "Error occurred while querying for ViosStorage from VIOS {name} with ID 100 in System 9242-21B*{name} - Data cannot be retrieved from VIOS. Please check the filesystem space, network, and system resources of the VIOS.If the error persists, contact your service representative. Find other solutions at "
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/VirtualIOServer/search/(PartitionState=={value})",
+    "status": 500,
+    "content_type": "application/atom+xml",
+    "form": "HttpErrorResponse",
+    "reason_code": "Unknown internal error.",
+    "message": "Error occurred while querying for ViosStorage from VIOS {name} with ID 100 in System 9242-21B*{name} - Data cannot be retrieved from VIOS. Please check the filesystem space, network, and system resources of the VIOS.If the error persists, contact your service representative. Find other solutions at "
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/SRIOVAdapter",
+    "status": 400,
+    "content_type": "application/atom+xml",
+    "form": "HttpErrorResponse",
+    "reason_code": "INVALID_URL",
+    "message": "REST000B The URL presented to the Management Console REST Web Services is not valid.REST000E Unrecognized root REST type of SRIOVAdapter."
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/LogicalPartition/search/(PartitionState=={value})",
+    "status": 500,
+    "content_type": "application/atom+xml",
+    "form": "HttpErrorResponse",
+    "reason_code": "Unknown internal error.",
+    "message": "Unable to parse expression."
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/Cluster",
+    "status": 500,
+    "content_type": "application/atom+xml",
+    "form": "HttpErrorResponse",
+    "reason_code": "Unknown internal error.",
+    "message": "Unexpected error occurred while fetching Cluster/SSP information : 9242-21B*{name}/100 : Unable to send command to VIOS at this moment. VIOS 100*9242-21B*{name} is busy processing some other request. Please retry the operation after sometime."
+   },
+   {
+    "method": "GET",
+    "path": "/rest/api/uom/SharedStoragePool",
+    "status": 500,
+    "content_type": "application/atom+xml",
+    "form": "HttpErrorResponse",
+    "reason_code": "Unknown internal error.",
+    "message": "Unexpected error occurred while fetching Cluster/SSP information : 9242-21B*{name}/100 : Unable to send command to VIOS at this moment. VIOS 100*9242-21B*{name} is busy processing some other request. Please retry the operation after sometime."
+   }
+  ],
+  "values": {
+   "AIXCapable": [
+    "Active"
+   ],
+   "AIXUpdateAccessKeyCapable": [
+    "true"
+   ],
+   "AIXUpdateAccessKeyExpirationDate": [
+    "<int>"
+   ],
+   "ASMAdminPasswordUpdatedRequired": [
+    "false"
+   ],
+   "ASMGeneralPasswordUpdatedRequired": [
+    "false"
+   ],
+   "ActivatedLevel": [
+    "<int>"
+   ],
+   "ActivatedServicePackNameAndLevel": [
+    "<text>"
+   ],
+   "ActiveLogicalPartitionMigrationCapable": [
+    "true"
+   ],
+   "ActiveLogicalPartitionMobilityCapable": [
+    "true"
+   ],
+   "ActiveLogicalPartitionSharedIdeProcessorsCapable": [
+    "true"
+   ],
+   "ActiveMemoryDeduplicationCapable": [
+    "false"
+   ],
+   "ActiveMemoryExpansionCapable": [
+    "false",
+    "true"
+   ],
+   "ActiveMemoryExpansionEnabled": [
+    "false"
+   ],
+   "ActiveMemoryMirroringCapable": [
+    "true"
+   ],
+   "ActiveMemorySharingCapable": [
+    "false"
+   ],
+   "ActiveMemorySharingEnabled": [
+    "false"
+   ],
+   "AdapterConfigOption": [
+    "<int>"
+   ],
+   "AdapterConfigOptionDescription": [
+    "<text>"
+   ],
+   "AdapterConfigOptionEthernetLogicalPort": [
+    "<int>"
+   ],
+   "AdapterConfigOptionRoCELogicalPort": [
+    "<int>"
+   ],
+   "AdapterID": [
+    "<int>"
+   ],
+   "AdapterMode": [
+    "Dedicated",
+    "Sriov"
+   ],
+   "AdapterState": [
+    "NotConfigured",
+    "Running"
+   ],
+   "AdditionalPort": [
+    "<text>"
+   ],
+   "Address": [
+    "<text>"
+   ],
+   "AddressBroadcastPolicyCapable": [
+    "false"
+   ],
+   "AdvancedBootListSupportCapable": [
+    "true"
+   ],
+   "AggregationEnabled": [
+    "false"
+   ],
+   "AllocatedCapacity": [
+    "<text>"
+   ],
+   "AllocatedVirtualProcessors": [
+    "<int>"
+   ],
+   "AllowInactiveSourceStorageVios": [
+    "Disabled",
+    "Enabled"
+   ],
+   "AllowPerformanceDataCollection": [
+    "false",
+    "true"
+   ],
+   "AllowSSHRemoteAccess": [
+    "true"
+   ],
+   "AllowWebRemoteAccess": [
+    "false",
+    "true"
+   ],
+   "AllowedHardwarePageTableRations": [
+    "<int>"
+   ],
+   "AllowedMemoryRegionSize": [
+    "<text>"
+   ],
+   "AllowedPhysicalPageTableRatios": [
+    "<int>"
+   ],
+   "AlternateLoadSourceAttached": [
+    "false"
+   ],
+   "ApplicationId": [
+    "<text>"
+   ],
+   "ApplicationName": [
+    "<int>",
+    "<text>"
+   ],
+   "Architecture": [
+    "<text>"
+   ],
+   "AssignAllResources": [
+    "false"
+   ],
+   "AssociatedResourceGroupID": [
+    "<int>"
+   ],
+   "AssociatedResourceGroupName": [
+    "<text>"
+   ],
+   "AssociatedResourceRole": [
+    "<text>"
+   ],
+   "AssociatedTaskRole": [
+    "<text>"
+   ],
+   "AtomCreated": [
+    "<int>"
+   ],
+   "AtomID": [
+    "<uuid-lower>",
+    "<uuid-upper>"
+   ],
+   "AuthenticationTimeOut": [
+    "<int>"
+   ],
+   "AuthenticationType": [
+    "local"
+   ],
+   "AuthorizedKey": [
+    "<text>"
+   ],
+   "AutoManageEnabled": [
+    "false"
+   ],
+   "AutorecoveryPowerOnCapable": [
+    "true"
+   ],
+   "AvailabilityPriority": [
+    "<int>"
+   ],
+   "AvailableVirtualTrustedPlatformModulePartitions": [
+    "<int>"
+   ],
+   "AvailableWWPNs": [
+    "<int>"
+   ],
+   "BIOS": [
+    "<text>"
+   ],
+   "BMCConnectionUserName": [
+    "<text>"
+   ],
+   "BackplanePhysicalLocation": [
+    "<text>"
+   ],
+   "BarrierSynchronizationRegisterCapable": [
+    "false"
+   ],
+   "BaseVersion": [
+    "<text>"
+   ],
+   "BootDeviceList": [
+    "<text>"
+   ],
+   "BootMode": [
+    "Normal"
+   ],
+   "BuildLevel": [
+    "<int>"
+   ],
+   "BusDynamicReconfigurationConnectorIndex": [
+    "<int>"
+   ],
+   "BusDynamicReconfigurationConnectorName": [
+    "<text>"
+   ],
+   "BusGroupingRequired": [
+    "false"
+   ],
+   "CAPICapable": [
+    "false",
+    "true"
+   ],
+   "CCIN": [
+    "<int>",
+    "<text>"
+   ],
+   "CanSimplifiedRemoteRestart": [
+    "false",
+    "true"
+   ],
+   "CapacityOnDemandMemoryCapable": [
+    "true"
+   ],
+   "CapacityOnDemandOnOffMemoryCapable": [
+    "true"
+   ],
+   "CapacityOnDemandOnOffProcessorCapable": [
+    "true"
+   ],
+   "CapacityOnDemandProcessorCapable": [
+    "true"
+   ],
+   "CapacityOnDemandTrialMemoryCapable": [
+    "true"
+   ],
+   "CapacityOnDemandTrialProcessorCapable": [
+    "true"
+   ],
+   "CapacityOnDemandUtilityProcessorCapable": [
+    "false",
+    "true"
+   ],
+   "ClockSkew": [
+    "<int>"
+   ],
+   "CoDVSNCoExistCapable": [
+    "false"
+   ],
+   "Comparator": [
+    "Regular Expression or String Match"
+   ],
+   "ComputeLTMEnabled": [
+    "false"
+   ],
+   "ConfigurableHugePages": [
+    "<int>"
+   ],
+   "ConfigurableSystemMemory": [
+    "<int>"
+   ],
+   "ConfigurableSystemProcessorUnits": [
+    "<int>"
+   ],
+   "ConfiguredConnectionSpeed": [
+    "Auto"
+   ],
+   "ConfiguredEthernetLogicalPorts": [
+    "<int>"
+   ],
+   "ConfiguredFiberChannelOverEthernetLogicalPorts": [
+    "<int>"
+   ],
+   "ConfiguredMTU": [
+    "<text>"
+   ],
+   "ConfiguredMaxEthernetLogicalPorts": [
+    "<int>"
+   ],
+   "ConfiguredMaxRoCELogicalPorts": [
+    "<int>"
+   ],
+   "ConfiguredMirroredMemory": [
+    "<int>"
+   ],
+   "ConfiguredOptions": [
+    "Veb",
+    "fullDuplex"
+   ],
+   "ConfiguredRoCELogicalPorts": [
+    "<int>"
+   ],
+   "ConnectionTimeOut": [
+    "<int>"
+   ],
+   "ConsoleCapable": [
+    "false"
+   ],
+   "ConsoleMaximumWebUISessions": [
+    "<int>"
+   ],
+   "CurrentAdapterConfigurationOption": [
+    "<int>"
+   ],
+   "CurrentAssignedMemoryToPartitions": [
+    "<int>"
+   ],
+   "CurrentAvailableHugePages": [
+    "<int>"
+   ],
+   "CurrentAvailableMirroredMemory": [
+    "<int>"
+   ],
+   "CurrentAvailableQoS": [
+    "<int>"
+   ],
+   "CurrentAvailableResourceGroupReservedMemory": [
+    "<int>"
+   ],
+   "CurrentAvailableSystemMemory": [
+    "<int>"
+   ],
+   "CurrentAvailableSystemProcessorUnits": [
+    "<int>"
+   ],
+   "CurrentConnectionSpeed": [
+    "Unknown"
+   ],
+   "CurrentDramPersistentMemoryVolumes": [
+    "<int>"
+   ],
+   "CurrentExpansionFactor": [
+    "<float>"
+   ],
+   "CurrentHardwarePageTableRatio": [
+    "<int>"
+   ],
+   "CurrentHasDedicatedProcessors": [
+    "false",
+    "true"
+   ],
+   "CurrentHugePageCount": [
+    "<int>"
+   ],
+   "CurrentLanguage": [
+    "English"
+   ],
+   "CurrentLocale": [
+    "<text>"
+   ],
+   "CurrentLogicalMemoryBlockSize": [
+    "<int>"
+   ],
+   "CurrentManufacturingDefaulConfigurationtBootMode": [
+    "Normal"
+   ],
+   "CurrentManufacturingDefaultConfigurationSource": [
+    "a"
+   ],
+   "CurrentMaximumAllowedProcessorsPerPartition": [
+    "<int>"
+   ],
+   "CurrentMaximumHugePageCount": [
+    "<int>"
+   ],
+   "CurrentMaximumMemory": [
+    "<int>"
+   ],
+   "CurrentMaximumProcessingUnits": [
+    "<int>"
+   ],
+   "CurrentMaximumProcessors": [
+    "<int>"
+   ],
+   "CurrentMaximumProcessorsPerAIXOrLinuxPartition": [
+    "<int>"
+   ],
+   "CurrentMaximumProcessorsPerIBMiPartition": [
+    "<int>"
+   ],
+   "CurrentMaximumProcessorsPerVirtualIOServerPartition": [
+    "<int>"
+   ],
+   "CurrentMaximumVirtualIOSlots": [
+    "<int>"
+   ],
+   "CurrentMaximumVirtualProcessors": [
+    "<int>"
+   ],
+   "CurrentMaximumVirtualProcessorsPerAIXOrLinuxPartition": [
+    "<int>"
+   ],
+   "CurrentMaximumVirtualProcessorsPerIBMiPartition": [
+    "<int>"
+   ],
+   "CurrentMaximumVirtualProcessorsPerVirtualIOServerPartition": [
+    "<int>"
+   ],
+   "CurrentMemory": [
+    "<int>"
+   ],
+   "CurrentMemoryMirroringMode": [
+    "none",
+    "system firmware only"
+   ],
+   "CurrentMinimumHugePageCount": [
+    "<int>"
+   ],
+   "CurrentMinimumMemory": [
+    "<int>"
+   ],
+   "CurrentMinimumProcessingUnits": [
+    "<int>"
+   ],
+   "CurrentMinimumProcessors": [
+    "<int>"
+   ],
+   "CurrentMinimumVirtualProcessors": [
+    "<int>"
+   ],
+   "CurrentMirroredMemory": [
+    "<int>"
+   ],
+   "CurrentOptions": [
+    "<text>",
+    "PriorityFlowControl",
+    "Veb",
+    "fullDuplex"
+   ],
+   "CurrentPersistentMemoryVolumes": [
+    "<int>"
+   ],
+   "CurrentPowerOnSide": [
+    "Permanent",
+    "Temporary"
+   ],
+   "CurrentPowerSavingMode": [
+    "Maximum_Performance",
+    "Power_Saving"
+   ],
+   "CurrentProcessingUnits": [
+    "<int>"
+   ],
+   "CurrentProcessorCompatibilityMode": [
+    "<text>"
+   ],
+   "CurrentProcessors": [
+    "<int>"
+   ],
+   "CurrentProfileSync": [
+    "Disabled",
+    "On"
+   ],
+   "CurrentQoS": [
+    "<int>"
+   ],
+   "CurrentResourceGroupReservedMemory": [
+    "<int>"
+   ],
+   "CurrentSecureBoot": [
+    "<int>"
+   ],
+   "CurrentSharedProcessorPoolID": [
+    "<int>"
+   ],
+   "CurrentSharingMode": [
+    "capped",
+    "keep idle procs",
+    "sre idle proces",
+    "sre idle procs always"
+   ],
+   "CurrentStealableMemory": [
+    "<int>"
+   ],
+   "CurrentStealableProcUnits": [
+    "<int>"
+   ],
+   "CurrentSystemKeylock": [
+    "<text>"
+   ],
+   "CurrentTimezone": [
+    "<text>"
+   ],
+   "CustomLogicalPartitionPlacementCapable": [
+    "true"
+   ],
+   "CustomPhysicalPageTableRatioCapable": [
+    "true"
+   ],
+   "DebugLevel": [
+    "info"
+   ],
+   "DeconfiguredSystemMemory": [
+    "<int>"
+   ],
+   "DeconfiguredSystemProcessorUnits": [
+    "<int>"
+   ],
+   "DedicatedProcessorPartitionCapable": [
+    "true"
+   ],
+   "DefaultAdapterConfigurationOption": [
+    "<int>"
+   ],
+   "DefaultFiberChannelTargetsForBackingDevice": [
+    "<int>"
+   ],
+   "DefaultFiberChannelTargetsForNonBackingDevice": [
+    "<int>"
+   ],
+   "DefaultGateway": [
+    "<text>"
+   ],
+   "DefaultGatewayDevice": [
+    "<text>"
+   ],
+   "DefaultHardwarePageTableRatio": [
+    "<int>"
+   ],
+   "DefaultHardwarePagingTableRatioForDedicatedMemoryPartition": [
+    "<int>"
+   ],
+   "DefaultLocale": [
+    "<text>"
+   ],
+   "DefaultPhysicalPageTableRatio": [
+    "<int>"
+   ],
+   "DefaultProfileName": [
+    "<text>"
+   ],
+   "DelayTimeToEnterIdlePower": [
+    "<int>"
+   ],
+   "DelayTimeToExitIdlePower": [
+    "<int>"
+   ],
+   "Description": [
+    "<text>"
+   ],
+   "DesiredHugePageCount": [
+    "<int>"
+   ],
+   "DesiredMemory": [
+    "<int>"
+   ],
+   "DesiredProcessingUnits": [
+    "<int>"
+   ],
+   "DesiredProcessors": [
+    "<int>"
+   ],
+   "DesiredVirtualProcessors": [
+    "<int>"
+   ],
+   "DetailedState": [
+    "None",
+    "Unknown"
+   ],
+   "DeviceName": [
+    "<text>"
+   ],
+   "DeviceType": [
+    "PCIFunction",
+    "USBDevice"
+   ],
+   "DirectOperationsConsoleCapable": [
+    "false"
+   ],
+   "DisableSecureBootCapable": [
+    "true"
+   ],
+   "DnsEnabled": [
+    "true"
+   ],
+   "DnsServer": [
+    "<text>"
+   ],
+   "DomainAddress": [
+    "<text>"
+   ],
+   "DramPersistentMemoryVolumeBlockSize": [
+    "<int>"
+   ],
+   "DramPersistentMemoryVolumesCurrentSize": [
+    "<int>"
+   ],
+   "DramPersistentMemoryVolumesSize": [
+    "<int>"
+   ],
+   "DynamicLogicalPartitionIOCapable": [
+    "false",
+    "true"
+   ],
+   "DynamicLogicalPartitionMemoryCapable": [
+    "false",
+    "true"
+   ],
+   "DynamicLogicalPartitionProcessorCapable": [
+    "false",
+    "true"
+   ],
+   "DynamicLogicalPartitionVIOSCapable": [
+    "false"
+   ],
+   "DynamicPartitionAssignmentCapable": [
+    "false",
+    "true"
+   ],
+   "DynamicPlatformOptimizationCapable": [
+    "true"
+   ],
+   "DynamicReconfigurationConnectorIndex": [
+    "<int>"
+   ],
+   "DynamicReconfigurationConnectorName": [
+    "<text>"
+   ],
+   "DynamicSimplifiedRemoteRestartToggleCapable": [
+    "true"
+   ],
+   "EBMCSystemIPv6Capable": [
+    "true"
+   ],
+   "ElectronicErrorReportingCapable": [
+    "true"
+   ],
+   "ElementName": [
+    "<text>"
+   ],
+   "EndRange": [
+    "<text>"
+   ],
+   "EnergyMonitorEnabled": [
+    "false"
+   ],
+   "EnergyMonitoringCapable": [
+    "true"
+   ],
+   "ExpansionFactor": [
+    "<float>"
+   ],
+   "ExternalIntrusionDetectionCapable": [
+    "true"
+   ],
+   "FeatureCodes": [
+    "<int>",
+    "<text>",
+    "ECFW",
+    "ECSE"
+   ],
+   "FiberChannelTargetsRoundingValue": [
+    "<int>"
+   ],
+   "FirmwarePowerSaverCapable": [
+    "true"
+   ],
+   "FruNumber": [
+    "<text>"
+   ],
+   "Gateway": [
+    "<text>"
+   ],
+   "HMCAddress": [
+    "<text>"
+   ],
+   "HardwareAcceleratorCapable": [
+    "true"
+   ],
+   "HardwareDiscoveryCapable": [
+    "true"
+   ],
+   "HardwareMemoryCompressionCapable": [
+    "false",
+    "true"
+   ],
+   "HardwareMemoryEncryptionCapable": [
+    "true"
+   ],
+   "HardwarePageTableRatio": [
+    "<int>"
+   ],
+   "HardwarePowerSaverCapable": [
+    "true"
+   ],
+   "HasDedicatedProcessors": [
+    "false",
+    "true"
+   ],
+   "HasDedicatedProcessorsForMigration": [
+    "true"
+   ],
+   "HasPhysicalIO": [
+    "false",
+    "true"
+   ],
+   "HostChannelAdapterCapable": [
+    "false"
+   ],
+   "Hostname": [
+    "<text>"
+   ],
+   "HugePageCount": [
+    "<int>"
+   ],
+   "HugePageMemoryCapable": [
+    "true"
+   ],
+   "HugePageMemoryOverrideCapable": [
+    "true"
+   ],
+   "HugePageSize": [
+    "<int>"
+   ],
+   "IBMiCapable": [
+    "true"
+   ],
+   "IBMiHardwareAcceleratorCapable": [
+    "true"
+   ],
+   "IBMiLogicalPartitionMigrationCapable": [
+    "true"
+   ],
+   "IBMiLogicalPartitionMobilityCapable": [
+    "true"
+   ],
+   "IBMiLogicalPartitionSuspendCapable": [
+    "false"
+   ],
+   "IBMiNativeIOCapable": [
+    "false",
+    "true"
+   ],
+   "IBMiNetworkInstallCapable": [
+    "true"
+   ],
+   "IBMiNetworkInstallVlanCapable": [
+    "true"
+   ],
+   "IBMiNetworkInstalliSCSICapable": [
+    "true"
+   ],
+   "IBMiPartitionSecureBootCapable": [
+    "true"
+   ],
+   "IBMiRestrictedIOModeCapable": [
+    "true"
+   ],
+   "IFLLinuxOrViosProcSupported": [
+    "true"
+   ],
+   "IOBusID": [
+    "<int>"
+   ],
+   "IOP": [
+    "false"
+   ],
+   "IOPInfoStale": [
+    "false"
+   ],
+   "IOPoolID": [
+    "<int>"
+   ],
+   "IOUnitPhysicalLocation": [
+    "<text>"
+   ],
+   "IPAddress": [
+    "<text>"
+   ],
+   "IPV6Prefix": [
+    "<int>"
+   ],
+   "IdlePowerSaverMode": [
+    "true"
+   ],
+   "IdleSessionTimeout": [
+    "<int>"
+   ],
+   "IdleTimeout": [
+    "<int>"
+   ],
+   "InactiveLogicalPartitionMigrationCapable": [
+    "true"
+   ],
+   "InactiveLogicalPartitionMobilityCapable": [
+    "true"
+   ],
+   "InactiveProfileMigrationPolicy": [
+    "PartitionConfiguration"
+   ],
+   "InstalledSystemMemory": [
+    "<int>"
+   ],
+   "InstalledSystemProcessorUnits": [
+    "<int>"
+   ],
+   "IntelligentPlatformManagementInterfaceCapable": [
+    "false",
+    "true"
+   ],
+   "InterfaceName": [
+    "<text>"
+   ],
+   "InternalAndExternalIntrusionDetectionCapable": [
+    "false"
+   ],
+   "InternetProtocol": [
+    "static"
+   ],
+   "Ipv4Address": [
+    "<text>"
+   ],
+   "IsAdvancedAutomationAndMonitoringCapable": [
+    "true"
+   ],
+   "IsAllPartitionsResource": [
+    "true"
+   ],
+   "IsBootable": [
+    "false",
+    "true"
+   ],
+   "IsCecManagementResource": [
+    "true"
+   ],
+   "IsClassicHMCManagement": [
+    "true"
+   ],
+   "IsConfigured": [
+    "true"
+   ],
+   "IsConnectionMonitoringEnabled": [
+    "true"
+   ],
+   "IsCustomizationRequired": [
+    "false"
+   ],
+   "IsDHCPv6Client": [
+    "false"
+   ],
+   "IsDefaultAllow": [
+    "false",
+    "true"
+   ],
+   "IsDhcpClient": [
+    "false"
+   ],
+   "IsDhcpServer": [
+    "false"
+   ],
+   "IsEBMCNTPEnabled": [
+    "false",
+    "true"
+   ],
+   "IsFunctional": [
+    "true"
+   ],
+   "IsHMCPowerVMManagementController": [
+    "false"
+   ],
+   "IsHMCPowerVMManagementMaster": [
+    "false"
+   ],
+   "IsIPv6AutoConfig": [
+    "false"
+   ],
+   "IsJumboFrame": [
+    "false"
+   ],
+   "IsManagementPartitionPowerVMManagementController": [
+    "false"
+   ],
+   "IsManagementPartitionPowerVMManagementMaster": [
+    "false"
+   ],
+   "IsNTPEnabled": [
+    "false"
+   ],
+   "IsNotPowerVMManagementController": [
+    "false"
+   ],
+   "IsNotPowerVMManagementMaster": [
+    "false"
+   ],
+   "IsOperationInProgress": [
+    "false"
+   ],
+   "IsPasswordPolicyEnabled": [
+    "false"
+   ],
+   "IsPowerVMManagementController": [
+    "false"
+   ],
+   "IsPowerVMManagementMaster": [
+    "false"
+   ],
+   "IsPowerVMManagementNormalController": [
+    "false"
+   ],
+   "IsPowerVMManagementNormalMaster": [
+    "false"
+   ],
+   "IsPowerVMManagementPartitionEnabled": [
+    "false"
+   ],
+   "IsPowerVMManagementPersistentController": [
+    "false"
+   ],
+   "IsPowerVMManagementPersistentMaster": [
+    "false"
+   ],
+   "IsPowerVMManagementTemporaryController": [
+    "false"
+   ],
+   "IsPowerVMManagementTemporaryMaster": [
+    "false"
+   ],
+   "IsPowerVMManagementWithoutController": [
+    "false"
+   ],
+   "IsPowerVMManagementWithoutMaster": [
+    "false"
+   ],
+   "IsPredefinedUser": [
+    "false",
+    "true"
+   ],
+   "IsPrivateInterface": [
+    "false"
+   ],
+   "IsRedundantErrorPathReportingEnabled": [
+    "false",
+    "true"
+   ],
+   "IsSecureBootEnabled": [
+    "false"
+   ],
+   "IsServicePartition": [
+    "false"
+   ],
+   "IsTimeReferencePartition": [
+    "false"
+   ],
+   "IsTrustedBootEnabled": [
+    "false"
+   ],
+   "IsVirtualServiceAttentionLEDOn": [
+    "false",
+    "true"
+   ],
+   "IsVirtualTrustedPlatformModuleEnabled": [
+    "false",
+    "true"
+   ],
+   "KerberosAuthenticationEnabled": [
+    "false"
+   ],
+   "KerberosEnabled": [
+    "false"
+   ],
+   "KeyFilePresent": [
+    "false"
+   ],
+   "KeyStoreSignedUpdatesEnabled": [
+    "false",
+    "true"
+   ],
+   "KeyStoreSignedUpdatesWithoutVerificationAllowed": [
+    "false",
+    "true"
+   ],
+   "KeyStoreSize": [
+    "<int>"
+   ],
+   "KeylockPosition": [
+    "<text>"
+   ],
+   "KvmCapable": [
+    "false",
+    "true"
+   ],
+   "KvmOnPowerVMCapable": [
+    "true"
+   ],
+   "LANConsoleCapable": [
+    "false"
+   ],
+   "Language": [
+    "Chinese",
+    "English",
+    "French",
+    "German",
+    "Italian",
+    "Japanese",
+    "Korean",
+    "Portuguese",
+    "Spanish"
+   ],
+   "LastActivatedProfile": [
+    "<text>"
+   ],
+   "LastBootTime": [
+    "<text>"
+   ],
+   "LastBootedDeviceString": [
+    "<text>"
+   ],
+   "LastUpdateTime": [
+    "<text>"
+   ],
+   "LdapDebugLevel": [
+    "info"
+   ],
+   "LdapEnabled": [
+    "false"
+   ],
+   "LinkStatus": [
+    "false"
+   ],
+   "LinuxCapable": [
+    "true"
+   ],
+   "LinuxDynamicKeySecureBootEnabled": [
+    "false",
+    "true"
+   ],
+   "LoadSourceAttached": [
+    "false"
+   ],
+   "LoadSourceCapable": [
+    "false"
+   ],
+   "Locale": [
+    "<text>"
+   ],
+   "LocationCode": [
+    "<text>"
+   ],
+   "LogicalHostEthernetAdapterCapable": [
+    "false"
+   ],
+   "LogicalPartitionAffinityCheckCapable": [
+    "true"
+   ],
+   "LogicalPartitionAffinityGroupCapable": [
+    "true"
+   ],
+   "LogicalPartitionAssignmentCapable": [
+    "false",
+    "true"
+   ],
+   "LogicalPartitionAvailabilityPriorityCapable": [
+    "true"
+   ],
+   "LogicalPartitionEnergyManagementCapable": [
+    "false"
+   ],
+   "LogicalPartitionPersistentMemoryMigrationCapable": [
+    "true"
+   ],
+   "LogicalPartitionProcessorCompatibilityModeCapable": [
+    "true"
+   ],
+   "LogicalPartitionRedundantMspsMigrationCapable": [
+    "true"
+   ],
+   "LogicalPartitionRemoteRestartCapable": [
+    "false"
+   ],
+   "LogicalPartitionSRIOVMigrationCapable": [
+    "true"
+   ],
+   "LogicalPartitionSuspendCapable": [
+    "false"
+   ],
+   "LogicalPartitionVSwitchChangeMigrationCapable": [
+    "true"
+   ],
+   "LogicalSerialNumber": [
+    "<text>"
+   ],
+   "LoginAttribute": [
+    "uid"
+   ],
+   "LongTermMonitorEnabled": [
+    "false"
+   ],
+   "MACAddress": [
+    "<int>"
+   ],
+   "MACAddressPrefix": [
+    "<int>"
+   ],
+   "MFAEnabled": [
+    "false"
+   ],
+   "MacAddressValue": [
+    "<text>"
+   ],
+   "MachineType": [
+    "<int>",
+    "<text>"
+   ],
+   "Maintenance": [
+    "<int>"
+   ],
+   "MajorBootType": [
+    "Power On",
+    "Reboot"
+   ],
+   "ManagedSystemName": [
+    "<text>"
+   ],
+   "ManagedTaskKey": [
+    "<text>"
+   ],
+   "ManagedTaskName": [
+    "<text>"
+   ],
+   "ManagedTaskType": [
+    "HMC Console",
+    "Managed System",
+    "Partition"
+   ],
+   "ManagementConsoleCurrentLevel": [
+    "<text>"
+   ],
+   "ManagementConsoleName": [
+    "<text>"
+   ],
+   "ManagementConsoleTime": [
+    "<text>"
+   ],
+   "ManagementConsoleUpTime": [
+    "<text>"
+   ],
+   "ManagementDomainName": [
+    "<text>"
+   ],
+   "ManagementVLANForControlChannelCapable": [
+    "true"
+   ],
+   "ManufacturingDefaultConfigurationEnabled": [
+    "false"
+   ],
+   "Mask": [
+    "<text>"
+   ],
+   "MaxAllowedRoCEMACs": [
+    "<int>"
+   ],
+   "MaxAllowedRoCEVLANs": [
+    "<int>"
+   ],
+   "MaxCertificateValidity": [
+    "<int>"
+   ],
+   "MaxDiagnosticEthVFs": [
+    "<int>"
+   ],
+   "MaxDiagnosticRoCEVFs": [
+    "<int>"
+   ],
+   "MaxLoginAttempts": [
+    "<int>"
+   ],
+   "MaxPromiscousEthVFs": [
+    "<int>"
+   ],
+   "MaxPromiscousRoCEVFs": [
+    "<int>"
+   ],
+   "MaxWebUILoginAttempts": [
+    "<int>"
+   ],
+   "MaximumActiveMigrations": [
+    "<int>"
+   ],
+   "MaximumAixLinuxPersistentMemoryVolumes": [
+    "<int>"
+   ],
+   "MaximumAllowedEthMACs": [
+    "<int>"
+   ],
+   "MaximumAllowedEthVLANs": [
+    "<int>"
+   ],
+   "MaximumAllowedVirtualProcessorsPerPartition": [
+    "<int>"
+   ],
+   "MaximumBackingDevicesPerVNIC": [
+    "<int>"
+   ],
+   "MaximumDiagnosticsLogicalPorts": [
+    "<int>"
+   ],
+   "MaximumDramPersistentMemoryVolumes": [
+    "<int>"
+   ],
+   "MaximumFiberChannelTargets": [
+    "<int>"
+   ],
+   "MaximumFirmwareActiveMigrations": [
+    "<int>"
+   ],
+   "MaximumFirmwareInactiveMigrations": [
+    "<int>"
+   ],
+   "MaximumHugeDMALogicalPorts": [
+    "<int>"
+   ],
+   "MaximumHugePageCount": [
+    "<int>"
+   ],
+   "MaximumHugePages": [
+    "<int>"
+   ],
+   "MaximumIOPools": [
+    "<int>"
+   ],
+   "MaximumInactiveMigrations": [
+    "<int>"
+   ],
+   "MaximumLogicalPortsSupported": [
+    "<int>"
+   ],
+   "MaximumMemory": [
+    "<int>"
+   ],
+   "MaximumMemoryPoolCount": [
+    "<int>"
+   ],
+   "MaximumMirroredMemoryDefragmented": [
+    "<int>"
+   ],
+   "MaximumOS400PersistentMemoryVolumes": [
+    "<int>"
+   ],
+   "MaximumPagingVirtualIOServersPerSharedMemoryPool": [
+    "<int>"
+   ],
+   "MaximumPartitions": [
+    "<int>"
+   ],
+   "MaximumPersistentMemoryVolumes": [
+    "<int>"
+   ],
+   "MaximumPortVLANID": [
+    "<int>"
+   ],
+   "MaximumPowerControlPartitions": [
+    "<int>"
+   ],
+   "MaximumProcessingUnits": [
+    "<int>"
+   ],
+   "MaximumProcessorUnitsPerIBMiPartition": [
+    "<int>"
+   ],
+   "MaximumProcessors": [
+    "<int>"
+   ],
+   "MaximumPromiscuousLogicalPorts": [
+    "<int>"
+   ],
+   "MaximumRemoteRestartPartitions": [
+    "<int>"
+   ],
+   "MaximumResourceGroupCount": [
+    "<int>"
+   ],
+   "MaximumSharedProcPoolsPerResourceGroup": [
+    "<int>"
+   ],
+   "MaximumSharedProcessorCapablePartitionID": [
+    "<int>"
+   ],
+   "MaximumSupportedVirtualTrustedPlatformModulePartitions": [
+    "<int>"
+   ],
+   "MaximumSuspendablePartitions": [
+    "<int>"
+   ],
+   "MaximumVIOSPersistentMemoryVolumes": [
+    "<int>"
+   ],
+   "MaximumVLANID": [
+    "<int>"
+   ],
+   "MaximumVirtualIOSlots": [
+    "<int>"
+   ],
+   "MaximumVirtualProcessors": [
+    "<int>"
+   ],
+   "MaximumWebUISessionsPerUser": [
+    "<int>"
+   ],
+   "MaximumkeyStoreSize": [
+    "<int>"
+   ],
+   "MemoryDefragmentationState": [
+    "Not_In_Progress"
+   ],
+   "MemoryEncryptionHardwareAccessEnabled": [
+    "true"
+   ],
+   "MemoryExpansionEnabled": [
+    "false"
+   ],
+   "MemoryExpansionHardwareAccessEnabled": [
+    "false",
+    "true"
+   ],
+   "MemoryMirroringCapable": [
+    "true"
+   ],
+   "MemoryMirroringState": [
+    "Full",
+    "Off"
+   ],
+   "MemoryRegionSize": [
+    "<int>"
+   ],
+   "MemoryUsedByHypervisor": [
+    "<int>"
+   ],
+   "MergedReferenceCode": [
+    "<empty>",
+    "<text>"
+   ],
+   "MicroLogicalPartitionCapable": [
+    "true"
+   ],
+   "MigrationDisable": [
+    "false"
+   ],
+   "MigrationState": [
+    "Not_Migrating"
+   ],
+   "MigrationStorageViosDataStatus": [
+    "No_Data"
+   ],
+   "MinimumAffinityScore": [
+    "<int>"
+   ],
+   "MinimumAffinityScoreAction": [
+    "None"
+   ],
+   "MinimumEthernetCapacityGranularity": [
+    "<int>"
+   ],
+   "MinimumFCoECapacityGranularity": [
+    "<int>"
+   ],
+   "MinimumHugePageCount": [
+    "<int>"
+   ],
+   "MinimumKeyStoreSize": [
+    "<int>"
+   ],
+   "MinimumMemory": [
+    "<int>"
+   ],
+   "MinimumPasswordAge": [
+    "<int>"
+   ],
+   "MinimumPortVLANID": [
+    "<int>"
+   ],
+   "MinimumProcessingUnits": [
+    "<int>"
+   ],
+   "MinimumProcessorUnitsPerVirtualProcessor": [
+    "<float>"
+   ],
+   "MinimumProcessors": [
+    "<int>"
+   ],
+   "MinimumRoCECapacityGranularity": [
+    "<int>"
+   ],
+   "MinimumVLANID": [
+    "<int>"
+   ],
+   "MinimumVirtualProcessors": [
+    "<int>"
+   ],
+   "Minor": [
+    "<int>"
+   ],
+   "MinorBootType": [
+    "<int>"
+   ],
+   "MinorVersion": [
+    "<float>"
+   ],
+   "MirrorableMemoryWithDefragmentation": [
+    "<int>"
+   ],
+   "MirrorableMemoryWithoutDefragmentation": [
+    "<int>"
+   ],
+   "MirroredMemoryUsedByHypervisor": [
+    "<int>"
+   ],
+   "Model": [
+    "<text>",
+    "HEU",
+    "HEX",
+    "MRU",
+    "MRX"
+   ],
+   "ModelName": [
+    "<text>"
+   ],
+   "MultipathNVMeCapable": [
+    "true"
+   ],
+   "MultipleResourceGroupCapable": [
+    "true"
+   ],
+   "NPIVValidationPolicy": [
+    "portdisk"
+   ],
+   "NetworkAddress": [
+    "<text>"
+   ],
+   "NetworkInterface": [
+    "eth0",
+    "eth1"
+   ],
+   "NetworkMask": [
+    "<text>"
+   ],
+   "NetworkTimeOut": [
+    "<int>"
+   ],
+   "NewPowerSavingModesNamesSupported": [
+    "true"
+   ],
+   "Nickname": [
+    "<text>"
+   ],
+   "NumberOfActiveMigrationsInProgress": [
+    "<int>"
+   ],
+   "NumberOfAllOSProcessorUnits": [
+    "<int>"
+   ],
+   "NumberOfInactiveMigrationsInProgress": [
+    "<int>"
+   ],
+   "NumberOfLinuxOnlyProcessorUnits": [
+    "<int>"
+   ],
+   "NumberOfLinuxOrVIOSOnlyProcessorUnits": [
+    "<int>"
+   ],
+   "NumberOfProcessors": [
+    "<int>"
+   ],
+   "NumberOfVirtualIOServerProcessorUnits": [
+    "<int>"
+   ],
+   "OSImageDate": [
+    "<int>"
+   ],
+   "OperatingSystemType": [
+    "AIX/Linux",
+    "Linux"
+   ],
+   "OperatingSystemVersion": [
+    "<text>",
+    "Unknown"
+   ],
+   "OperationsConsoleAttached": [
+    "false"
+   ],
+   "OperationsConsoleCapable": [
+    "false"
+   ],
+   "OptTimeOut": [
+    "<int>"
+   ],
+   "PCAdapterID": [
+    "<int>"
+   ],
+   "PCIClass": [
+    "<int>"
+   ],
+   "PCIClassCode": [
+    "<int>"
+   ],
+   "PCIDeviceID": [
+    "<int>"
+   ],
+   "PCIDeviceId": [
+    "<int>"
+   ],
+   "PCIManufacturerID": [
+    "<int>"
+   ],
+   "PCIRevisionID": [
+    "<int>"
+   ],
+   "PCIRevisionId": [
+    "<int>"
+   ],
+   "PCISubsystemDeviceID": [
+    "<int>"
+   ],
+   "PCISubsystemDeviceId": [
+    "<int>"
+   ],
+   "PCISubsystemVendorID": [
+    "<int>"
+   ],
+   "PCISubsystemVendorId": [
+    "<int>"
+   ],
+   "PCIVendorID": [
+    "<int>"
+   ],
+   "PCIVendorId": [
+    "<int>"
+   ],
+   "PageSize": [
+    "<int>"
+   ],
+   "ParameterName": [
+    "<text>"
+   ],
+   "ParentDynamicReconfigurationConnectorIndex": [
+    "<int>"
+   ],
+   "ParentName": [
+    "<text>"
+   ],
+   "ParentSlotChildId": [
+    "<int>"
+   ],
+   "ParentTaskRoleName": [
+    "<text>"
+   ],
+   "PartNumber": [
+    "<text>"
+   ],
+   "PartitionDynamicKeySecureBootCapable": [
+    "true"
+   ],
+   "PartitionID": [
+    "<int>"
+   ],
+   "PartitionKeyStoreCapable": [
+    "true"
+   ],
+   "PartitionKeyStoreDecreaseCapable": [
+    "true"
+   ],
+   "PartitionName": [
+    "<text>"
+   ],
+   "PartitionPlacement": [
+    "<int>"
+   ],
+   "PartitionSecureBootCapable": [
+    "true"
+   ],
+   "PartitionState": [
+    "not activated",
+    "open firmware",
+    "running"
+   ],
+   "PartitionType": [
+    "AIX/Linux",
+    "Virtual IO Server"
+   ],
+   "PartitionUUID": [
+    "<uuid-upper>"
+   ],
+   "PasswordExpiry": [
+    "<int>"
+   ],
+   "PendingAvailableHugePages": [
+    "<int>"
+   ],
+   "PendingAvailableQoS": [
+    "<int>"
+   ],
+   "PendingAvailableSystemMemory": [
+    "<int>"
+   ],
+   "PendingAvailableSystemProcessorUnits": [
+    "<int>"
+   ],
+   "PendingLogicalMemoryBlockSize": [
+    "<int>"
+   ],
+   "PendingLogicalMemoryRegionSize": [
+    "<int>",
+    "auto"
+   ],
+   "PendingManufacturingDefaulConfigurationtBootMode": [
+    "Normal"
+   ],
+   "PendingManufacturingDefaultConfigurationSource": [
+    "a"
+   ],
+   "PendingMemoryMirroringMode": [
+    "none",
+    "system firmware only"
+   ],
+   "PendingMemoryRegionSize": [
+    "<int>"
+   ],
+   "PendingPowerOnLogicalPartitionStartPolicy": [
+    "autostart",
+    "userinit"
+   ],
+   "PendingPowerOnSide": [
+    "Permanent",
+    "Temporary"
+   ],
+   "PendingProcessorCompatibilityMode": [
+    "<text>",
+    "default"
+   ],
+   "PendingQoS": [
+    "<int>"
+   ],
+   "PendingSecureBoot": [
+    "<int>"
+   ],
+   "PendingSystemKeylock": [
+    "<text>"
+   ],
+   "PermanentSystemMemory": [
+    "<int>"
+   ],
+   "PermanentSystemProcessors": [
+    "<int>"
+   ],
+   "PersistentMemoryCapable": [
+    "true"
+   ],
+   "Personality": [
+    "MAX_MIN_CAPACITY"
+   ],
+   "PhysicalLocation": [
+    "<text>"
+   ],
+   "PhysicalPageTableRatio": [
+    "<int>"
+   ],
+   "PhysicalPortID": [
+    "<int>"
+   ],
+   "PhysicalSystemAttentionLEDState": [
+    "false",
+    "true"
+   ],
+   "PlatformMemoryMirroringCapabilityKnown": [
+    "true"
+   ],
+   "PlatformMemoryMirroringCapableIfLicensed": [
+    "false",
+    "true"
+   ],
+   "PlatformMemoryMirroringLicensed": [
+    "false",
+    "true"
+   ],
+   "PlatformPasswordUpdateRequired": [
+    "false"
+   ],
+   "Port": [
+    "<int>",
+    "echo-request"
+   ],
+   "PortCapabilities": [
+    "<text>",
+    "Clear Logical Port Stat",
+    "Clear Physical Port Stat",
+    "Enable VF Options",
+    "PORT_VF_CONFIGURATION_OPTION",
+    "Pvid"
+   ],
+   "PortLogicalPortLimit": [
+    "<int>"
+   ],
+   "PortType": [
+    "RoCE"
+   ],
+   "PowerChipQueryCapable": [
+    "false",
+    "true"
+   ],
+   "PowerOffWhenLastLogicalPartitionIsShutdown": [
+    "false"
+   ],
+   "PowerOnLogicalPartitionStartPolicy": [
+    "autostart",
+    "userinit"
+   ],
+   "PowerOnOption": [
+    "autostart",
+    "standby"
+   ],
+   "PowerOnSource": [
+    "Other",
+    "SystemManagementConsole"
+   ],
+   "PowerOnSpeed": [
+    "Unknown",
+    "fast"
+   ],
+   "PowerOnSpeedOverride": [
+    "none"
+   ],
+   "PowerOnWithHypervisor": [
+    "false",
+    "true"
+   ],
+   "PowerVMLogicalPartitionSimplifiedRemoteRestartCapable": [
+    "true"
+   ],
+   "PowerVMManagementCapable": [
+    "false"
+   ],
+   "Prefix": [
+    "<int>"
+   ],
+   "PrimaryDeviceFunction": [
+    "false",
+    "true"
+   ],
+   "PrimaryIPAddress": [
+    "<text>"
+   ],
+   "ProcessorThrottling": [
+    "false"
+   ],
+   "ProgrammingInterfaceClass": [
+    "<int>"
+   ],
+   "ProgressState": [
+    "none"
+   ],
+   "Protocol": [
+    "icmp",
+    "tcp",
+    "udp"
+   ],
+   "PublicSSHKeyValue": [
+    "<text>"
+   ],
+   "RESTElement": [
+    "BasePartition",
+    "LogicalPartition"
+   ],
+   "RedundantErrorPathReportingCapable": [
+    "true"
+   ],
+   "RedundantErrorPathReportingEnabled": [
+    "false",
+    "true"
+   ],
+   "ReferenceCode": [
+    "<empty>",
+    "<text>"
+   ],
+   "Referrals": [
+    "true"
+   ],
+   "Release": [
+    "<int>"
+   ],
+   "RemoteCommandAccess": [
+    "true"
+   ],
+   "RemoteRestartCapable": [
+    "false"
+   ],
+   "RemoteRestartState": [
+    "Invalid"
+   ],
+   "RemoteRestartToggleCapable": [
+    "true"
+   ],
+   "RemoteVirtualTerminalAccess": [
+    "true"
+   ],
+   "RemoteWebAccess": [
+    "true"
+   ],
+   "RequestedHugePages": [
+    "<int>"
+   ],
+   "RequiredPowerSavingMode": [
+    "Maximum_Performance",
+    "Power_Saving"
+   ],
+   "ResourceMonitoringControlOperatingSystemShutdownCapable": [
+    "false",
+    "true"
+   ],
+   "ResourceMonitoringControlState": [
+    "active",
+    "inactive",
+    "none"
+   ],
+   "ResourceMonitoringIPAddress": [
+    "<text>"
+   ],
+   "ResourceRoleName": [
+    "<text>"
+   ],
+   "ResourceRoleUUID": [
+    "<uuid-lower>"
+   ],
+   "RunProcessors": [
+    "<int>"
+   ],
+   "RuntimeHasDedicatedProcessors": [
+    "false",
+    "true"
+   ],
+   "RuntimeHugePageCount": [
+    "<int>"
+   ],
+   "RuntimeMemory": [
+    "<int>"
+   ],
+   "RuntimeMinimumMemory": [
+    "<int>"
+   ],
+   "RuntimeProcessingUnits": [
+    "<int>"
+   ],
+   "RuntimeSharingMode": [
+    "<text>"
+   ],
+   "SRIOVAdapterConfigOptionsCapable": [
+    "true"
+   ],
+   "SRIOVAdapterID": [
+    "<int>"
+   ],
+   "SRIOVCapable": [
+    "true"
+   ],
+   "SRIOVCapableDevice": [
+    "false",
+    "true"
+   ],
+   "SRIOVCapableSlot": [
+    "false",
+    "true"
+   ],
+   "SRIOVLogicalPortsLimit": [
+    "<int>"
+   ],
+   "SRIOVMigrationCapable": [
+    "true"
+   ],
+   "SRIOVRoCECapable": [
+    "true"
+   ],
+   "SchemaNamespace": [
+    "<text>"
+   ],
+   "SearchScope": [
+    "one"
+   ],
+   "SearchTimeOut": [
+    "<int>"
+   ],
+   "SerialNumber": [
+    "<text>"
+   ],
+   "ServicePackName": [
+    "<int>"
+   ],
+   "ServiceProcessorAutonomicIPLCapable": [
+    "true"
+   ],
+   "ServiceProcessorConcurrentMaintenanceCapable": [
+    "false",
+    "true"
+   ],
+   "ServiceProcessorFailoverCapable": [
+    "true"
+   ],
+   "ServiceProcessorFailoverEnabled": [
+    "false",
+    "true"
+   ],
+   "ServiceProcessorFailoverReason": [
+    "<int>"
+   ],
+   "ServiceProcessorFailoverState": [
+    "Not Ready",
+    "Ready"
+   ],
+   "ServiceProcessorVersion": [
+    "<text>"
+   ],
+   "SessionTimeout": [
+    "<int>"
+   ],
+   "ShadowBootDeviceList": [
+    "<text>"
+   ],
+   "SharedEthernetFailoverCapable": [
+    "true"
+   ],
+   "SharedMemoryEnabled": [
+    "false"
+   ],
+   "SharedProcessorPoolCapable": [
+    "true"
+   ],
+   "SharedProcessorPoolCount": [
+    "<int>"
+   ],
+   "SharedProcessorPoolID": [
+    "<int>"
+   ],
+   "SharingMode": [
+    "capped",
+    "keep idle procs",
+    "sre idle proces",
+    "sre idle procs always"
+   ],
+   "ShortTermMonitorEnabled": [
+    "false"
+   ],
+   "SimplifiedRemoteRestartCapable": [
+    "false"
+   ],
+   "SimplifiedRemoteRestartEnable": [
+    "ENABLED"
+   ],
+   "SlotChildId": [
+    "<int>"
+   ],
+   "SlotDynamicReconfigurationConnectorIndex": [
+    "<int>"
+   ],
+   "SlotDynamicReconfigurationConnectorName": [
+    "<text>"
+   ],
+   "SlotPhysicalLocationCode": [
+    "<text>"
+   ],
+   "SourceAddress": [
+    "<text>"
+   ],
+   "SourceMask": [
+    "<text>"
+   ],
+   "Speed": [
+    "<text>",
+    "Autodetection"
+   ],
+   "StartRange": [
+    "<text>"
+   ],
+   "State": [
+    "no connection",
+    "operating"
+   ],
+   "Subnet": [
+    "<text>"
+   ],
+   "SubnetMask": [
+    "<text>"
+   ],
+   "SupportedConnectionSpeeds": [
+    "<text>",
+    "Auto"
+   ],
+   "SupportedDebugLevel": [
+    "debug",
+    "info",
+    "off",
+    "trace"
+   ],
+   "SupportedLdapDebugLevel": [
+    "debug",
+    "info",
+    "off",
+    "trace"
+   ],
+   "SupportedMACRestrictions": [
+    "<text>"
+   ],
+   "SupportedMTUs": [
+    "<text>"
+   ],
+   "SupportedNetworkBondModes": [
+    "<text>"
+   ],
+   "SupportedNumberOfEthVFs": [
+    "<int>"
+   ],
+   "SupportedNumberOfRoCEVFs": [
+    "<int>"
+   ],
+   "SupportedOptions": [
+    "AdapterLldpForPortDisabled",
+    "Veb",
+    "Vepa",
+    "fullDuplex",
+    "promiscousMode",
+    "receiveFlowControl",
+    "transmitFlowControl"
+   ],
+   "SupportedPartitionProcessorCompatibilityModes": [
+    "<text>",
+    "default"
+   ],
+   "SupportedPersistentMemoryDeviceTypes": [
+    "dram"
+   ],
+   "SupportedPowerSavingModeTypes": [
+    "Efficient_Favor_Power",
+    "Maximum_Performance",
+    "Power_Saving"
+   ],
+   "SupportedPriorityAccessControlList": [
+    "<int>"
+   ],
+   "SupportedSearchScope": [
+    "one",
+    "sub"
+   ],
+   "SupportedTLSReqCert": [
+    "allow",
+    "demand",
+    "never",
+    "try"
+   ],
+   "SupportedTimezone": [
+    "<text>"
+   ],
+   "SupportedVLANRestrictions": [
+    "ALLOW_ALL",
+    "ALLOW_SPECIFIED",
+    "DENY_VLAN_TAGGED"
+   ],
+   "SupportedVTPM2EncryptionLevels": [
+    "<text>"
+   ],
+   "SupportedVTPMVersions": [
+    "<float>"
+   ],
+   "SuspendCapable": [
+    "false"
+   ],
+   "SuspendTime": [
+    "<int>"
+   ],
+   "SwitchNetworkInterfaceMessagePassingCapable": [
+    "false"
+   ],
+   "SystemFirmware": [
+    "<text>"
+   ],
+   "SystemName": [
+    "<text>"
+   ],
+   "SystemPartitionProcessorLimitCapable": [
+    "false"
+   ],
+   "SystemTime": [
+    "<int>"
+   ],
+   "SystemType": [
+    "ebmc",
+    "fsp"
+   ],
+   "TCCSlotID": [
+    "<int>"
+   ],
+   "TLSEncryptionEnabled": [
+    "false"
+   ],
+   "TLSRequestCertificate": [
+    "never"
+   ],
+   "TaskRoleName": [
+    "<text>"
+   ],
+   "TaskRoleUUID": [
+    "<uuid-lower>"
+   ],
+   "Telnet5250ApplicationCapable": [
+    "true"
+   ],
+   "TemporaryMemoryForLogicalPartitionMobilityInUse": [
+    "false"
+   ],
+   "TemporaryProcessorUnitsForLogicalPartitionMobilityInUse": [
+    "false"
+   ],
+   "TicketLifeTime": [
+    "<text>"
+   ],
+   "TlsCaCertPresent": [
+    "false"
+   ],
+   "TotalMemory": [
+    "<int>"
+   ],
+   "TotalQoS": [
+    "<int>"
+   ],
+   "TotalSwapMemory": [
+    "<int>"
+   ],
+   "TotalSystemActivatedCores": [
+    "<int>"
+   ],
+   "TotalSystemActivatedMemory": [
+    "<int>"
+   ],
+   "TotalSystemAllocatedCores": [
+    "<int>"
+   ],
+   "TotalSystemAllocatedMemory": [
+    "<int>"
+   ],
+   "TotalSystemAvailableCores": [
+    "<int>"
+   ],
+   "TotalSystemAvailableMemory": [
+    "<int>"
+   ],
+   "TotalSystemInactiveCores": [
+    "<int>"
+   ],
+   "TotalSystemInactiveMemory": [
+    "<int>"
+   ],
+   "TotalSystemInstalledCores": [
+    "<int>"
+   ],
+   "TotalSystemInstalledMemory": [
+    "<int>"
+   ],
+   "TurboCoreCapable": [
+    "false"
+   ],
+   "Type": [
+    "gzip"
+   ],
+   "UVMID": [
+    "<text>"
+   ],
+   "UniqueDeviceID": [
+    "<text>"
+   ],
+   "Uptime": [
+    "<int>"
+   ],
+   "UseCapturedHeaInfo": [
+    "false"
+   ],
+   "UseDhcpDnsSettings": [
+    "false"
+   ],
+   "UseNonAnonymousBinding": [
+    "false"
+   ],
+   "UserDescription": [
+    "<text>"
+   ],
+   "UserID": [
+    "<text>"
+   ],
+   "UserInactivity": [
+    "<int>"
+   ],
+   "UserProfileUUID": [
+    "<uuid-lower>"
+   ],
+   "UtilizationThresholdToEnterIdlePower": [
+    "<text>"
+   ],
+   "UtilizationThresholdToExitIdlePower": [
+    "<text>"
+   ],
+   "VFCConfigurationOption": [
+    "DeploymentTime"
+   ],
+   "VLANStatisticsCapable": [
+    "true"
+   ],
+   "VODConfigurationOption": [
+    "DeploymentTime"
+   ],
+   "VSCSIConfigurationOption": [
+    "DeploymentTime"
+   ],
+   "VTPMEncryptionLevel": [
+    "<text>"
+   ],
+   "VTPMVersion": [
+    "<float>"
+   ],
+   "VerifySessionTimeout": [
+    "<int>"
+   ],
+   "Version": [
+    "<int>"
+   ],
+   "VirtualEthernetAdapterDynamicLogicalPartitionCapable": [
+    "true"
+   ],
+   "VirtualEthernetAdapterMACAddressPrefix": [
+    "<text>"
+   ],
+   "VirtualEthernetCustomMACAddressCapable": [
+    "true"
+   ],
+   "VirtualEthernetQualityOfServiceCapable": [
+    "true"
+   ],
+   "VirtualFiberChannelCapable": [
+    "true"
+   ],
+   "VirtualIOServerCapable": [
+    "true"
+   ],
+   "VirtualNICDedicatedSRIOVCapable": [
+    "true"
+   ],
+   "VirtualNICFailOverCapable": [
+    "true"
+   ],
+   "VirtualNICSharedSRIOVCapable": [
+    "false"
+   ],
+   "VirtualSerialNumber": [
+    "<text>"
+   ],
+   "VirtualSerialNumberCapable": [
+    "true"
+   ],
+   "VirtualServerNetworkingPhase2Capable": [
+    "true"
+   ],
+   "VirtualSwitchCapable": [
+    "true"
+   ],
+   "VirtualSystemAttentionLEDState": [
+    "false",
+    "true"
+   ],
+   "VirtualTrustedPlatformModule20Capable": [
+    "true"
+   ],
+   "VirtualTrustedPlatformModuleCapable": [
+    "true"
+   ],
+   "VirtualTrustedPlatformModuleKeyLength": [
+    "<int>"
+   ],
+   "VirtualTrustedPlatformModuleKeyStatus": [
+    "<int>"
+   ],
+   "VirtualTrustedPlatformModuleVersion": [
+    "<int>"
+   ],
+   "VirtualizationEngineTechnologiesActivationCapable": [
+    "true"
+   ],
+   "WWPNPrefix": [
+    "<text>"
+   ],
+   "WebUISuspendTime": [
+    "<int>"
+   ],
+   "XPath": [
+    "<text>"
+   ],
+   "activeMemoryExpansionEnabled": [
+    "false"
+   ],
+   "activeMemorySharingEnabled": [
+    "false"
+   ],
+   "allowPerformanceDataCollection": [
+    "false"
+   ],
+   "autoEntitledMemoryEnabled": [
+    "false"
+   ],
+   "availabilityPriority": [
+    "<int>"
+   ],
+   "bsrArrays": [
+    "<int>"
+   ],
+   "canLPM": [
+    "false"
+   ],
+   "canRemoteRestart": [
+    "false"
+   ],
+   "canSuspendResume": [
+    "false",
+    "true"
+   ],
+   "currAllocatedBSRArrays": [
+    "<int>"
+   ],
+   "currBsrArrays": [
+    "<int>"
+   ],
+   "currExpansionFactor": [
+    "<float>"
+   ],
+   "currHPTRatio": [
+    "<int>"
+   ],
+   "currHasDedicatedProcessors": [
+    "true"
+   ],
+   "currHugePageCount": [
+    "<int>"
+   ],
+   "currMaxHugePageCount": [
+    "<int>"
+   ],
+   "currMaxMemory": [
+    "<int>"
+   ],
+   "currMaxVirtualIOSlots": [
+    "<int>"
+   ],
+   "currMemory": [
+    "<int>"
+   ],
+   "currMinHugePageCount": [
+    "<int>"
+   ],
+   "currMinMemory": [
+    "<int>"
+   ],
+   "currProcessorCompatibilityMode": [
+    "default"
+   ],
+   "currSharingMode": [
+    "sre idle proces"
+   ],
+   "description": [
+    "<text>"
+   ],
+   "desiredHugePageCount": [
+    "<int>"
+   ],
+   "desiredMemory": [
+    "<int>"
+   ],
+   "desiredProcessors": [
+    "<int>"
+   ],
+   "enableCallHome": [
+    "false"
+   ],
+   "etag": [
+    "<int>"
+   ],
+   "expansionFactor": [
+    "<float>"
+   ],
+   "generator": [
+    "IBM Power Systems Management Console"
+   ],
+   "hasDedicatedAdapters": [
+    "false"
+   ],
+   "hasDedicatedProcessors": [
+    "true"
+   ],
+   "hasPhysicalOptical": [
+    "false"
+   ],
+   "hasVirtualFibrechannel": [
+    "false"
+   ],
+   "hasVirtualNetwork": [
+    "false"
+   ],
+   "hasVirtualOptical": [
+    "false"
+   ],
+   "hasVirtualSCSI": [
+    "false"
+   ],
+   "hptRatio": [
+    "<int>"
+   ],
+   "id": [
+    "<uuid-lower>",
+    "<uuid-upper>"
+   ],
+   "isConnectionMonitoringEnabled": [
+    "true"
+   ],
+   "isDLPARIOCapable": [
+    "false"
+   ],
+   "isDLPARMemoryCapable": [
+    "false"
+   ],
+   "isDLPARProcessorCapable": [
+    "false"
+   ],
+   "isDraft": [
+    "false"
+   ],
+   "isInternalAndExternalIntrusionDetectionCapable": [
+    "false"
+   ],
+   "isManualEntitledMode": [
+    "false"
+   ],
+   "isMemoryCompressionHardwareAccessEnabled": [
+    "true"
+   ],
+   "isRedundantErrorPathReportingEnabled": [
+    "false"
+   ],
+   "isRmcOsShutdownCapable": [
+    "false"
+   ],
+   "isSharedMemory": [
+    "false"
+   ],
+   "isTimeReferencePartition": [
+    "false"
+   ],
+   "isUseCapturedPhysicalIOInformationEnabled": [
+    "false"
+   ],
+   "maxHugePageCount": [
+    "<int>"
+   ],
+   "maxMemory": [
+    "<int>"
+   ],
+   "maxProcessors": [
+    "<int>"
+   ],
+   "memExpansionEnabled": [
+    "false"
+   ],
+   "minHugePageCount": [
+    "<int>"
+   ],
+   "minMemory": [
+    "<int>"
+   ],
+   "minProcessors": [
+    "<int>"
+   ],
+   "name": [
+    "<text>"
+   ],
+   "osVersion": [
+    "Unknown"
+   ],
+   "partitionId": [
+    "<int>"
+   ],
+   "partitionName": [
+    "<text>"
+   ],
+   "partitionTemplateName": [
+    "<text>"
+   ],
+   "partitionType": [
+    "<text>",
+    "AIX/Linux"
+   ],
+   "pendProcessorCompatibilityMode": [
+    "<text>"
+   ],
+   "progressPartitionDataRemaining": [
+    "<int>"
+   ],
+   "progressPartitionDataTotal": [
+    "<int>"
+   ],
+   "published": [
+    "<text>"
+   ],
+   "redundantErrorPathReportingEnabled": [
+    "false"
+   ],
+   "runExpansionFactor": [
+    "<float>"
+   ],
+   "runHasDedicatedProcessors": [
+    "true"
+   ],
+   "runHugePageCount": [
+    "<int>"
+   ],
+   "runMemory": [
+    "<int>"
+   ],
+   "runMinMemory": [
+    "<int>"
+   ],
+   "sharingMode": [
+    "sre idle proces"
+   ],
+   "state": [
+    "running"
+   ],
+   "suspendEnable": [
+    "false"
+   ],
+   "syncCurrentProfile": [
+    "<text>"
+   ],
+   "title": [
+    "<text>",
+    "LogicalPartition",
+    "ManagedSystem",
+    "ManagementConsole",
+    "PartitionTemplate",
+    "PartitionTemplateSummary",
+    "QuickPropertyCollection",
+    "ResourceRole",
+    "SearchParameterSet",
+    "TaskRole",
+    "UserProfile"
+   ],
+   "uncappedWeight": [
+    "<int>"
+   ],
+   "updated": [
+    "<text>"
+   ],
+   "useCaptureInfoForNetwork": [
+    "false"
+   ],
+   "vtpmEnabled": [
+    "false"
+   ]
+  },
+  "element_enums": {
+   "AdapterMode": "SRIOVAdapterMode.Enum",
+   "AdapterState": "SRIOVAdapterState.Enum",
+   "AllowInactiveSourceStorageVios": "AllowInactiveSourceStorageVios.Enum",
+   "BootMode": "BootMode.Enum",
+   "ConfiguredOptions": "SRIOVPhysicalPortOptions.Enum",
+   "CurrentMemoryMirroringMode": "MemoryMirroringMode.Enum",
+   "CurrentOptions": "SRIOVPhysicalPortOptions.Enum",
+   "CurrentPowerOnSide": "ServiceProcessorSide.Enum",
+   "CurrentPowerSavingMode": "EnergyManagementModeType.Enum",
+   "CurrentProfileSync": "CurrentProfileSync.Enum",
+   "CurrentSharingMode": "LogicalPartitionProcessorSharingMode.Enum",
+   "DetailedState": "DetailedState.Enum",
+   "InactiveProfileMigrationPolicy": "InactiveProfileMigrationPolicy.Enum",
+   "InternetProtocol": "InternetProtocol.Enum",
+   "MajorBootType": "MajorBootType.Enum",
+   "MemoryMirroringState": "MemoryMirroringState.Enum",
+   "MigrationState": "PartitionMigrationState.Enum",
+   "MigrationStorageViosDataStatus": "MigrationStorageViosDataStatus.Enum",
+   "NetworkInterface": "NetworkInterface.Enum",
+   "OperatingSystemType": "OperatingSystemType.Enum",
+   "PartitionState": "LogicalPartitionState.Enum",
+   "PartitionType": "LogicalPartitionEnvironment.Enum",
+   "PendingMemoryMirroringMode": "MemoryMirroringMode.Enum",
+   "PendingPowerOnLogicalPartitionStartPolicy": "PowerOnStartPolicy.Enum",
+   "PendingPowerOnSide": "ServiceProcessorSide.Enum",
+   "PortCapabilities": "SRIOVPortCapability.Enum",
+   "PowerOnLogicalPartitionStartPolicy": "PowerOnStartPolicy.Enum",
+   "PowerOnOption": "PowerOnOption.Enum",
+   "PowerOnSource": "PowerOnSource.Enum",
+   "PowerOnSpeed": "PowerOnSpeed.Enum",
+   "PowerOnSpeedOverride": "PowerOnSpeedOverride.Enum",
+   "RemoteRestartState": "PartitionRemoteRestart.Enum",
+   "RequiredPowerSavingMode": "EnergyManagementModeType.Enum",
+   "ResourceMonitoringControlState": "ResourceMonitoringControlState.Enum",
+   "ServiceProcessorFailoverState": "ServiceProcessorFailoverState.Enum",
+   "SharingMode": "LogicalPartitionProcessorSharingMode.Enum",
+   "State": "SystemState.Enum",
+   "SupportedOptions": "SRIOVPhysicalPortOptions.Enum",
+   "SupportedPowerSavingModeTypes": "EnergyManagementModeType.Enum",
+   "SupportedVLANRestrictions": "SupportedVLANRestrictions.Enum",
+   "SystemType": "SystemType.Enum"
+  }
+ },
+ "cli": {
+  "commands": [
+   {
+    "command": "lshmc -V",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
+    "command": "lshwres -r io --rsubtype slot -m {}",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lshwres -r io --rsubtype slot -m {} -F drc_index,description,lpar_name --header",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lshwres -r mem --level lpar -m {}",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lshwres -r mempool -m {}",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lshwres -r proc --level lpar -m {}",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lshwres -r sriov --rsubtype adapter -m {}",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lshwres -r sriov --rsubtype logport --level eth -m {}",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lshwres -r sriov --rsubtype physport --level eth -m {}",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lshwres -r sriov --rsubtype physport --level ethc -m {}",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lshwres -r sriov --rsubtype physport --level roce -m {}",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lshwres -r virtualio --rsubtype eth --level lpar -m {}",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lshwres -r virtualio --rsubtype eth --level lpar -m {} -F lpar_name,port_vlan_id,vswitch,state,trunk_priority",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lshwres -r virtualio --rsubtype fc --level lpar -m {}",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lshwres -r virtualio --rsubtype vnic --level lpar -m {}",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lshwres -r virtualio --rsubtype vnicbkdev -m {}",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lslabelvios -r fcport -m {} -F --header",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL0238"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lslabelvios -r group -m {} --filter resources={} -F --header",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL0238"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lsmemopt -m {} -r lpar -o calcscore",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lsmemopt -m {} -r lpar -o currscore",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lsmemopt -m {} -r resgroup -o calcscore --gid all -F resource_group_name,resource_group_id,curr_score,predicted_score,requested_lpar_names,requested_lpar_ids,protected_lpar_names,protected_lpar_ids --header",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lsmemopt -m {} -r resgroup -o currscore --gid all",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lsmemopt -m {} -r resgroup -o currscore --gid all -F resource_group_name,resource_group_id,curr_score --header",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lsmemopt -m {} -r sys -o calcscore",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lsmemopt -m {} -r sys -o currscore",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lsrefcode -r lpar -m {} -n 1",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL9010"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lssyscfg -r lpar -F uuid,name",
+    "exit_status": [
+     1
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lssyscfg -r lpar -m {}",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL0237"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lssyscfg -r lpar -m {} --filter lpar_names={} -F name",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL0237"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lssyscfg -r prof -m {}",
+    "exit_status": [
+     1
+    ],
+    "codes": [
+     "HSCL0237"
+    ],
+    "outputs": [],
+    "error_streams": [
+     "stdout"
+    ]
+   },
+   {
+    "command": "lssyscfg -r sys -F name",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
+    "command": "lssyscfg -r sys -F uuid,name",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
+    "command": "lssyscfg -r sys -m {}",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
+    "command": "lssyscfg -r sys -m {} -F lpar_proc_compat_modes",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
+    "command": "lssyscfg -r sys -m {} -F type_model",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [],
+    "error_streams": []
+   },
+   {
+    "command": "lsviosbk -F --header",
+    "exit_status": [
+     0
+    ],
+    "codes": [],
+    "outputs": [
+     "No results were found."
+    ],
+    "error_streams": []
+   }
+  ],
+  "values": {
+   "lshmc :: ,base_version": [
+    "<text>"
+   ],
+   "lshmc :: version": [
+    "<text>"
+   ],
+   "lssyscfg -r sys :: 5250_application_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: active_lpar_mobility_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: active_lpar_share_idle_procs_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: active_mem_expansion_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: active_mem_mirroring_hypervisor_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: active_mem_sharing_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: addr_broadcast_perf_policy_capable": [
+    "unavailable"
+   ],
+   "lssyscfg -r sys :: advanced_hmc_automation_and_monitoring_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: aix_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: aix_update_access_key_exp_date": [
+    "<text>"
+   ],
+   "lssyscfg -r sys :: assign_5250_cpw_percent": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: capi_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: cluster_serial_num": [
+    "<text>"
+   ],
+   "lssyscfg -r sys :: cod_mem_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: cod_proc_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: curr_mfg_default_boot_mode": [
+    "unavailable"
+   ],
+   "lssyscfg -r sys :: curr_mfg_default_ipl_source": [
+    "<text>"
+   ],
+   "lssyscfg -r sys :: curr_power_on_side": [
+    "unavailable"
+   ],
+   "lssyscfg -r sys :: curr_power_on_speed": [
+    "unavailable"
+   ],
+   "lssyscfg -r sys :: curr_sys_keylock": [
+    "<text>"
+   ],
+   "lssyscfg -r sys :: description": [
+    "<empty>"
+   ],
+   "lssyscfg -r sys :: detailed_state": [
+    "None"
+   ],
+   "lssyscfg -r sys :: dynamic_platform_optimization_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: dynamic_simplified_remote_restart_toggle_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: electronic_err_reporting_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: firmware_power_saver_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: hardware_active_mem_expansion_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: hardware_discovery_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: hardware_power_saver_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: huge_page_mem_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: inactive_lpar_mobility_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: ipaddr": [
+    "<text>"
+   ],
+   "lssyscfg -r sys :: lpar_avail_priority_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: lpar_keystore_max_kbytes": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: lpar_keystore_min_kbytes": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: lpar_proc_compat_mode_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: lpar_proc_compat_modes": [
+    "<text>"
+   ],
+   "lssyscfg -r sys :: lpar_remote_restart_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: lpar_suspend_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: max_lpars": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: max_power_ctrl_lpars": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: max_resource_groups": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: max_vtpm_lpars": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: mfg_default_config": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: micro_lpar_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: name": [
+    "<text>"
+   ],
+   "lssyscfg -r sys :: os400_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: os400_native_io_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: peer_collective_serial_num": [
+    "<text>"
+   ],
+   "lssyscfg -r sys :: pend_mfg_default_boot_mode": [
+    "unavailable"
+   ],
+   "lssyscfg -r sys :: pend_mfg_default_ipl_source": [
+    "<text>"
+   ],
+   "lssyscfg -r sys :: pend_power_on_lpar_start_policy": [
+    "unavailable"
+   ],
+   "lssyscfg -r sys :: pend_power_on_option": [
+    "unavailable"
+   ],
+   "lssyscfg -r sys :: pend_power_on_side": [
+    "unavailable"
+   ],
+   "lssyscfg -r sys :: pend_power_on_speed": [
+    "unavailable"
+   ],
+   "lssyscfg -r sys :: pend_sys_keylock": [
+    "<text>"
+   ],
+   "lssyscfg -r sys :: power_off_policy": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: power_on_attr": [
+    "unavailable"
+   ],
+   "lssyscfg -r sys :: power_on_lpar_start_policy": [
+    "unavailable"
+   ],
+   "lssyscfg -r sys :: power_on_method": [
+    "unavailable"
+   ],
+   "lssyscfg -r sys :: power_on_option": [
+    "unavailable"
+   ],
+   "lssyscfg -r sys :: power_on_type": [
+    "unavailable"
+   ],
+   "lssyscfg -r sys :: powervm_lpar_remote_restart_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: powervm_lpar_simplified_remote_restart_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: redundant_err_path_reporting_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: serial_num": [
+    "<text>"
+   ],
+   "lssyscfg -r sys :: service_lpar_id": [
+    "<text>"
+   ],
+   "lssyscfg -r sys :: shared_eth_failover_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: sp_boot_attr": [
+    "unavailable"
+   ],
+   "lssyscfg -r sys :: sp_boot_major_type": [
+    "unavailable"
+   ],
+   "lssyscfg -r sys :: sp_boot_minor_type": [
+    "unavailable"
+   ],
+   "lssyscfg -r sys :: sp_failover_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: sp_type": [
+    "ebmc"
+   ],
+   "lssyscfg -r sys :: sp_version": [
+    "<text>"
+   ],
+   "lssyscfg -r sys :: state": [
+    "No Connection"
+   ],
+   "lssyscfg -r sys :: state_detail": [
+    "<empty>"
+   ],
+   "lssyscfg -r sys :: supported_vtpm_encryptions": [
+    "<text>"
+   ],
+   "lssyscfg -r sys :: supported_vtpm_versions": [
+    "<float>"
+   ],
+   "lssyscfg -r sys :: sys_time": [
+    "<text>"
+   ],
+   "lssyscfg -r sys :: type_model": [
+    "<text>"
+   ],
+   "lssyscfg -r sys :: uuid": [
+    "<uuid-lower>"
+   ],
+   "lssyscfg -r sys :: vet_activation_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: virtual_fc_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: virtual_io_server_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: virtual_switch_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: vpp": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: vsi_on_veth_capable": [
+    "<int>"
+   ],
+   "lssyscfg -r sys :: vsn_phase2_capable": [
+    "<int>"
+   ]
+  }
+ }
+}
