@@ -23,11 +23,11 @@ Changes:
 - Fixtures `rest-vios-scsi-mapping-unmapped-adapter` and `cli-vios-scsi-unmapped-adapter`
   (tokenized, cited in the fixture README), and the window's rows folded into
   `vocabulary/v10r3-p9.json`.
-- `_ADAPTER_SIDE_EFFECT` keeps naming only the `lshwres` listing: an unscoped null-id row
-  names no slot or partition and has other causes (ADR 0168), so it would not help.
+- `_ADAPTER_SIDE_EFFECT` is unchanged: a null-id row names no slot or partition and has other
+  causes (ADR 0168). Its "does not show" holds for `--lpar`; editing the module stales 34
+  operations' verification, so the wording waits for a change that re-verifies them.
 - Text only: the `_unmapped_server_adapters` docstring, `docs/live-testing.md`, ADR 0168's
   consequences, and the 2026-10-01 recovery spec's two #1250 references.
-
 No transition is needed. No product behaviour, identity or projection changes.
 
 ### Failure model
