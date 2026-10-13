@@ -562,3 +562,27 @@ def test_a_system_quick_all_does_not_list_is_refused(
 
     with pytest.raises(ValueError, match="no-such-system"):
         _resolve(tmp_path, "no-such-system")
+
+
+def test_partitions_are_not_resolved_without_the_system_uuid(
+    mock_hmc: Any, tmp_path: Path
+) -> None:
+    path, _ = live_response(QUICK_ALL)
+    mock_hmc.get(path).mock(side_effect=httpx.ReadTimeout("read timed out"))
+    unscoped = mock_hmc.get(url__regex=r"/(LogicalPartition|VirtualIOServer)/").mock(
+        return_value=httpx.Response(200, text="<feed/>")
+    )
+
+    async def run() -> Any:
+        async with HMCClient(make_config()) as hmc:
+            context = sweep.Context(system=DISCONNECTED_NAME, lpar="lp-1", vios="vio-1")
+            return await sweep.resolve_names(hmc, context, log)
+
+    log = sweep.ToolLog(tmp_path / "tools.capture.jsonl")
+    try:
+        names = asyncio.run(run())
+    finally:
+        log.close()
+
+    assert names == sweep.Names(system_name=DISCONNECTED_NAME)
+    assert not unscoped.called

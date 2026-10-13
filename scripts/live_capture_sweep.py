@@ -566,6 +566,10 @@ async def resolve_names(hmc: HMCClient, context: Context, log: ToolLog) -> Names
     if context.system is None:
         raise ValueError("no managed system was discovered; pass --system")
     sys_uuid, system_name = await resolve_system(hmc, context.system, log)
+    if sys_uuid is None:
+        # Unscoped, a partition name could resolve on another system and mislabel
+        # the capture; its placeholders stay unfilled and the raw phase skips them.
+        return Names(system_name=system_name, console_uuid=context.console)
     lpar_uuid = lpar_name = vios_uuid = vios_name = None
     if context.lpar:
         lpar_uuid = await resolve_lpar_uuid(
