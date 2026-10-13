@@ -560,9 +560,35 @@ async def resolve_system(
     raise ValueError(f"no managed system {system!r} in ManagedSystem/quick/All")
 
 
-async def resolve_names(hmc: HMCClient, context: Context, log: ToolLog) -> Names:
+async def resolve_partition(
+    hmc: HMCClient, step: str, value: str, sys_uuid: str, log: ToolLog
+) -> tuple[str | None, str | None]:
+    """(UUID, name) of the LPAR or VIOS *value* on *sys_uuid* (#1532).
+
+    A failed lookup or read is recorded and leaves both unset, so the raw phase still
+    runs without that partition's probes. A name the system does not list, or an
+    HTTP 404 for a supplied UUID, is the operator's mistake and still raises.
+    """
+    from hmcpctl.errors import HMCError
     from hmcpctl.resource_identity import resolve_lpar_uuid, resolve_vios_uuid
 
+    resolve, uom = (
+        (resolve_lpar_uuid, "LogicalPartition")
+        if step == "lpar"
+        else (resolve_vios_uuid, "VirtualIOServer")
+    )
+    try:
+        uuid = await resolve(hmc, value, system_name_or_uuid=sys_uuid)
+        entry = await hmc.get_uom(uom, uuid) or {}
+    except HMCError as exc:
+        if exc.status_code == 404:
+            raise
+        log.write({"kind": "resolve", "step": step, step: value, "exception": str(exc)})
+        return None, None
+    return uuid, _leaf((entry.get("Resource") or entry).get("PartitionName")) or None
+
+
+async def resolve_names(hmc: HMCClient, context: Context, log: ToolLog) -> Names:
     if context.system is None:
         raise ValueError("no managed system was discovered; pass --system")
     sys_uuid, system_name = await resolve_system(hmc, context.system, log)
@@ -572,17 +598,13 @@ async def resolve_names(hmc: HMCClient, context: Context, log: ToolLog) -> Names
         return Names(system_name=system_name, console_uuid=context.console)
     lpar_uuid = lpar_name = vios_uuid = vios_name = None
     if context.lpar:
-        lpar_uuid = await resolve_lpar_uuid(
-            hmc, context.lpar, system_name_or_uuid=sys_uuid
+        lpar_uuid, lpar_name = await resolve_partition(
+            hmc, "lpar", context.lpar, sys_uuid, log
         )
-        lpar = await hmc.get_uom("LogicalPartition", lpar_uuid) or {}
-        lpar_name = _leaf((lpar.get("Resource") or lpar).get("PartitionName")) or None
     if context.vios:
-        vios_uuid = await resolve_vios_uuid(
-            hmc, context.vios, system_name_or_uuid=sys_uuid
+        vios_uuid, vios_name = await resolve_partition(
+            hmc, "vios", context.vios, sys_uuid, log
         )
-        vios = await hmc.get_uom("VirtualIOServer", vios_uuid) or {}
-        vios_name = _leaf((vios.get("Resource") or vios).get("PartitionName")) or None
     return Names(
         sys_uuid=sys_uuid,
         system_name=system_name,
