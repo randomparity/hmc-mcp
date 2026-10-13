@@ -543,12 +543,33 @@ def _failed_provision_result(
     )
 
 
+def validate_provision_assignments(assignments: LparPcieAssignments) -> None:
+    """Refuse a dedicated-slot request, which provision cannot activate (#1390).
+
+    Provision's PowerOn activates the current configuration, so a slot written to
+    the new profile is never owned by the running partition. Activating the profile
+    instead would discard the adapters provision adds to the current configuration
+    (#1345). #1225 makes provision profile-first, which removes the conflict.
+    """
+    if assignments.dedicated:
+        raise ValueError(
+            "hmc_provision_lpar does not assign dedicated PCIe slots: its power-on "
+            "activates the current configuration, so the partition would not own a "
+            "slot written to its profile (#1390). Create the partition instead "
+            "(hmc_create_lpar, optionally with assignments.dedicated), or assign the "
+            "slot to its profile with hmc_assign_dedicated_pcie_slot while it is not "
+            "activated; then power it on with that profile (hmc_power_on_lpar with "
+            "partition_profile_uuid)."
+        )
+
+
 async def _preflight_provision_request(
     hmc: HMCClient,
     system_name_or_uuid: str,
     request: ProvisionRequest,
 ) -> None:
     """Validate a provisioning request and every external dependency it names."""
+    validate_provision_assignments(request.assignments)
     if request.affinity_assessment is not None and (
         request.affinity_assessment.system_name_or_uuid != system_name_or_uuid
         or request.affinity_assessment.lpar_name != request.name
