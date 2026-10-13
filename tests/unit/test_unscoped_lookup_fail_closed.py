@@ -129,7 +129,12 @@ async def test_a_failed_quick_all_read_fails_the_lookup(mock_hmc):
 
 
 def _disconnected_target(mock_hmc):
-    """sys-A: its scoped feed answers 204 and its own entry says no connection."""
+    """sys-A: its scoped feed answers 204 and its own entry says no connection.
+
+    The 2026-10-13 capture saw ``ManagedSystem/{uuid}`` time out for such a
+    system rather than answer; the fast answer here is synthetic. Either way the
+    scoped check raises before any write: a timeout raises a transport error.
+    """
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_A}/LogicalPartition").mock(
         return_value=httpx.Response(204)
     )
@@ -197,3 +202,52 @@ async def test_provision_refuses_before_any_write_when_the_target_cannot_be_read
     via_cli.assert_not_awaited()
     assert not hmc_wide.called
     assert_no_mutating_requests(mock_hmc)
+
+
+@pytest.mark.asyncio
+async def test_a_same_named_partition_on_another_system_does_not_block_create(
+    mock_hmc,
+):
+    hmc_wide = mock_hmc.get(
+        url__regex=r"/rest/api/uom/LogicalPartition/search/.*"
+    ).mock(
+        return_value=httpx.Response(
+            200, text=_feed(captured_lpar_entry(LPAR_UUID, "lpar-1"))
+        )
+    )
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_B}/LogicalPartition").mock(
+        return_value=httpx.Response(
+            200, text=_feed(captured_lpar_entry(VIOS_UUID, "other-lpar"))
+        )
+    )
+    create = mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYS_B}/LogicalPartition").mock(
+        return_value=httpx.Response(
+            201, text=_feed(captured_lpar_entry(LPAR_UUID, "lpar-1"))
+        )
+    )
+    creation = LparCreation(
+        name="lpar-1",
+        partition_type="AIX/Linux",
+        resources=LparResources(desired_memory=2048, desired_vcpus=1),
+    )
+
+    with (
+        patch(
+            "hmcpctl.operations.lpar.core.require_memory_within_system",
+            new=AsyncMock(),
+        ),
+        patch(
+            "hmcpctl.operations.lpar.ownership.stamp_lpar_ownership",
+            new=AsyncMock(return_value="tok"),
+        ),
+        patch(
+            "hmcpctl.operations.lpar.ownership._resolve_system_name",
+            new=AsyncMock(return_value="sys-B"),
+        ),
+    ):
+        async with HMCClient(make_config()) as hmc:
+            result = await create_and_stamp_lpar(hmc, SYS_B, creation)
+
+    assert create.called
+    assert not hmc_wide.called
+    assert result.resource_created is True

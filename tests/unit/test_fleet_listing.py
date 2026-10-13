@@ -182,3 +182,22 @@ async def test_a_system_missing_from_the_reread_keeps_the_original_error():
     with pytest.raises(HMCError) as raised:
         await read_fleet(hmc, _reader({E2_UUID: error}), "LPARs")
     assert raised.value is error
+
+
+@pytest.mark.asyncio
+async def test_the_reread_matches_the_failed_system_by_uuid():
+    hmc = _hmc(
+        [
+            _system(R1_UUID, "sys-R1", "operating"),
+            _system(E2_UUID, "sys-E2", "operating"),
+        ],
+        [
+            _system(R1_UUID, "sys-R1", "No Connection"),
+            _system(E2_UUID, "sys-E2", "operating"),
+        ],
+    )
+    error = HMCError("server error", 500)
+
+    with pytest.raises(HMCError) as raised:
+        await read_fleet(hmc, _reader({R1_UUID: [], E2_UUID: error}), "LPARs")
+    assert raised.value is error

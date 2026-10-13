@@ -28,6 +28,11 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
   managed system has at most one shared memory pool, so the remove now sends the documented
   `chhwres -r mempool -m <system> -o r`. It refuses when the system has no pool, and when any
   partition or profile does not report `mem_mode=ded` (#1245).
+- `hmc_create_lpar`'s duplicate-name check and read-back, and `hmc_provision_lpar`'s duplicate-name
+  check, read the target managed system instead of searching the HMC, so they refuse before any
+  write when the target cannot be read. A partition of the same name on another managed system no
+  longer blocks the create. An unscoped lookup of such a name reports the ambiguity, except while
+  one of the two systems cannot be read, when it finds the other; pass the system selector (#1309).
 
 ### Fixed
 
@@ -37,10 +42,6 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
   and, when any system is not `operating`, fails with an error naming those systems and asking for
   a system selector. When every system operates, not-found is unchanged. This resolves the 0.1.0
   known issue (#1309).
-- `hmc_create_lpar`'s duplicate-name check and read-back, and `hmc_provision_lpar`'s duplicate-name
-  check, read the target managed system instead of searching the HMC, so they refuse before any
-  write when the target cannot be read. A partition of the same name on another system no longer
-  blocks the create (#1309).
 - `hmc_list_lpars`, `hmc_list_vios` and `hmc_list_lpar_ownership` without a system no longer hang
   while a managed system is in `No Connection`: they take the system list from the managed-system
   summary rather than the full managed-system feed, which times out there. An unreadable system's

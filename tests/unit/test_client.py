@@ -1087,33 +1087,6 @@ async def test_list_managed_systems_fallback_warns_on_skipped_names(mock_hmc, ca
 
 
 @pytest.mark.asyncio
-async def test_inventory_fallback_returns_the_names_it_could_not_resolve(mock_hmc):
-    firmware_error = HMCError(
-        "GET failed: Nested path contains null property", status_code=500
-    )
-    found = {"UUID": "sys-uuid-1", "Resource": {"SystemName": "sys-E2"}}
-    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(
-        return_value=httpx.Response(
-            200,
-            json=[
-                {"UUID": "SYS-UUID-4", "SystemName": "sys-R1"},
-                {"UUID": "sys-uuid-5", "SystemName": "sys-R3"},
-                {"UUID": "sys-uuid-1", "SystemName": "sys-E2"},
-            ],
-        )
-    )
-    async with HMCClient(make_config()) as hmc:
-        hmc.list_uom = AsyncMock(side_effect=firmware_error)
-        hmc.search_uom = AsyncMock(
-            side_effect=[HMCError("unavailable", status_code=503), [], [found]]
-        )
-        systems, unresolved = await hmc.inventory_managed_systems()
-
-    assert systems == [found]
-    assert unresolved == [("sys-uuid-4", "sys-R1"), ("sys-uuid-5", "sys-R3")]
-
-
-@pytest.mark.asyncio
 async def test_list_managed_systems_fallback_quick_all_fails_raises_actionable_error(
     mock_hmc,
 ):

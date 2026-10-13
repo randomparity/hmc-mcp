@@ -36,8 +36,9 @@ check, call the unscoped lookup even though both already know the target system.
    check the name with the scoped lookup on that system, and create's read-back is scoped the
    same way. The scoped feed already refuses an empty answer from a non-operating system (#1301),
    so the check cannot pass on an unread system, and it fails before any write. A same-named
-   partition on a different system no longer blocks the create; the HMC allows it, and an
-   unscoped lookup of that name then reports the ambiguity.
+   partition on a different system no longer blocks the create; the HMC allows it. An unscoped
+   lookup of that name reports the ambiguity while both systems are readable, but returns the
+   readable twin when the other's system is not.
 3. **Fleet inventory.** `read_fleet` takes its system list from `quick/All`
    (`list_system_summaries()`), not the full `ManagedSystem` feed. A system whose `State` is not
    `operating`, or whose `UUID` is not a UUID, is recorded in `unreadable_systems`; `detailed_state`
@@ -63,9 +64,12 @@ non-operating system, and none shows a non-empty `StateDetail`, so the mapping o
    `ManagedSystem` feed.
 3. Accepted failure classes: a name lookup that misses while any system is down now fails instead
    of answering, even when the name exists nowhere; the error says how to scope it. A system
-   that leaves `operating` between the `quick/All` read and the search is not detected. The
-   ambiguity path of the unscoped lookups still reads the full `ManagedSystem` feed (reported as a
-   follow-up).
+   that leaves `operating` between the `quick/All` read and the search is not detected. A search
+   hit is returned without reading `quick/All` (decision 1), so a same-named partition on an
+   unreadable system is not reported as an ambiguity. The ambiguity path of the unscoped lookups,
+   and the non-operating refusal of an empty scoped feed (`require_operating_system`, which reads
+   `ManagedSystem/{uuid}`), still read the endpoints the capture saw time out; both fail closed
+   and are reported as follow-ups.
 4. Covered elsewhere: the scoped feeds' non-operating refusal (#1301, `require_operating_system`).
 
 ## Success

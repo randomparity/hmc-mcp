@@ -129,21 +129,16 @@ class SystemsMixin:
         }
 
     async def list_managed_systems(self: SystemsClient) -> list[dict[str, Any]]:
-        return (await self.inventory_managed_systems())[0]
-
-    async def inventory_managed_systems(
-        self: SystemsClient,
-    ) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
-        """Managed-system entries, and the (UUID, SystemName) pairs left unresolved.
+        """Every managed-system entry from the full ManagedSystem feed.
 
         Some firmware 500s on the unfiltered feed over a null hardware-inventory
         property (e.g. VirtualPersistentMemoryVolume/Uuid). quick/All +
         find_system_by_name (a different, working path) resolve what they can;
         a system that still fails (or resolves ambiguously) is skipped with a
-        warning rather than failing the whole call, and returned as unresolved.
+        warning rather than failing the whole call.
         """
         try:
-            return await self.list_uom("ManagedSystem"), []
+            return await self.list_uom("ManagedSystem")
         except HMCError as exc:
             if not (
                 exc.status_code == 500
@@ -157,8 +152,7 @@ class SystemsMixin:
                 names = {}
                 quick_all_exc = qa_exc
             resolved: list[dict[str, Any]] = []
-            unresolved: list[tuple[str, str]] = []
-            for uuid, name in names.items():
+            for name in names.values():
                 try:
                     entry = await self.find_system_by_name(name)
                 except (HMCError, ValueError) as resolution_exc:
@@ -167,7 +161,6 @@ class SystemsMixin:
                         name,
                         resolution_exc,
                     )
-                    unresolved.append((uuid, name))
                     continue
                 if entry is not None:
                     resolved.append(entry)
@@ -176,9 +169,8 @@ class SystemsMixin:
                         "Skipping managed system %r during inventory fallback: not found",
                         name,
                     )
-                    unresolved.append((uuid, name))
             if resolved:
-                return resolved, unresolved
+                return resolved
             raise HMCError(
                 "Managed-system inventory is unavailable because this HMC "
                 "firmware could not serialize a null hardware property; "
