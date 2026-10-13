@@ -109,7 +109,9 @@ in one pass from three raw captures of the same HMC: a tracked read-only sweep
 that day, the 2026-09-29/30 #1161 and #879 mutation windows (where its job
 statuses come from), and the 2026-10-12 #1242 PCM metric-feed reads. The window
 captures predate the tracked harness, so their REST rows have a null `accept`
-and `content_type`, and their CLI records contribute nothing. The raw captures,
+and `content_type`, and their CLI records contribute nothing. The derivation
+replaced the 2026-09-30 sweep and the lost window fold, so rows only those held
+are gone; the #1310 pull request lists them. The raw captures,
 the corpus and the `export.sh` that re-runs the derivation are private, on the
 live-test host under `~/hmc-live-evidence/2026-10-13-q1310/`.
 

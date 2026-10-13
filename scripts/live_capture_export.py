@@ -682,7 +682,7 @@ def path_template(path: str) -> str:
     An absolute href (a link the HMC returned, fetched as given) keeps only its path.
     """
     href = urllib.parse.urlsplit(path)
-    if href.netloc:
+    if href.scheme in ("http", "https") and href.netloc:
         path = urllib.parse.urlunsplit(("", "", href.path, href.query, ""))
     base, _, query = path.partition("?")
     base = UUID.sub("{uuid}", base)
