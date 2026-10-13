@@ -23,7 +23,6 @@ import pytest
 
 from hmcpctl.config import HMCConfig
 from hmcpctl.ssh import io_inventory, sriov, vnic
-from hmcpctl.ssh import memory as ssh_memory
 from hmcpctl.ssh import profiles as ssh_profiles
 from hmcpctl.ssh.commands import (
     build_attribute_record,
@@ -321,12 +320,6 @@ def test_list_fc_ports_renders_the_whole_expression_quoted():
     assert "--filter 'lpar_names=my name'" in sent[0]
 
 
-def test_remove_memory_pool_refuses_a_delimiter_in_the_pool_name():
-    """The mempool bare-value form validates against the same table."""
-    with pytest.raises(HMCCLIError, match="comma"):
-        asyncio.run(ssh_memory.remove_memory_pool(_config(), "sys-a", "pool,extra=1"))
-
-
 @pytest.mark.parametrize("name", ["my lpar", "lpar;name"])
 def test_set_lpar_description_quotes_hmc_legal_names(name):
     """Live HMC testing confirms space and semicolon are ordinary value data."""
@@ -440,14 +433,6 @@ def test_assign_profile_io_slot_rejects_a_hostile_lpar_name():
 
 BUILDER_NAME = "build_attribute_record"
 FILTER_BUILDER_NAME = "build_filter"
-
-
-# The one value-form `-a` site: `chhwres -r mempool -o r -a <pool_name>`
-# carries a bare pool name, not name=value pairs (ADR 0061).  Exempted by
-# enclosing function, so a future record-form `-a` site cannot hide behind
-# it; tests/unit/test_ssh_quoting.py::
-# test_remove_memory_pool_quotes_hostile_pool_name pins the bare emission.
-VALUE_FORM_A_FUNCTIONS = {"remove_memory_pool"}
 
 
 def _static_text(node: ast.AST) -> str:
@@ -718,38 +703,7 @@ def _unguarded_i_values(func: ast.FunctionDef | ast.AsyncFunctionDef) -> list[st
 
 
 def _unguarded_a_values(func: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
-    """Return *func*'s ``-a`` payloads not built by the record builder.
-
-    A function in :data:`VALUE_FORM_A_FUNCTIONS` may carry the bare-value
-    ``-a`` form only: its payload must be a plain name.  A builder call (or
-    any other expression) inside an exempted function means someone added a
-    record-form site where the exemption lives, and it is reported.
-    """
-    if func.name in VALUE_FORM_A_FUNCTIONS:
-        problems: list[str] = []
-        for literal in _selected_literals(func, _is_an_a_record_literal):
-            if not isinstance(literal, ast.JoinedStr):
-                problems.append(ast.unparse(literal))
-                continue
-            for index, part in enumerate(literal.values):
-                segment = part.value if isinstance(part, ast.Constant) else ""
-                if not _ends_with_flag_token(segment, "-a"):
-                    continue
-                payload = (
-                    literal.values[index + 1]
-                    if index + 1 < len(literal.values)
-                    else None
-                )
-                expression = (
-                    _unwrap_shlex_quote(payload.value)
-                    if isinstance(payload, ast.FormattedValue)
-                    else None
-                )
-                if _is_builder_call(expression, BUILDER_NAME) or not isinstance(
-                    expression, ast.Name
-                ):
-                    problems.append(ast.unparse(literal))
-        return problems
+    """Return *func*'s ``-a`` payloads not built by the record builder."""
     return _unguarded_payloads_for(func, _is_an_a_record_literal, "-a", BUILDER_NAME)
 
 
@@ -885,7 +839,6 @@ def test_the_scan_finds_every_known_site(scanned_modules):
     assert by_label["-a"] == {
         "assign_sriov_logical_port_dynamic",
         "add_vnic_backing",
-        "remove_memory_pool",
     }
     assert by_label["--filter"] == {
         "scsi_adapter_listing",
@@ -959,25 +912,6 @@ def test_the_scan_reports_an_unguarded_whole_expression_filter():
         "import shlex\ndef f(x):\n    cmd = f'lssyscfg -r lpar -m sys --filter {shlex.quote(build_filter([(\"lpar_names\", x)]))}'\n    return cmd"
     )
     assert _unguarded_filter_values(guarded_func) == []
-
-
-def test_the_value_form_a_site_is_exempt_by_enclosing_function():
-    """The mempool bare-value form is skipped; a renamed copy would not be."""
-    template = [
-        "import shlex",
-        "def {name}(config, system, pool_name):",
-        "    cmd = f'chhwres -r mempool -m sys -o r -a {shlex.quote(pool_name)}'",
-        "    return cmd",
-    ]
-    exempt_func = _function_from_source(
-        "\n".join(template).replace("{name}", "remove_memory_pool")
-    )
-    assert _unguarded_a_values(exempt_func) == []
-
-    other_func = _function_from_source(
-        "\n".join(template).replace("{name}", "remove_pool_copy")
-    )
-    assert _unguarded_a_values(other_func)
 
 
 @pytest.mark.parametrize("label,predicate,checker", SELECTIONS)
