@@ -138,12 +138,14 @@ def _mac_element(match: re.Match[str]) -> str:
 
 # Replacements write `\g<1>`, never `\1` before a digit: `\1000000000000` is the
 # octal escape for `@` and deleted the opening <MACAddress> tag 959 times.
+# An element-value rule's opening tag ends `(?<!/)>`: a self-closing element has no
+# value, and `[^<]+` would otherwise take the whitespace after it.
 SECRET_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     # Both key elements are redacted whole; an SSH key in free text loses its body
     # and its comment, which is conventionally user@host, up to the next `<`.
     (
         re.compile(
-            r"(<(?:\w+:)?(?:PublicSSHKeyValue|AuthorizedKeysValue)\b[^>]*>)[^<]+"
+            r"(<(?:\w+:)?(?:PublicSSHKeyValue|AuthorizedKeysValue)\b[^>]*(?<!/)>)[^<]+"
         ),
         r"\g<1><REDACTED-SSHKEY>",
     ),
@@ -155,7 +157,10 @@ SECRET_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
         r"\g<1> <REDACTED-SSHKEY>",
     ),
     (re.compile(r"(?i)\b(x-api-session=)[^,}\s]+"), r"\g<1><REDACTED-SESSION>"),
-    (re.compile(r"(?i)(<X-API-Session\b[^>]*>)[^<]+"), r"\g<1><REDACTED-SESSION>"),
+    (
+        re.compile(r"(?i)(<X-API-Session\b[^>]*(?<!/)>)[^<]+"),
+        r"\g<1><REDACTED-SESSION>",
+    ),
     (
         re.compile(r"(?i)\b(JSESSIONID|CCFWSESSION|LtpaToken2)=[^;,}\s]+"),
         r"\g<1>=<REDACTED-COOKIE>",
@@ -175,7 +180,7 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
         HMC_HOST,
     ),
     (
-        re.compile(rf"(<(?:\w+:)?(?:{_ADDRESS_ELEMENTS})\b[^>]*>)[^<]+"),
+        re.compile(rf"(<(?:\w+:)?(?:{_ADDRESS_ELEMENTS})\b[^>]*(?<!/)>)[^<]+"),
         rf"\g<1>{PLACEHOLDER_IP}",
     ),
     (re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"), PLACEHOLDER_IP),
@@ -186,7 +191,7 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     # and other short logical-unit segments stay.
     (re.compile(r"(?<=-)L[0-9A-F]{8,}(?=-L|\b)"), "L<REDACTED-DEVID>"),
     (
-        re.compile(rf"(<(?:\w+:)?(?:{_DEVICE_ID_ELEMENTS})\b[^>]*>)[^<]+"),
+        re.compile(rf"(<(?:\w+:)?(?:{_DEVICE_ID_ELEMENTS})\b[^>]*(?<!/)>)[^<]+"),
         r"\g<1><REDACTED-DEVID>",
     ),
     # A quoted CSV field holds every value up to its closing quote: "wwpns=a,b".
@@ -199,7 +204,7 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
         r"\g<1>=<REDACTED-DEVID>",
     ),
     (
-        re.compile(r"(<(?:\w+:)?(?:Logical)?SerialNumber\b[^>]*>)[^<]+"),
+        re.compile(r"(<(?:\w+:)?(?:Logical)?SerialNumber\b[^>]*(?<!/)>)[^<]+"),
         r"\g<1><REDACTED-SERIAL>",
     ),
     (re.compile(r"\b(\d{4}-[0-9A-Z]{3}\*)[0-9A-Z]{7}\b"), r"\g<1><REDACTED-SERIAL>"),

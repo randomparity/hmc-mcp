@@ -305,6 +305,29 @@ def test_mac_elements_scrub_only_hex(element: str, value: str, token: str) -> No
     assert corpus[-1]["body"] == f"<{element}>{token}</{element}>"
 
 
+@pytest.mark.parametrize(
+    "element",
+    [
+        "PublicSSHKeyValue",
+        "AuthorizedKeysValue",
+        "X-API-Session",
+        "IPAddress",
+        "WWPN",
+        "SerialNumber",
+        "LogicalSerialNumber",
+        "MACAddress",
+    ],
+)
+@pytest.mark.parametrize("closer", ["/>", " />"])
+def test_self_closing_element_keeps_the_text_after_it(
+    element: str, closer: str
+) -> None:
+    """Regression #1525: `[^>]*>` took the `/` and the rule rewrote the next text node."""
+    body = f"<Root><{element}{closer}\n  <Next>x</Next></Root>"
+    corpus = export.tokenize_records(_records(_rest("/e", body)))
+    assert corpus[-1]["body"] == body
+
+
 def test_uuid_tokens_keep_case_and_are_consistent() -> None:
     corpus = export.tokenize_records(_records(_ssh("lssyscfg", LPAR_UUID.lower())))
     upper = corpus[1]["path"].rsplit("/", 1)[1]
