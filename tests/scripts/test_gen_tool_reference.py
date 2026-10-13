@@ -12,6 +12,7 @@ import asyncio
 import importlib.util
 import json
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -140,6 +141,52 @@ def test_records_join_shared_maturity_and_render_sparse_absence(
         assert f"`{value}`" in pages["index.md"]
     assert "`unrecorded`" in pages["index.md"]
     assert "`existing-runtime-guards`" in pages["index.md"]
+
+
+def test_rendered_verification_is_identical_more_than_90_days_apart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install_projection(
+        tmp_path,
+        monkeypatch,
+        {
+            "format_version": 1,
+            "runtime_eligibility": "existing-runtime-guards",
+            "operations": [
+                {
+                    "operation": "alpha.list",
+                    "implementation": "implemented",
+                    "verification": "current",
+                    "reason": None,
+                    "observed_at": "2026-09-01T12:00:00Z",
+                }
+            ],
+        },
+    )
+    rendered = []
+    for reference_date in (
+        datetime(2026, 9, 2, tzinfo=UTC),
+        datetime(2027, 9, 2, tzinfo=UTC),
+    ):
+
+        class FrozenDatetime(datetime):
+            instant = reference_date
+
+            @classmethod
+            def now(cls, tz=None):
+                return (
+                    cls.instant.astimezone(tz)
+                    if tz is not None
+                    else cls.instant.replace(tzinfo=None)
+                )
+
+        monkeypatch.setattr(maturity, "datetime", FrozenDatetime)
+        pages = gen_tool_reference.render_pages(_records())
+        rendered.append({name: page.encode("utf-8") for name, page in pages.items()})
+
+    assert rendered[0] == rendered[1]
+    assert b"| `implemented` | `current` |" in rendered[1]["alpha.md"]
+    assert b"| `unrecorded` | `unrecorded` |" in rendered[1]["beta.md"]
 
 
 def test_records_reject_malformed_projection_grammar(
