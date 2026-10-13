@@ -1,4 +1,4 @@
-"""Fleet-wide reads take their systems from ``ManagedSystem/quick/All`` (#1501).
+"""Fleet-wide and system reads take their systems from ``ManagedSystem/quick/All`` (#1501).
 
 The 2026-10-13 capture (#1290) saw the full ``ManagedSystem`` feed, and a
 ``No Connection`` system's ``ManagedSystem/{uuid}`` entry, time out.
@@ -26,15 +26,22 @@ from conftest import (
 )
 
 from hmcpctl.client.core import HMCClient
+from hmcpctl.documents.lpar import LparResources
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.inventory.capacity import fetch_capacity_report
+from hmcpctl.operations.inventory.composite import fetch_system_summary
+from hmcpctl.operations.inventory.logical import read_inventory
 from hmcpctl.operations.inventory.utilization import (
     FIGURE_GROUPS,
     fleet_systems,
     survey_hmc,
 )
+from hmcpctl.operations.lpar.memory_bound import require_memory_within_system
 from hmcpctl.operations.lpar.ownership import _discover_owning_system
+from hmcpctl.operations.lpar.plan import _enumerate as plan_enumerate
+from hmcpctl.operations.systems.core import get_system, list_systems
 from hmcpctl.operations.systems.health import fetch_fleet_health
+from hmcpctl.operations.vios.core import _resolve_vios_backup_system_name
 
 QUICK_ALL = "rest-ms-quick-all-no-connection-v11r2"
 SUMMARIES = json.loads(live_fixture(QUICK_ALL)["body"])
@@ -269,3 +276,149 @@ async def test_a_listed_system_without_an_entry_fails_the_read(mock_hmc, operati
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError, match="listed by quick/All has no entry"):
             await operation(hmc, *arguments)
+
+
+# --- system listings and full-entry readers (#1501 part 4) ---------------------------
+
+
+def _sparse(name: str) -> dict:
+    return {
+        "UUID": UUIDS[name],
+        "title": None,
+        "link": None,
+        "ResourceType": "ManagedSystem",
+        "Resource": {"SystemName": name, "State": "no connection", "StateDetail": ""},
+    }
+
+
+@pytest.mark.asyncio
+async def test_list_systems_gives_disconnected_systems_sparse_entries(mock_hmc):
+    fleet = _Fleet(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        entries = await list_systems(hmc)
+
+    by_uuid = {entry["UUID"]: entry for entry in entries}
+    assert len(entries) == len(SUMMARIES)
+    assert by_uuid[UUIDS["sys-R8"]] == _sparse("sys-R8")
+    assert by_uuid[UUIDS["sys-R11"]] == _sparse("sys-R11")
+    assert by_uuid[UUIDS["sys-R1"]]["Resource"]["SystemName"] == "sys-R1"
+    assert "AssociatedSystemMemoryConfiguration" in by_uuid[UUIDS["sys-R1"]]["Resource"]
+    assert fleet.read(fleet.entries) == OPERATING
+    fleet.assert_disconnected_entries_unread()
+
+
+@pytest.mark.asyncio
+async def test_list_systems_filters_state_without_reading_entries(mock_hmc):
+    fleet = _Fleet(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        entries = await list_systems(hmc, "no connection")
+
+    assert sorted(entry["Resource"]["SystemName"] for entry in entries) == [
+        "sys-R11",
+        "sys-R8",
+    ]
+    assert not fleet.entries.called
+    fleet.assert_disconnected_entries_unread()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("selector", "full"),
+    [("sys-R8", False), (UUIDS["sys-R8"].upper(), False), ("sys-R1", True)],
+)
+async def test_get_system_selects_from_quick_all(mock_hmc, selector, full):
+    fleet = _Fleet(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        entry = await get_system(hmc, selector)
+
+    if full:
+        assert entry["Resource"]["SystemName"] == "sys-R1"
+        assert "MachineTypeModelAndSerialNumber" in entry["Resource"]
+    else:
+        assert entry == _sparse("sys-R8")
+    fleet.assert_disconnected_entries_unread()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("read", "reading"),
+    [
+        (lambda hmc, uuid: fetch_system_summary(hmc, uuid), "the summary"),
+        (_resolve_vios_backup_system_name, "the MTMS"),
+    ],
+    ids=["summary", "vios-backup"],
+)
+async def test_a_full_entry_reader_refuses_a_disconnected_system(
+    mock_hmc, read, reading
+):
+    fleet = _Fleet(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError) as raised:
+            await read(hmc, UUIDS["sys-R8"])
+
+    assert str(raised.value) == (
+        f"Cannot read {reading} of managed system 'sys-R8' ({UUIDS['sys-R8']}): "
+        "it is in State 'no connection'; retry when it reconnects"
+    )
+    assert not fleet.scoped.called
+    fleet.assert_disconnected_entries_unread()
+
+
+@pytest.mark.asyncio
+async def test_the_memory_bound_is_unchecked_for_a_disconnected_system(mock_hmc):
+    fleet = _Fleet(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        await require_memory_within_system(
+            hmc, UUIDS["sys-R8"], LparResources(desired_memory=10**9)
+        )
+        with pytest.raises(ValueError, match="exceeds the managed system"):
+            await require_memory_within_system(
+                hmc, UUIDS["sys-R1"], LparResources(desired_memory=10**9)
+            )
+
+    fleet.assert_disconnected_entries_unread()
+
+
+@pytest.mark.asyncio
+async def test_logical_inventory_enumerates_from_quick_all(mock_hmc):
+    fleet = _Fleet(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        page = await read_inventory(
+            hmc,
+            connection="lab",
+            admit=lambda _tool, _selector: None,
+            systems=None,
+            lpar_state=None,
+            owner=None,
+            limit=50,
+            cursor=None,
+        )
+
+    assert {system.uuid for system in page.systems} == set(UUIDS.values())
+    disconnected = [s for s in page.systems if s.uuid in DISCONNECTED]
+    assert {s.state for s in disconnected} == {"no connection"}
+    assert {s.sources.capacity.status for s in disconnected} == {"unavailable"}
+    assert fleet.read(fleet.entries) == OPERATING
+    fleet.assert_disconnected_entries_unread()
+
+
+@pytest.mark.asyncio
+async def test_plan_enumeration_reads_only_operating_entries(mock_hmc):
+    fleet = _Fleet(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        candidates, blocker, truncated = await plan_enumerate(
+            hmc, lambda _tool, _system, _vios: None
+        )
+
+    assert (blocker, truncated) == (None, False)
+    states = {c.uuid: c.entry["Resource"]["State"] for c in candidates}
+    assert {states[uuid] for uuid in DISCONNECTED} == {"no connection"}
+    assert fleet.read(fleet.entries) == OPERATING
+    fleet.assert_disconnected_entries_unread()

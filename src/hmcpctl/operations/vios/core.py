@@ -10,7 +10,11 @@ from typing import Any, Literal
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.operations.partition_state import PARTITION_STATES, PartitionState
-from hmcpctl.operations.systems.fleet import FleetListing, read_fleet
+from hmcpctl.operations.systems.fleet import (
+    FleetListing,
+    operating_system_entry,
+    read_fleet,
+)
 
 from ...documents.lpar import LparResources, build_vios_document
 from ...errors import HMCError
@@ -159,7 +163,7 @@ async def _resolve_vios_backup_system_name(
     """Resolve a system UUID to its unique CLI MTMS identity."""
     if not is_uuid(system_name_or_uuid):
         return system_name_or_uuid
-    entry = await hmc.get_managed_system(system_name_or_uuid)
+    entry = await operating_system_entry(hmc, system_name_or_uuid, "the MTMS")
     resource = (entry or {}).get("Resource") or {}
     mtms = render_mtms(resource)
     if mtms is not None:

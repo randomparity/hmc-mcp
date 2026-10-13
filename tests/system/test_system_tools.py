@@ -221,67 +221,55 @@ def test_console_info_propagates_unrelated_http_500(monkeypatch, mock_hmc):
     assert exc_info.value.__cause__ is None
 
 
+def _system_entry(mock_hmc, name: str, state: str = "operating"):
+    """quick/All lists one system; its own entry answers when it is operating."""
+    mock_system_summaries(mock_hmc, (SYSTEM_UUID, name, state))
+    return mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
+        return_value=httpx.Response(
+            200, text=_feed(SYSTEM_UUID, "ManagedSystem", SystemName=name, State=state)
+        )
+    )
+
+
 # ---------------------------------------------------------------------- #
 # hmc_list_systems
 # ---------------------------------------------------------------------- #
 
 
 def test_systems_no_arg_lists_all(monkeypatch, mock_hmc):
-    """hmc_list_systems() lists all managed systems."""
+    """hmc_list_systems() lists every system quick/All reports, with its full entry."""
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
-        return_value=httpx.Response(
-            200, text=_feed(SYSTEM_UUID, "ManagedSystem", SystemName="s824-01")
-        )
-    )
+    _system_entry(mock_hmc, "s824-01")
     result = hmc_list_systems()
     assert result[0]["UUID"] == SYSTEM_UUID
     assert result[0]["Resource"]["SystemName"] == "s824-01"
+    assert result[0]["ResourceType"] == "ManagedSystem"
 
 
 def test_find_system_gets_one_by_name(monkeypatch, mock_hmc):
     """hmc_get_system returns one system dict by exact name."""
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==p10-e1080)").mock(
-        return_value=httpx.Response(
-            200,
-            text=_feed(
-                SYSTEM_UUID,
-                "ManagedSystem",
-                SystemName="p10-e1080",
-                State="operating",
-            ),
-        )
-    )
+    _system_entry(mock_hmc, "p10-e1080")
     result = hmc_get_system("p10-e1080")
     assert result["Resource"]["State"] == "operating"
 
 
 def test_get_system_gets_one_by_uuid(monkeypatch, mock_hmc):
-    """hmc_get_system resolves a UUID through the direct resource endpoint."""
+    """hmc_get_system resolves a UUID through quick/All, then the direct endpoint."""
     _hmc_env(monkeypatch)
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
-        return_value=httpx.Response(
-            200,
-            text=_feed(
-                SYSTEM_UUID,
-                "ManagedSystem",
-                SystemName="p10-e1080",
-                State="operating",
-            ),
-        )
-    )
+    entry = _system_entry(mock_hmc, "p10-e1080")
 
     result = hmc_get_system(SYSTEM_UUID)
 
     assert result is not None
     assert result["UUID"] == SYSTEM_UUID
+    assert entry.called
 
 
 def test_find_system_list_error_propagates(monkeypatch, mock_hmc):
     """An inventory error during a system lookup preserves its status code."""
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==p10-e1080)").mock(
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(
         return_value=httpx.Response(404, text="<error>not found</error>")
     )
     with pytest.raises(HMCError) as exc_info:
@@ -412,11 +400,7 @@ def test_vios_with_uuid_returns_storage_detail(monkeypatch, mock_hmc):
 def test_find_system_found(monkeypatch, mock_hmc):
     """hmc_get_system returns the matching system entry when found."""
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==p9-01)").mock(
-        return_value=httpx.Response(
-            200, text=_feed(SYSTEM_UUID, "ManagedSystem", SystemName="p9-01")
-        )
-    )
+    _system_entry(mock_hmc, "p9-01")
     result = hmc_get_system("p9-01")
     assert result is not None
     assert result["UUID"] == SYSTEM_UUID
@@ -426,9 +410,7 @@ def test_find_system_found(monkeypatch, mock_hmc):
 def test_find_system_not_found(monkeypatch, mock_hmc):
     """hmc_get_system returns None when no system matches the name."""
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==ghost-sys)").mock(
-        return_value=httpx.Response(200, text=EMPTY_FEED)
-    )
+    mock_system_summaries(mock_hmc, (SYSTEM_UUID, "p9-01", "operating"))
     result = hmc_get_system("ghost-sys")
     assert result is None
 
@@ -592,10 +574,16 @@ def test_find_placement_no_candidates(monkeypatch, mock_hmc):
 # ---------------------------------------------------------------------- #
 
 
-def test_systems_state_filter_uses_search_endpoint(monkeypatch, mock_hmc):
-    """hmc_list_systems(state='operating') GETs the search endpoint, not the collection."""
+def test_systems_state_filter_reads_quick_all_not_the_search(monkeypatch, mock_hmc):
+    """hmc_list_systems(state=...) filters quick/All locally; the search can stall."""
     _hmc_env(monkeypatch)
-    route = mock_hmc.get("/rest/api/uom/ManagedSystem/search/(State==operating)").mock(
+    other = "00000000-0000-0000-0000-0000000000ff"
+    mock_system_summaries(
+        mock_hmc,
+        (SYSTEM_UUID, "s824-01", "operating"),
+        (other, "s824-02", "no connection"),
+    )
+    entry = mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(
             200,
             text=_feed(
@@ -603,18 +591,19 @@ def test_systems_state_filter_uses_search_endpoint(monkeypatch, mock_hmc):
             ),
         )
     )
+    search = mock_hmc.get(url__regex=r"/ManagedSystem/search/.*").mock(
+        side_effect=httpx.ReadTimeout("stalled")
+    )
     result = hmc_list_systems(state="operating")
-    assert route.called
+    assert entry.called and not search.called
     assert len(result) == 1
     assert result[0]["Resource"]["State"] == "operating"
 
 
 def test_systems_state_filter_empty_returns_empty_list(monkeypatch, mock_hmc):
-    """hmc_list_systems(state='no-match') returns [] when the search finds nothing."""
+    """hmc_list_systems(state='no-match') returns [] when no system has that State."""
     _hmc_env(monkeypatch)
-    mock_hmc.get("/rest/api/uom/ManagedSystem/search/(State==no-match)").mock(
-        return_value=httpx.Response(200, text=EMPTY_FEED)
-    )
+    mock_system_summaries(mock_hmc, (SYSTEM_UUID, "s824-01", "operating"))
     result = hmc_list_systems(state="no-match")
     assert result == []
 

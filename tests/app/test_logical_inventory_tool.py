@@ -86,19 +86,20 @@ class _HMC:
         self.calls: list[str] = []
         self.stalled: set[str] = set()
 
-    async def list_uom(self, resource_type: str) -> list[dict]:
-        self.calls.append(f"list_uom {resource_type}")
-        return list(self.systems.values())
+    async def list_system_summaries(self) -> list[dict]:
+        self.calls.append("list_system_summaries")
+        return [
+            {
+                "UUID": uuid,
+                "SystemName": entry["Resource"]["SystemName"],
+                "State": "operating",
+            }
+            for uuid, entry in self.systems.items()
+        ]
 
-    async def get_uom(self, resource_type: str, uuid: str) -> dict | None:
+    async def get_managed_system(self, uuid: str) -> dict | None:
+        self.calls.append(f"get_managed_system {uuid}")
         return self.systems.get(uuid)
-
-    async def find_system_by_name(self, name: str) -> dict | None:
-        self.calls.append(f"find_system_by_name {name}")
-        return next(
-            (s for s in self.systems.values() if s["Resource"]["SystemName"] == name),
-            None,
-        )
 
     async def list_logical_partitions(self, uuid: str) -> list[dict]:
         self.calls.append(f"list_logical_partitions {uuid}")
@@ -211,7 +212,7 @@ def test_targets_table_admits_each_selector_separately():
         None,
         None,
     )
-    assert "find_system_by_name sysB" not in hmc.calls
+    assert hmc.calls.count("list_system_summaries") == 1
     assert [p["system_id"] for p in page["partitions"]] == [f"<default>/{SYS_A}"]
 
 

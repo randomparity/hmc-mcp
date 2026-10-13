@@ -684,9 +684,8 @@ def test_plan_digest_is_pinned() -> None:
 
 _READS = frozenset(
     {
-        "list_uom",
-        "get_uom",
-        "find_system_by_name",
+        "list_system_summaries",
+        "get_managed_system",
         "list_logical_partitions",
         "list_virtual_networks",
         "list_vios",
@@ -789,37 +788,29 @@ class FakeHMC:
         self.config = HMCConfig.from_mapping({"iso_url_allowlist": allowlist})
         self.calls: list[tuple[str, str | None]] = []
         self.systems_error: Exception | None = None
-        self.by_name_error: Exception | None = None
+        self.extra_summaries: list[dict] = []
         self.detail_error: Exception | None = None
 
     def _world(self, uuid: str) -> World:
         return self.worlds[uuid]
 
-    async def list_uom(self, resource_type: str) -> list[dict]:
-        assert resource_type == "ManagedSystem"
-        self.calls.append(("list_uom", None))
+    async def list_system_summaries(self) -> list[dict]:
+        self.calls.append(("list_system_summaries", None))
         if self.systems_error is not None:
             raise self.systems_error
-        return [world.entry for world in self.worlds.values()]
+        return [
+            {
+                "UUID": world.entry["UUID"],
+                "SystemName": world.entry["Resource"]["SystemName"],
+                "State": world.entry["Resource"]["State"],
+            }
+            for world in self.worlds.values()
+        ] + self.extra_summaries
 
-    async def get_uom(self, resource_type: str, uuid: str) -> dict | None:
-        assert resource_type == "ManagedSystem"
-        self.calls.append(("get_uom", uuid))
+    async def get_managed_system(self, uuid: str) -> dict | None:
+        self.calls.append(("get_managed_system", uuid))
         world = self.worlds.get(uuid.lower())
         return world.entry if world else None
-
-    async def find_system_by_name(self, name: str) -> dict | None:
-        self.calls.append(("find_system_by_name", name))
-        if self.by_name_error is not None:
-            raise self.by_name_error
-        return next(
-            (
-                world.entry
-                for world in self.worlds.values()
-                if world.entry["Resource"]["SystemName"] == name
-            ),
-            None,
-        )
 
     async def list_logical_partitions(self, uuid: str) -> list[dict]:
         self.calls.append(("list_logical_partitions", uuid))
@@ -1217,7 +1208,7 @@ def test_placement_selectors_are_admitted_before_resolution() -> None:
     hmc = FakeHMC(World(1), World(2))
     admit = Admit((PARTITIONS_TOOL, "sys2", None))
     plan = _plan(hmc, _placement(systems=("sys1", "sys2", "sys1")), admit)
-    assert ("find_system_by_name", "sys2") not in hmc.calls
+    assert hmc.calls.count(("list_system_summaries", None)) == 1
     assert [c.selector for c in plan.candidates] == ["sys1", "sys2"]
     assert _codes(plan.candidates[1].blockers) == ["denied"]
     assert plan.candidates[1].blockers[0].tool == PARTITIONS_TOOL
@@ -1238,6 +1229,7 @@ def test_placement_enumeration_bounded_to_16() -> None:
     assert plan.candidates_limit == 16
     assert len(plan.candidates) == 16
     assert ("list_logical_partitions", _uuid(17)) not in hmc.calls
+    assert ("get_managed_system", _uuid(17)) not in hmc.calls
 
 
 def test_enumeration_denied_or_unavailable_is_a_request_blocker() -> None:
@@ -1383,19 +1375,19 @@ def test_unreadable_volume_group_entry_is_unavailable() -> None:
     ]
 
 
-def test_uuid_selector_resolves_through_get_uom() -> None:
+def test_uuid_selector_resolves_through_quick_all() -> None:
     hmc = FakeHMC(World())
     plan = _plan(hmc, _new_disk(system_name_or_uuid=_uuid(1).upper()))
-    assert ("get_uom", _uuid(1).upper()) in hmc.calls
+    assert ("get_managed_system", _uuid(1)) in hmc.calls
     assert plan.selected is not None
 
 
 def test_resolution_transport_failure_stops_later_selectors() -> None:
     hmc = FakeHMC(World(1), World(2))
-    hmc.by_name_error = HMCTransportError("connection reset")
+    hmc.systems_error = HMCTransportError("connection reset")
     plan = _plan(hmc, _placement(systems=("sys1", _uuid(2))))
     assert all(_codes(c.blockers) == ["unavailable"] for c in plan.candidates)
-    assert ("get_uom", _uuid(2)) not in hmc.calls
+    assert hmc.calls == [("list_system_summaries", None)]
 
 
 def test_intended_changes_collapse_assignments_into_one_bounded_change() -> None:
@@ -1443,7 +1435,9 @@ def test_plan_digest_is_equal_for_equivalent_requests(
 
 def test_ambiguous_system_name_is_an_unresolved_candidate() -> None:
     hmc = FakeHMC(World(1), World(2))
-    hmc.by_name_error = ValueError("Ambiguous managed-system name 'sys1'")
+    hmc.extra_summaries = [
+        {"UUID": _uuid(9), "SystemName": "sys1", "State": "operating"}
+    ]
     plan = _plan(hmc, _placement(systems=("sys1", _uuid(2))))
     unresolved = [c for c in plan.candidates if c.targets is None]
     assert [(c.selector, _codes(c.blockers)) for c in unresolved] == [

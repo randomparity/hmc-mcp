@@ -117,7 +117,7 @@ class SystemsMixin:
     async def _quick_all_system_names(self: SystemsClient) -> dict[str, str]:
         """UUID -> SystemName map from quick/All, keyed by the lower-cased UUID.
 
-        Used only as a fallback when the direct/unfiltered feed trips the
+        Used only as a fallback when a direct entry read trips the
         null-property serialization bug, so entries missing UUID or
         SystemName are skipped rather than raised.
         """
@@ -129,64 +129,12 @@ class SystemsMixin:
             and "SystemName" in entry
         }
 
-    async def list_managed_systems(self: SystemsClient) -> list[dict[str, Any]]:
-        """Every managed-system entry from the full ManagedSystem feed.
-
-        Some firmware 500s on the unfiltered feed over a null hardware-inventory
-        property (e.g. VirtualPersistentMemoryVolume/Uuid). quick/All +
-        find_system_by_name (a different, working path) resolve what they can;
-        a system that still fails (or resolves ambiguously) is skipped with a
-        warning rather than failing the whole call.
-        """
-        try:
-            return await self.list_uom("ManagedSystem")
-        except HMCError as exc:
-            if not (
-                exc.status_code == 500
-                and "Nested path contains null property" in str(exc)
-            ):
-                raise
-            quick_all_exc: HMCError | None = None
-            try:
-                names = await self._quick_all_system_names()
-            except HMCError as qa_exc:
-                names = {}
-                quick_all_exc = qa_exc
-            resolved: list[dict[str, Any]] = []
-            for name in names.values():
-                try:
-                    entry = await self.find_system_by_name(name)
-                except (HMCError, ValueError) as resolution_exc:
-                    _logger.warning(
-                        "Skipping managed system %r during inventory fallback: %s",
-                        name,
-                        resolution_exc,
-                    )
-                    continue
-                if entry is not None:
-                    resolved.append(entry)
-                else:
-                    _logger.warning(
-                        "Skipping managed system %r during inventory fallback: not found",
-                        name,
-                    )
-            if resolved:
-                return resolved
-            raise HMCError(
-                "Managed-system inventory is unavailable because this HMC "
-                "firmware could not serialize a null hardware property; "
-                "update the HMC firmware or query a managed system directly",
-                status_code=500,
-                body=exc.body,
-            ) from (quick_all_exc or exc)
-
     async def get_managed_system(
         self: SystemsClient, uuid: str
     ) -> dict[str, Any] | None:
         # Some firmware 500s on a direct UUID fetch over a null hardware
-        # property (see list_managed_systems); quick/All supplies the
-        # missing name so find_system_by_name (a different, working path)
-        # can resolve it.
+        # property (ADR 0138); quick/All supplies the missing name so
+        # find_system_by_name (a different, working path) can resolve it.
         try:
             return await self.get_uom("ManagedSystem", uuid)
         except HMCError as exc:

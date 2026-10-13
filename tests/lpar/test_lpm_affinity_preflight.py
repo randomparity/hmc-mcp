@@ -262,9 +262,6 @@ async def test_passing_preflight_composes_before_canonical_validation(
 async def test_warning_proceeds_to_canonical_validation() -> None:
     hmc = AsyncMock()
     hmc.find_partition_by_name.return_value = {"UUID": "uuid-1"}
-    hmc.list_managed_systems.return_value = [
-        {"UUID": "system-1", "Resource": {"SystemName": "target-1"}}
-    ]
     hmc.lpar_migrate_validate.return_value = {"UUID": "validate-1"}
     hmc.wait_for_job_entry.return_value = {
         "Resource": {"JobID": "validate-1", "Status": "COMPLETED_OK"}
@@ -288,9 +285,6 @@ async def test_warning_proceeds_to_canonical_validation() -> None:
 async def test_canonical_validation_timeout_never_submits_migration() -> None:
     hmc = AsyncMock()
     hmc.find_partition_by_name.return_value = {"UUID": "uuid-1"}
-    hmc.list_managed_systems.return_value = [
-        {"UUID": "system-1", "Resource": {"SystemName": "target-1"}}
-    ]
     hmc.lpar_migrate_validate.return_value = {"UUID": "validate-1"}
     hmc.wait_for_job_entry.return_value = {
         "Resource": {"JobID": "validate-1", "Status": "RUNNING"}

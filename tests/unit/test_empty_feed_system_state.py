@@ -409,36 +409,19 @@ async def test_capacity_report_raises_when_every_system_is_omitted(mock_hmc) -> 
 
 
 @pytest.mark.asyncio
-async def test_system_summary_warns_for_a_non_operating_system(mock_hmc) -> None:
-    """The capacity figures here are assumed, not captured: no capture shows
-    whether a ``no connection`` system document still carries them (#1301)."""
-    document = _system(
-        "<State>no connection</State>",
-        "<DetailedState>Unknown</DetailedState>",
-        "<AssociatedSystemMemoryConfiguration>"
-        "<ConfigurableSystemMemory>131072</ConfigurableSystemMemory>"
-        "<CurrentAvailableSystemMemory>112448</CurrentAvailableSystemMemory>"
-        "</AssociatedSystemMemoryConfiguration>",
-        "<AssociatedSystemProcessorConfiguration>"
-        "<ConfigurableSystemProcessorUnits>20</ConfigurableSystemProcessorUnits>"
-        "<CurrentAvailableSystemProcessorUnits>18</CurrentAvailableSystemProcessorUnits>"
-        "</AssociatedSystemProcessorConfiguration>",
-    )
-    mock_hmc.get(LPAR_FEED).mock(return_value=httpx.Response(204))
-    mock_hmc.get(VIOS_FEED).mock(return_value=httpx.Response(204))
-    mock_hmc.get(SYSTEM_PATH).mock(return_value=httpx.Response(200, text=document))
-    mock_hmc.get(QUICK_ALL).mock(
-        return_value=httpx.Response(200, json=[_summary("no connection")])
-    )
+async def test_system_summary_refuses_a_non_operating_system(mock_hmc) -> None:
+    """Its entry timed out for a ``no connection`` system (#1501), so it is not read."""
+    lpar_feed = _mock_no_connection_system(mock_hmc)
 
     async with HMCClient(make_config()) as hmc:
-        summary = await fetch_system_summary(hmc, SYSTEM_UUID)
+        with pytest.raises(HMCError) as caught:
+            await fetch_system_summary(hmc, SYSTEM_UUID)
 
-    assert summary.lpar_count is None and summary.vios_count is None
-    lpar_warning, vios_warning = summary.warnings
-    assert lpar_warning.startswith("LPAR inventory is unavailable")
-    assert vios_warning.startswith("VIOS inventory is unavailable")
-    assert "State 'no connection'" in lpar_warning
+    assert str(caught.value) == (
+        f"Cannot read the summary of managed system {SYSTEM_NAME!r} ({SYSTEM_UUID}): "
+        "it is in State 'no connection'; retry when it reconnects"
+    )
+    assert not lpar_feed.called
 
 
 @pytest.mark.asyncio
