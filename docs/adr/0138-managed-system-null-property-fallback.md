@@ -71,6 +71,15 @@ instead of one; accepted because it only activates on firmware already
 broken today, with no evidence this firmware class hosts large enough
 inventories to make the added latency material.
 
+> **Amended by #1501** (2026-10-13): `list_managed_systems` is removed, and with it its
+> fallback. Every fleet-wide reader now lists systems from `ManagedSystem/quick/All`, because
+> on V11R2 the unfiltered `ManagedSystem` feed timed out while a system was `No Connection`
+> (#1290). `quick/All` does not trip the null-property bug. A reader that needs the full
+> entry then reads `ManagedSystem/{uuid}` for an operating system only, through
+> `get_managed_system`, which keeps this record's fallback for a 500 on that read. The
+> fallback still resolves the name through `find_system_by_name`, whose `SystemName` search
+> stalled only for a system with no connection, and such a system is not read.
+
 ## Considered & rejected
 - Fall back to `search_uom("ManagedSystem", "UUID", uuid)`. judgment: no
   evidence in this repo or `project-pim` that `UUID` is a supported

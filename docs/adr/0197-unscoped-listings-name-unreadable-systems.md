@@ -57,6 +57,18 @@ could not read. The three tools returned `list[dict]`, so they had nowhere to pu
   decision 2 mentions no longer applies to these listings, because `quick/All` does not trip it.
 - A system in `Standby`, `Power Off` or any other state that is not `operating` is listed as
   unreadable, even when its scoped feed would have returned partitions.
+- Amended 2026-10-13 (#1501): `hmc_list_systems`, `hmc_get_system` and the `systems list` /
+  `systems show` CLI list systems from `quick/All` too, and read `ManagedSystem/{uuid}` only for
+  an operating system. They keep returning plain system entries rather than a `FleetListing`:
+  a system that is not operating gets a sparse entry in the same envelope (`UUID`,
+  `ResourceType`, `title` and `link` null, and `Resource` holding only `SystemName`, `State`
+  and `StateDetail`). The marker entry rejected below for partition listings mixed a skipped
+  system into a list of partitions. Here every record is a system, the sparse entry is a true
+  subset of the full one, and its own `State` says why the rest is absent, so `limit`, the
+  `state` filter and the CLI table need no special case. The operator chose this over the
+  envelope on 2026-10-13 to keep these outputs' shape. The `state` filter now matches the
+  summary's `State` exactly instead of calling the `State` search, which stalled with the
+  feed.
 - The scoped `lpar list --system` / `vios list --system` and `list_lpar_ownership(hmc, system)`
   also change shape. Every reader of these results changes with them: the CLI, the live-test
   runner, the capture sweep, the inventory recipe, and kdive's ownership readback.
