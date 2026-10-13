@@ -14,6 +14,12 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/live_test_baseline.py` captures private, read-only live-window baselines
+  and compares independent before/after state, including explicitly selected VIOS
+  mappings and volume-group volumes (#1479).
+
 ### Changed
 
 - Generated tool-reference verification retains the last release’s state regardless of the
