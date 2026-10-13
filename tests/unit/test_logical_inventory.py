@@ -70,44 +70,53 @@ def _lpar(
 
 
 class FakeHMC:
-    """The four reads the inventory makes, with a log of every call."""
+    """The reads the inventory makes, with a log of every call.
+
+    Systems are listed from quick/All; *failures* maps the 1-based number of a
+    quick/All read to the error it raises, *missing* names systems it omits, and
+    *extra* adds summaries.
+    """
 
     def __init__(
         self,
         systems: list[dict],
         partitions: dict[str, list[dict] | Exception] | None = None,
         *,
-        by_name: dict[str, dict | None | Exception] | None = None,
+        failures: dict[int, Exception] | None = None,
+        missing: frozenset[str] = frozenset(),
+        extra: tuple[dict, ...] = (),
         systems_error: Exception | None = None,
+        entry_errors: dict[str, Exception] | None = None,
     ) -> None:
         self.systems = systems
         self.partitions = partitions or {}
-        self.by_name = by_name
+        self.failures = failures or {}
+        self.missing = missing
+        self.extra = extra
         self.systems_error = systems_error
+        self.entry_errors = entry_errors or {}
         self.calls: list[tuple[str, str | None]] = []
 
-    async def list_uom(self, resource_type: str) -> list[dict]:
-        assert resource_type == "ManagedSystem"
-        self.calls.append(("list_uom", None))
-        if self.systems_error is not None:
-            raise self.systems_error
-        return self.systems
+    async def list_system_summaries(self) -> list[dict]:
+        self.calls.append(("list_system_summaries", None))
+        reads = self.calls.count(("list_system_summaries", None))
+        failure = self.systems_error or self.failures.get(reads)
+        if failure is not None:
+            raise failure
+        return [
+            {
+                "UUID": entry["UUID"],
+                **{k: entry["Resource"][k] for k in ("SystemName", "State")},
+            }
+            for entry in self.systems
+            if entry["Resource"]["SystemName"] not in self.missing
+        ] + list(self.extra)
 
-    async def get_uom(self, resource_type: str, uuid: str) -> dict | None:
-        assert resource_type == "ManagedSystem"
-        self.calls.append(("get_uom", uuid))
+    async def get_managed_system(self, uuid: str) -> dict | None:
+        self.calls.append(("get_managed_system", uuid))
+        if uuid in self.entry_errors:
+            raise self.entry_errors[uuid]
         return next((entry for entry in self.systems if entry["UUID"] == uuid), None)
-
-    async def find_system_by_name(self, name: str) -> dict | None:
-        self.calls.append(("find_system_by_name", name))
-        if self.by_name is not None and name in self.by_name:
-            found = self.by_name[name]
-            if isinstance(found, Exception):
-                raise found
-            return found
-        return next(
-            (e for e in self.systems if e["Resource"]["SystemName"] == name), None
-        )
 
     async def list_logical_partitions(self, uuid: str) -> list[dict]:
         self.calls.append(("list_logical_partitions", uuid))
@@ -262,17 +271,17 @@ def test_denied_selector_is_reported_without_a_read():
         None,
     )
     assert denied.sources.partitions.status == "denied"
-    assert ("find_system_by_name", "sys1") not in hmc.calls
+    assert hmc.calls.count(("list_system_summaries", None)) == 1
     assert [p.uuid for p in page.partitions] == [_uuid(2, 1)]
 
 
 @pytest.mark.parametrize(
-    "found",
-    [None, ValueError("Ambiguous managed-system name 'dup'")],
+    "extra",
+    [(), tuple({"UUID": _uuid(n), "SystemName": "dup"} for n in (8, 9))],
     ids=["not-found", "ambiguous"],
 )
-def test_unmatched_selector_is_unavailable(found):
-    hmc = FakeHMC([_system(1)], {_uuid(1): [_lpar(1, 1)]}, by_name={"dup": found})
+def test_unmatched_selector_is_unavailable(extra):
+    hmc = FakeHMC([_system(1)], {_uuid(1): [_lpar(1, 1)]}, extra=extra)
     page = _read(hmc, systems=["dup", "sys1"])
     unmatched = next(s for s in page.systems if s.selector == "dup")
     assert unmatched.uuid is None
@@ -285,7 +294,7 @@ def test_selectors_collapse_and_uuid_selectors_read_by_uuid():
     page = _read(hmc, systems=["sys1", _uuid(1), "sys1"])
     assert len(page.systems) == 1
     assert page.systems[0].selector == "sys1"
-    assert ("get_uom", _uuid(1)) in hmc.calls
+    assert hmc.calls.count(("get_managed_system", _uuid(1))) == 1
     assert len(page.partitions) == 1
 
 
@@ -373,26 +382,55 @@ def test_transport_error_ends_the_page_with_a_cursor():
     assert page.next_cursor == encode_cursor(_uuid(3), None)
 
 
+def test_a_partition_stall_skips_that_systems_entry_read():
+    hmc = FakeHMC(
+        [_system(n) for n in (1, 2)], {_uuid(1): HMCTransportError("timed out")}
+    )
+    page = _read(hmc)
+    assert ("get_managed_system", _uuid(1)) not in hmc.calls
+    assert page.systems[0].sources.capacity.status == "unavailable"
+
+
+def test_an_entry_stall_ends_the_page_with_a_cursor():
+    hmc = FakeHMC(
+        [_system(n) for n in (1, 2, 3)],
+        entry_errors={_uuid(2): HMCTransportError("timed out")},
+    )
+    page = _read(hmc)
+    assert [s.uuid for s in page.systems] == [_uuid(1), _uuid(2)]
+    assert page.systems[1].sources.capacity.status == "unavailable"
+    assert ("list_logical_partitions", _uuid(3)) not in hmc.calls
+    assert page.next_cursor == encode_cursor(_uuid(3), None)
+
+
+def test_a_non_operating_system_names_its_state_for_capacity():
+    standby = _system(2)
+    standby["Resource"]["State"] = "standby"
+    hmc = FakeHMC([_system(1), standby])
+    page = _read(hmc)
+    capacity = page.systems[1].sources.capacity
+    assert capacity.status == "unavailable"
+    assert capacity.detail == f"managed system {_uuid(2)} is in State 'standby'"
+    assert ("get_managed_system", _uuid(2)) not in hmc.calls
+
+
 def test_transport_error_stops_selector_resolution():
     hmc = FakeHMC(
         [_system(1), _system(2)],
-        by_name={"sys1": HMCTransportError("timed out")},
+        failures={1: HMCTransportError("timed out")},
     )
     page = _read(hmc, systems=["sys1", "sys2"])
-    assert ("find_system_by_name", "sys2") not in hmc.calls
+    assert hmc.calls.count(("list_system_summaries", None)) == 1
     assert {s.sources.partitions.status for s in page.systems} == {"unavailable"}
     assert page.partitions == []
 
 
-def test_firmware_feed_failure_is_unavailable_with_the_selector_hint():
-    failure = HMCError("HTTP 500: Nested path contains null property", status_code=500)
-    hmc = FakeHMC([_system(1)], systems_error=failure)
+def test_failed_summary_read_is_unavailable_and_reads_nothing_else():
+    hmc = FakeHMC([_system(1)], systems_error=HMCError("HTTP 500", status_code=500))
     page = _read(hmc)
     assert page.systems_source is not None
     assert page.systems_source.status == "unavailable"
-    assert "Pass system names" in (page.systems_source.detail or "")
-    assert ".." not in (page.systems_source.detail or "")
-    assert hmc.calls == [("list_uom", None)]
+    assert hmc.calls == [("list_system_summaries", None)]
     assert page.systems == []
 
 
@@ -406,15 +444,20 @@ def test_stalled_feed_does_not_suggest_selectors():
 def test_resolution_stall_reads_no_partitions_on_that_page():
     hmc = FakeHMC(
         [_system(1), _system(2)],
-        by_name={"sys2": HMCTransportError("timed out")},
+        failures={2: HMCTransportError("timed out")},
     )
     page = _read(hmc, systems=["sys1", "sys2"])
-    assert not [call for call in hmc.calls if call[0] == "list_logical_partitions"]
+    assert not [
+        call
+        for call in hmc.calls
+        if call[0] in {"list_logical_partitions", "get_managed_system"}
+    ]
     statuses = {s.selector: s.sources.partitions for s in page.systems}
     assert {status.status for status in statuses.values()} == {"unavailable"}
     assert "timed out" in (statuses["sys1"].detail or "")
     resolved = next(s for s in page.systems if s.selector == "sys1")
-    assert resolved.total_memory_mib == 1048576
+    assert resolved.total_memory_mib is None
+    assert resolved.sources.capacity.status == "unavailable"
     # Every system on the page is reported unavailable, so the page is final.
     assert (page.truncated, page.next_cursor) == (False, None)
 
@@ -426,7 +469,8 @@ def test_selector_failing_on_a_cursor_page_is_reported(failure):
     hmc = FakeHMC(
         [_system(1), _system(2)],
         {_uuid(2): [_lpar(2, 1)]},
-        by_name={"sys2": failure},
+        failures={} if failure is None else {2: failure},
+        missing=frozenset() if failure is not None else frozenset({"sys2"}),
     )
     later = _read(hmc, systems=["sys1", "sys2"], cursor=encode_cursor(_uuid(1), None))
     statuses = {s.selector: s.sources.partitions.status for s in later.systems}

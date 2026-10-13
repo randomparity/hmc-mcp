@@ -6,7 +6,6 @@ import asyncio
 import json
 import re
 from collections.abc import Sequence
-from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import mcp_types as mt
@@ -17,7 +16,7 @@ from fastmcp.tools.base import Tool
 from rich.console import Console
 from typer.testing import CliRunner
 
-from hmcpctl import cli, operation_maturity_middleware
+from hmcpctl import cli, operation_maturity
 from hmcpctl.authorization.access_policy import compile_access_policy
 from hmcpctl.cli_commands import capabilities as capability_commands
 from hmcpctl.cli_commands import runtime
@@ -26,7 +25,6 @@ from hmcpctl.server import TOOL_SECURITY, create_mcp
 from hmcpctl.tool_registry import ToolSecurity
 
 MATURITY_META_KEY = "io.github.randomparity.hmcpctl/operation-maturity"
-_NOW = datetime(2026, 9, 10, tzinfo=UTC)
 _SOURCE = "test-capability-discovery.toml"
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -76,10 +74,10 @@ def _without_hmc_settings(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_cli_capability_rows_group_sorted_tools_and_project_once_per_operation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[tuple[str, datetime | None]] = []
+    calls: list[str] = []
 
-    def project(operation: str, *, now: datetime | None = None) -> OperationMaturity:
-        calls.append((operation, now))
+    def project(operation: str) -> OperationMaturity:
+        calls.append(operation)
         return OperationMaturity(
             implementation="implemented",
             verification="stale" if operation == "zeta.read" else "current",
@@ -94,7 +92,7 @@ def test_cli_capability_rows_group_sorted_tools_and_project_once_per_operation(
         "tool_a": ToolSecurity("read", "alpha.read", "none"),
     }
 
-    assert capability_commands.capability_rows(security, now=_NOW) == [
+    assert capability_commands.capability_rows(security) == [
         {
             "operation": "alpha.read",
             "tools": ["tool_a", "tool_b"],
@@ -111,7 +109,7 @@ def test_cli_capability_rows_group_sorted_tools_and_project_once_per_operation(
             "reason": "age-exceeded",
         },
     ]
-    assert calls == [("alpha.read", _NOW), ("zeta.read", _NOW)]
+    assert calls == ["alpha.read", "zeta.read"]
 
 
 def test_cli_capabilities_table_and_json_share_sorted_rows_without_hmc_client(
@@ -199,35 +197,32 @@ def test_mcp_discovery_adds_shared_maturity_after_ceiling_filtering() -> None:
     assert "hmc_delete_lpar" not in discovered
 
 
-def test_mcp_discovery_refreshes_maturity_for_each_request(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    observed_at = _NOW - timedelta(days=90)
-    current = [_NOW]
-
-    def project(operation: str, *, now: datetime | None = None) -> dict[str, str]:
-        assert operation == "system.list"
-        assert now is not None
-        return {
-            "implementation": "implemented",
-            "verification": "current"
-            if now <= observed_at + timedelta(days=90)
-            else "stale",
-            "runtime_eligibility": "existing-runtime-guards",
-        }
-
-    monkeypatch.setattr(
-        operation_maturity_middleware, "operation_maturity_meta", project
-    )
-    monkeypatch.setattr(operation_maturity_middleware, "_utc_now", lambda: current[0])
-    application = create_mcp(_policy("hmc_list_systems"))
-
-    first = _listed_tools(application)["hmc_list_systems"]
-    current[0] += timedelta(microseconds=1)
-    second = _listed_tools(application)["hmc_list_systems"]
-
-    assert first.meta[MATURITY_META_KEY]["verification"] == "current"
-    assert second.meta[MATURITY_META_KEY]["verification"] == "stale"
+@pytest.mark.parametrize("verification", ["current", "failed"])
+def test_cli_and_mcp_keep_historical_verification(tmp_path, monkeypatch, verification):
+    document = {
+        "format_version": 1,
+        "runtime_eligibility": "existing-runtime-guards",
+        "operations": [
+            {
+                "operation": "system.list",
+                "implementation": "implemented",
+                "verification": verification,
+                "reason": None,
+                "observed_at": "2000-01-01T00:00:00Z",
+            }
+        ],
+    }
+    (tmp_path / "_operation_maturity.json").write_text(json.dumps(document))
+    monkeypatch.setattr(operation_maturity.resources, "files", lambda _: tmp_path)
+    name = "hmc_list_systems"
+    rows = capability_commands.capability_rows({name: TOOL_SECURITY[name]})
+    assert rows[0]["verification"] == verification
+    application = create_mcp(_policy(name))
+    for _ in range(2):
+        assert (
+            _listed_tools(application)[name].meta[MATURITY_META_KEY]["verification"]
+            == verification
+        )
 
 
 def test_mcp_and_cli_discovery_use_the_same_operation_evidence() -> None:

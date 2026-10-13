@@ -4,14 +4,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import FrozenInstanceError
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 import hmcpctl.operation_maturity as maturity
-
-_NOW = datetime(2026, 9, 10, 12, 0, tzinfo=UTC)
 
 
 def _projection(
@@ -51,7 +48,7 @@ def test_catalog_is_sparse_and_values_are_immutable(
 ) -> None:
     _install_projection(tmp_path, monkeypatch, _projection())
 
-    catalog = maturity.operation_maturity_catalog(now=_NOW)
+    catalog = maturity.operation_maturity_catalog()
 
     assert set(catalog) == {"system.list"}
     assert catalog["system.list"] == maturity.OperationMaturity(
@@ -70,14 +67,14 @@ def test_absent_valid_operation_resolves_to_explicit_unrecorded_values(
 ) -> None:
     _install_projection(tmp_path, monkeypatch, _projection())
 
-    result = maturity.operation_maturity("vnic.add", now=_NOW)
+    result = maturity.operation_maturity("vnic.add")
 
     assert result == maturity.OperationMaturity(
         implementation="unrecorded",
         verification="unrecorded",
         runtime_eligibility="existing-runtime-guards",
     )
-    assert maturity.operation_maturity_meta("vnic.add", now=_NOW) == {
+    assert maturity.operation_maturity_meta("vnic.add") == {
         "implementation": "unrecorded",
         "verification": "unrecorded",
         "runtime_eligibility": "existing-runtime-guards",
@@ -93,27 +90,19 @@ def test_invalid_operation_id_is_rejected(
     _install_projection(tmp_path, monkeypatch, _projection())
 
     with pytest.raises(maturity.OperationMaturityError, match="operation ID"):
-        maturity.operation_maturity(operation, now=_NOW)
+        maturity.operation_maturity(operation)
 
 
-def test_current_verification_ages_at_the_exact_ninety_day_boundary(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    observed = _NOW - timedelta(days=90)
+@pytest.mark.parametrize("verification", ["current", "failed"])
+def test_verification_remains_frozen_after_ninety_days(
+    tmp_path, monkeypatch, verification
+):
     _install_projection(
         tmp_path,
         monkeypatch,
-        _projection(observed_at=observed.strftime("%Y-%m-%dT%H:%M:%SZ")),
+        _projection(verification=verification, observed_at="2000-01-01T00:00:00Z"),
     )
-
-    assert (
-        maturity.operation_maturity("system.list", now=_NOW).verification == "current"
-    )
-    expired = maturity.operation_maturity(
-        "system.list", now=_NOW + timedelta(seconds=1)
-    )
-    assert expired.verification == "stale"
-    assert expired.reason == "age-exceeded"
+    assert maturity.operation_maturity("system.list").verification == verification
 
 
 @pytest.mark.parametrize(
@@ -142,7 +131,7 @@ def test_projection_schema_is_closed(
     _install_projection(tmp_path, monkeypatch, document)
 
     with pytest.raises(maturity.OperationMaturityError):
-        maturity.operation_maturity_catalog(now=_NOW)
+        maturity.operation_maturity_catalog()
 
 
 def test_projection_rejects_duplicate_json_keys(
@@ -156,13 +145,4 @@ def test_projection_rejects_duplicate_json_keys(
     monkeypatch.setattr(maturity.resources, "files", lambda _package: tmp_path)
 
     with pytest.raises(maturity.OperationMaturityError, match="duplicate key"):
-        maturity.operation_maturity_catalog(now=_NOW)
-
-
-def test_now_must_be_timezone_aware(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _install_projection(tmp_path, monkeypatch, _projection())
-
-    with pytest.raises(maturity.OperationMaturityError, match="timezone-aware"):
-        maturity.operation_maturity_catalog(now=_NOW.replace(tzinfo=None))
+        maturity.operation_maturity_catalog()

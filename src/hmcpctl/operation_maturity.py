@@ -6,7 +6,7 @@ import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from importlib import resources
 from types import MappingProxyType
 from typing import Any
@@ -15,7 +15,6 @@ _RESOURCE = "_operation_maturity.json"
 _MAX_RESOURCE_BYTES = 1_048_576
 _FORMAT_VERSION = 1
 _RUNTIME_ELIGIBILITY = "existing-runtime-guards"
-_STALE_AFTER = timedelta(days=90)
 _OPERATION = re.compile(r"[a-z0-9_]+\.[a-z0-9_]+")
 _TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 _IMPLEMENTATION_STATES = {"absent", "partial", "implemented"}
@@ -43,12 +42,6 @@ class OperationMaturity:
     reason: str | None = None
 
 
-@dataclass(frozen=True)
-class _ProjectedOperation:
-    maturity: OperationMaturity
-    observed_at: datetime | None
-
-
 def _unique_pairs(pairs: Sequence[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:
@@ -73,7 +66,7 @@ def _parse_timestamp(value: object, operation: str) -> datetime | None:
         ) from error
 
 
-def _parse_operation(value: object, policy: str) -> tuple[str, _ProjectedOperation]:
+def _parse_operation(value: object, policy: str) -> tuple[str, OperationMaturity]:
     if not isinstance(value, dict) or set(value) != _OPERATION_KEYS:
         raise OperationMaturityError(
             f"projection operation must contain exactly {sorted(_OPERATION_KEYS)}"
@@ -111,9 +104,7 @@ def _parse_operation(value: object, policy: str) -> tuple[str, _ProjectedOperati
         raise OperationMaturityError(
             f"operation {operation!r} has inconsistent verification reason"
         )
-    return operation, _ProjectedOperation(
-        OperationMaturity(implementation, verification, policy, reason), observed_at
-    )
+    return operation, OperationMaturity(implementation, verification, policy, reason)
 
 
 def _read_projection_document() -> object:
@@ -132,7 +123,7 @@ def _read_projection_document() -> object:
         ) from error
 
 
-def _parse_projection(document: object) -> dict[str, _ProjectedOperation]:
+def _parse_projection(document: object) -> dict[str, OperationMaturity]:
     if not isinstance(document, dict) or set(document) != _ROOT_KEYS:
         raise OperationMaturityError(
             f"projection root must contain exactly {sorted(_ROOT_KEYS)}"
@@ -152,7 +143,7 @@ def _parse_projection(document: object) -> dict[str, _ProjectedOperation]:
     records = document["operations"]
     if not isinstance(records, list):
         raise OperationMaturityError("projection operations must be an array")
-    result: dict[str, _ProjectedOperation] = {}
+    result: dict[str, OperationMaturity] = {}
     for record in records:
         operation, projected = _parse_operation(record, policy)
         if operation in result:
@@ -163,62 +154,25 @@ def _parse_projection(document: object) -> dict[str, _ProjectedOperation]:
     return result
 
 
-def _resolved(projected: _ProjectedOperation, now: datetime) -> OperationMaturity:
-    maturity = projected.maturity
-    if (
-        maturity.verification in {"current", "failed"}
-        and projected.observed_at is not None
-        and now - projected.observed_at > _STALE_AFTER
-    ):
-        return OperationMaturity(
-            maturity.implementation,
-            "stale",
-            maturity.runtime_eligibility,
-            "age-exceeded",
-        )
-    return maturity
+def operation_maturity_catalog() -> Mapping[str, OperationMaturity]:
+    """Return immutable historical verification, without wall-clock decay."""
+    return MappingProxyType(_parse_projection(_read_projection_document()))
 
 
-def _now(value: datetime | None) -> datetime:
-    resolved = value or datetime.now(UTC)
-    if resolved.tzinfo is None or resolved.utcoffset() is None:
-        raise OperationMaturityError("now must be timezone-aware")
-    return resolved.astimezone(UTC)
-
-
-def operation_maturity_catalog(
-    *, now: datetime | None = None
-) -> Mapping[str, OperationMaturity]:
-    """Return the immutable sparse operation-maturity projection."""
-    resolved_now = _now(now)
-    return MappingProxyType(
-        {
-            operation: _resolved(projected, resolved_now)
-            for operation, projected in _parse_projection(
-                _read_projection_document()
-            ).items()
-        }
-    )
-
-
-def operation_maturity(
-    operation: str, *, now: datetime | None = None
-) -> OperationMaturity:
+def operation_maturity(operation: str) -> OperationMaturity:
     """Return one operation's maturity, including the sparse default."""
     if not isinstance(operation, str) or _OPERATION.fullmatch(operation) is None:
         raise OperationMaturityError(f"invalid operation ID {operation!r}")
-    catalog = operation_maturity_catalog(now=now)
+    catalog = operation_maturity_catalog()
     return catalog.get(
         operation,
         OperationMaturity("unrecorded", "unrecorded", _RUNTIME_ELIGIBILITY),
     )
 
 
-def operation_maturity_meta(
-    operation: str, *, now: datetime | None = None
-) -> dict[str, str]:
+def operation_maturity_meta(operation: str) -> dict[str, str]:
     """Return one operation's maturity in the presentation metadata shape."""
-    maturity = operation_maturity(operation, now=now)
+    maturity = operation_maturity(operation)
     result = {
         "implementation": maturity.implementation,
         "verification": maturity.verification,

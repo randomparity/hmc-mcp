@@ -376,7 +376,7 @@ class HMCClient(
 
     Usage:
         async with HMCClient(config) as hmc:
-            systems = await hmc.list_managed_systems()
+            systems = await hmc.list_system_summaries()
     """
 
     def __init__(self, config: HMCConfig) -> None:

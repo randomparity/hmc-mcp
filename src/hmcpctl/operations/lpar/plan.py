@@ -28,7 +28,7 @@ from ...documents.lpar import (
 )
 from ...documents.storage import STORAGE_KINDS, StorageKind, validate_virtual_disk
 from ...errors import HMCError, HMCTransportError
-from ...resource_identity import is_uuid
+from ...resource_identity import is_uuid, summary_matching
 from ...ssh.affinity import MinimumAffinityPolicy, validate_minimum_affinity_policy
 from ...ssh.lpar import validate_caller_token
 from ...xmlutil import leaf_text
@@ -40,6 +40,7 @@ from ..storage.resources import (
     _storage_mapping,
     _volume_group,
 )
+from ..systems.fleet import system_entry
 from .assignments import LparPcieAssignments
 from .provision import _check_vlan_exists
 
@@ -1107,16 +1108,18 @@ def _unresolved(selector: str, blocker: PlanBlocker) -> PlanCandidate:
 async def _lookup(
     hmc: Any, selector: str, stalled: str | None
 ) -> tuple[dict[str, Any] | None, str, str | None]:
-    """Read one selector's system entry; the third value is a transport stall."""
+    """Read one selector's system entry; the third value is a transport stall.
+
+    The selector is matched against ``ManagedSystem/quick/All``; a system that
+    is not operating gets its sparse entry (#1501).
+    """
     try:
         if stalled is not None:
             raise HMCError(stalled)
-        if is_uuid(selector):
-            entry = await hmc.get_uom("ManagedSystem", selector)
-        else:
-            entry = await hmc.find_system_by_name(selector)
+        summary = summary_matching(await hmc.list_system_summaries(), selector)
+        entry = await system_entry(hmc, summary) if summary is not None else None
     except (HMCError, ValueError) as exc:
-        # find_system_by_name raises ValueError when several systems share a name.
+        # summary_matching raises ValueError when several systems share a name.
         if isinstance(exc, HMCTransportError):
             stalled = f"the HMC stopped answering: {exc}"
         return None, f"managed system {selector!r} is unavailable: {exc}", stalled
@@ -1157,20 +1160,27 @@ async def _enumerate(
     denial = admit(SYSTEMS_TOOL, None, None)
     if denial is not None:
         return [], _blocker("denied", "system", denial, tool=SYSTEMS_TOOL), False
+    # quick/All, then each kept candidate's entry: the ManagedSystem feed times
+    # out while a system has no connection (#1501).
     try:
-        entries = await hmc.list_uom("ManagedSystem")
+        summaries = sorted(
+            (
+                summary
+                for summary in await hmc.list_system_summaries()
+                if isinstance(summary, dict)
+                and isinstance(summary.get("UUID"), str)
+                and summary["UUID"]
+            ),
+            key=lambda summary: summary["UUID"],
+        )
+        candidates = [
+            _Candidate(None, summary["UUID"], await system_entry(hmc, summary))
+            for summary in summaries[:CANDIDATES_LIMIT]
+        ]
     except HMCError as exc:
         text = f"managed systems are unavailable: {exc}"
         return [], _blocker("unavailable", "system", text, tool=SYSTEMS_TOOL), False
-    ordered = sorted(
-        (
-            _Candidate(None, str(entry["UUID"]), entry)
-            for entry in entries
-            if entry.get("UUID")
-        ),
-        key=lambda candidate: candidate.uuid,
-    )
-    return ordered[:CANDIDATES_LIMIT], None, len(ordered) > CANDIDATES_LIMIT
+    return candidates, None, len(summaries) > CANDIDATES_LIMIT
 
 
 def _request_blockers(hmc: Any, request: PlanRequest) -> list[PlanBlocker]:

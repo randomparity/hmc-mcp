@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection, Mapping, Sequence
-from datetime import UTC, datetime
+from collections.abc import Collection, Mapping, Sequence
 
 import mcp_types as mt
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
@@ -18,10 +17,6 @@ MATURITY_META_KEY = "io.github.randomparity.hmcpctl/operation-maturity"
 TIER_META_KEY = "io.github.randomparity.hmcpctl/catalog-tier"
 
 
-def _utc_now() -> datetime:
-    return datetime.now(UTC)
-
-
 class OperationMaturityMiddleware(Middleware):
     """Add maturity and catalog-tier metadata to the tools returned by ``tools/list``."""
 
@@ -30,11 +25,9 @@ class OperationMaturityMiddleware(Middleware):
         tool_security: Mapping[str, ToolSecurity],
         *,
         primary_tools: Collection[str] = frozenset(),
-        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._tool_security = tool_security
         self._primary_tools = primary_tools
-        self._clock = clock or _utc_now
 
     async def on_list_tools(
         self,
@@ -42,7 +35,6 @@ class OperationMaturityMiddleware(Middleware):
         call_next: CallNext[mt.ListToolsRequest, Sequence[Tool]],
     ) -> Sequence[Tool]:
         tools = await call_next(context)
-        now = self._clock()
         projected: list[Tool] = []
         for tool in tools:
             security = self._tool_security.get(tool.name)
@@ -50,9 +42,7 @@ class OperationMaturityMiddleware(Middleware):
                 projected.append(tool)
                 continue
             metadata = dict(tool.meta or {})
-            metadata[MATURITY_META_KEY] = operation_maturity_meta(
-                security.operation, now=now
-            )
+            metadata[MATURITY_META_KEY] = operation_maturity_meta(security.operation)
             metadata[TIER_META_KEY] = (
                 "primary" if tool.name in self._primary_tools else "secondary"
             )

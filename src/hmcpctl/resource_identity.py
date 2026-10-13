@@ -46,36 +46,46 @@ def optional_system_selector(value: str | None) -> str | None:
     return (value or "").strip() or None
 
 
-async def resolve_system_uuid(hmc: HMCClient, value: str) -> str:
-    """Resolve a managed-system name or pass through its UUID.
+def summary_matching(summaries: list[Any], value: str) -> dict[str, Any] | None:
+    """The ``ManagedSystem/quick/All`` summary *value* selects, or None.
 
-    The name is matched exactly against ``ManagedSystem/quick/All``: the
-    ``SystemName`` search times out for a system with no connection (#1501).
+    A UUID matches case-insensitively and a name matches ``SystemName`` exactly;
+    the ``SystemName`` search times out for a system with no connection (#1501).
+    Raises ``ValueError`` when the name matches distinct systems or a matching
+    row has no UUID.
     """
     if is_uuid(value):
-        return value
-    uuids = [
-        summary.get("UUID")
-        for summary in await hmc.list_system_summaries()
+        return summary_for(summaries, value) or None
+    matches = [
+        summary
+        for summary in summaries
         if isinstance(summary, Mapping) and summary.get("SystemName") == value
     ]
-    if any(not isinstance(uuid, str) or not uuid for uuid in uuids):
+    if any(not isinstance(m.get("UUID"), str) or not m["UUID"] for m in matches):
         raise ValueError(
             f"Cannot resolve managed-system name {value!r}: its UUID metadata is "
             "incomplete"
         )
-    uuids = list(dict.fromkeys(uuids))
-    if len(uuids) > 1:
-        details = ", ".join(f"{value!r} ({uuid})" for uuid in sorted(uuids))
+    distinct = {summary["UUID"]: summary for summary in matches}
+    if len(distinct) > 1:
+        details = ", ".join(f"{value!r} ({uuid})" for uuid in sorted(distinct))
         raise ValueError(f"Ambiguous managed-system name {value!r}: {details}")
-    if not uuids:
+    return next(iter(distinct.values()), None)
+
+
+async def resolve_system_uuid(hmc: HMCClient, value: str) -> str:
+    """Resolve a managed-system name or pass through its UUID."""
+    if is_uuid(value):
+        return value
+    summary = summary_matching(await hmc.list_system_summaries(), value)
+    if summary is None:
         raise ResourceNotFoundError(
             "managed system",
             value,
             f"No managed system named {value!r} found. "
             "Use hmc_list_systems to list available systems.",
         )
-    return str(uuids[0])
+    return str(summary["UUID"])
 
 
 def _named(name: object) -> str | None:

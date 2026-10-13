@@ -196,13 +196,11 @@ def test_limit_is_not_sent_on_root_child_search_or_job_requests(monkeypatch, moc
     monkeypatch.setenv("HMC_HOST", "hmc.test")
     monkeypatch.setenv("HMC_USER", "hscroot")
     monkeypatch.setenv("HMC_PASSWORD", "abc123")
+    quick_all = mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(
+        return_value=httpx.Response(200, json=[])
+    )
     cases = [
-        (
-            mock_hmc.get("/rest/api/uom/ManagedSystem").mock(
-                return_value=httpx.Response(200, text=EMPTY_FEED)
-            ),
-            lambda: server_systems.hmc_list_systems(limit=1),
-        ),
+        (quick_all, lambda: server_systems.hmc_list_systems(limit=1)),
         (
             mock_hmc.get(
                 "/rest/api/uom/LogicalPartition/"
@@ -213,17 +211,16 @@ def test_limit_is_not_sent_on_root_child_search_or_job_requests(monkeypatch, moc
             ),
         ),
         (
-            mock_hmc.get("/rest/api/uom/ManagedSystem/search/(State==operating)").mock(
-                return_value=httpx.Response(200, text=EMPTY_FEED)
-            ),
+            quick_all,
             lambda: server_systems.hmc_list_systems(state="operating", limit=1),
         ),
     ]
 
     forbidden = {"limit", "_limit", "maxCount", "count"}
     for route, invoke in cases:
+        before = route.call_count
         assert invoke() == []
-        assert route.called
+        assert route.call_count > before
         assert forbidden.isdisjoint(route.calls[-1].request.url.params.keys())
 
 
@@ -235,16 +232,22 @@ def _client_context(client):
 
 
 def test_system_state_selector_runs_before_results_are_capped():
-    entries = [{"id": 1}, {"id": 2}, {"id": 3}]
+    summaries = [
+        {"UUID": f"00000000-0000-4000-8000-00000000000{index}", "State": state}
+        for index, state in enumerate(("operating", "standby", "standby", "standby"))
+    ]
     client = MagicMock()
-    client.search_uom = AsyncMock(return_value=entries)
+    client.list_system_summaries = AsyncMock(return_value=summaries)
+    client.get_managed_system = AsyncMock()
     with patch.object(
         app_runtime, "client_from_env", return_value=_client_context(client)
     ):
-        result = server_systems.hmc_list_systems(state="operating", limit=2)
+        result = server_systems.hmc_list_systems(state="standby", limit=2)
 
-    assert result == entries[:2]
-    client.search_uom.assert_awaited_once_with("ManagedSystem", "State", "operating")
+    assert [entry["UUID"] for entry in result] == [
+        summary["UUID"] for summary in summaries[1:3]
+    ]
+    client.get_managed_system.assert_not_awaited()
 
 
 def test_lpar_parent_selector_runs_before_results_are_capped():

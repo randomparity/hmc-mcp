@@ -40,6 +40,9 @@ def _system(configurable: Any = str(CONFIGURABLE_MIB)) -> dict[str, Any]:
 def _hmc(system: dict[str, Any] | None) -> AsyncMock:
     hmc = AsyncMock(spec=HMCClient)
     hmc.find_partition_by_name.return_value = None
+    hmc.list_system_summaries.return_value = [
+        {"UUID": SYSTEM_UUID, "SystemName": "sys-a", "State": "operating"}
+    ]
     hmc.get_managed_system.return_value = system
     return hmc
 

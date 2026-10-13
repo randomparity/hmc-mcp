@@ -56,7 +56,7 @@ def systems_health(
 
 def systems_list(
     state: str | None = typer.Option(
-        None, "--state", help="Filter by State (server-side search)"
+        None, "--state", help="Show only systems whose State is exactly this"
     ),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:

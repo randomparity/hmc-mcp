@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from hmcpctl.client.core import HMCClient
+from hmcpctl.operations.systems.fleet import operating_system_entry
 
 from ...errors import HMCError
 from ...resource_identity import resolve_lpar_uuid, resolve_system_uuid
@@ -179,7 +180,7 @@ async def _fetch_system_summary_data(
 
     Each collection is the entries read, or a warning when the HMC refused it.
     """
-    system = await hmc.get_managed_system(system_uuid)
+    system = await operating_system_entry(hmc, system_uuid, "the summary")
     if system is None:
         raise ValueError(
             f"Managed system {system_uuid!r} not found after resolution. "

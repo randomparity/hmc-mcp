@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.documents.lpar import LparResources
+from hmcpctl.operations.systems.fleet import read_system_entry
 from hmcpctl.resource_identity import optional_system_selector, resolve_system_uuid
 
 _MEMORY_CONTAINER = "AssociatedSystemMemoryConfiguration"
@@ -38,11 +39,12 @@ async def require_memory_within_system(
     in the profile without complaint and the failure surfaces only at
     activation, so this refuses before any write. Nothing is read when no
     desired memory is requested, and a system entry that does not report the
-    figure leaves the request unchecked.
+    figure leaves the request unchecked: a system that is not operating has only
+    its sparse entry (``read_system_entry``, #1501).
     """
     if resources.desired_memory is None:
         return
-    configurable = _configurable_memory_mib(await hmc.get_managed_system(system_uuid))
+    configurable = _configurable_memory_mib(await read_system_entry(hmc, system_uuid))
     if configurable is not None and resources.desired_memory > configurable:
         raise ValueError(
             f"desired_memory {resources.desired_memory} MiB exceeds the managed "

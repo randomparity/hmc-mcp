@@ -13,13 +13,14 @@ from hmcpctl.operations.lpar.assignments import (
 from hmcpctl.operations.lpar.dlpar import modify_lpar
 from hmcpctl.operations.lpar.workflow_contract import WorkflowStep
 
+SYSTEM_UUID = "00000000-0000-4000-8000-0000000000c1"
+
 
 def _hmc_with_system(configurable_memory_mib: int = 16384) -> AsyncMock:
     """An HMC double whose system reads return the dict documents production gets."""
     hmc = AsyncMock()
     hmc.list_system_summaries.return_value = [
-        {"UUID": "system-uuid-1", "SystemName": name}
-        for name in ("system-1", "system-uuid-1")
+        {"UUID": SYSTEM_UUID, "SystemName": "system-1", "State": "operating"}
     ]
     hmc.get_managed_system.return_value = {
         "Resource": {
@@ -63,7 +64,7 @@ async def test_modify_lpar_returns_rename_when_resource_update_fails(monkeypatch
         ("resources", "error"),
     ]
     assert result.warnings == ("resource update failed (HTTP 500)",)
-    hmc.get_managed_system.assert_awaited_once_with("system-uuid-1")
+    hmc.get_managed_system.assert_awaited_once_with(SYSTEM_UUID)
 
 
 @pytest.mark.asyncio

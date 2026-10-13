@@ -22,6 +22,10 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
 
 ### Changed
 
+- CLI and MCP capability discovery retain the last release’s verification state, initially
+  v0.1.0, without runtime age decay. Ordinary capability metadata regeneration combines current
+  catalog structure with the committed release snapshot; explicit `--release` inventory and
+  artifact checks detect candidate closure drift (#1508).
 - `hmc_provision_lpar` and `hmcpctl lpars provision` refuse a dedicated PCIe slot
   (`assignments.dedicated`) before any HMC call, dry runs included. Provision powers on the
   current configuration, so a slot written into the new profile was never owned by the
@@ -68,6 +72,14 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
   frame that refuses its partitions with its state. Capacity and utilization do not read a
   system that is not operating: capacity leaves it out, and the utilization report lists it
   with every figure unknown and a gap naming its state (#1501).
+- `hmc_list_systems`, `hmc_get_system`, `systems list` and `systems show` take their systems from
+  `ManagedSystem/quick/All`. They read a system's full entry only while it is operating. A system
+  that is not operating, for example in `No Connection`, still appears, with a partial entry: its
+  `UUID`, and `SystemName`, `State` and `StateDetail` under `Resource`. The `state` filter matches
+  `State` exactly instead of calling the HMC's `State` search. `hmc_inventory` and
+  `hmc_plan_lpar` find their systems the same way. `hmc_system_summary`, `hmc_backup_vios` with a
+  system UUID, and snapshot capture refuse a system that is not operating at once, naming its
+  state, instead of waiting for its entry to time out (#1501).
 - A partition or VIOS name lookup without a managed-system selector no longer reports a name as
   not found while a managed system cannot be read. The HMC-wide name search answers "not found"
   for a partition on a system in `No Connection`, so a miss now reads the managed-system summary

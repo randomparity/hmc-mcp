@@ -80,16 +80,18 @@ def hmc_list_systems(
 ) -> list[dict[str, Any]]:
     """List managed systems, optionally filtered by state.
 
-    When state is omitted, returns all managed systems known to the HMC. Each
-    entry has UUID, SystemName, State, MachineTypeModelAndSerialNumber,
-    PrimaryIPAddress, etc.
+    When state is omitted, returns every managed system known to the HMC. An
+    operating system's entry is complete: UUID, SystemName, State,
+    MachineTypeModelAndSerialNumber, PrimaryIPAddress, etc. A system that is
+    not operating (for example ``no connection``) cannot be read in full, so
+    its entry carries only UUID and SystemName, State and StateDetail under
+    Resource; its State says why.
 
-    When state is provided, returns only systems whose State property matches
-    the given value, using the HMC server-side search endpoint. Use
-    hmc_get_system for a single system lookup by name.
+    When state is provided, returns only systems whose State matches the given
+    value exactly. Use hmc_get_system for a single system lookup by name.
 
     Args:
-        state: Optional exact managed-system State value to filter server-side.
+        state: Optional exact managed-system State value to filter on.
         profile: Optional configured HMC profile name; uses the default when omitted.
         limit: Maximum entries returned after the complete HMC feed is transferred
             and parsed; omitted returns all entries. This client-side cap does not
@@ -275,7 +277,8 @@ def hmc_get_system(
     """Get a managed system by exact SystemName or UUID.
 
     Returns the full system dict if found, or None if no system with that
-    name is known to the HMC.
+    name is known to the HMC. A system that is not operating returns a partial
+    dict: UUID, and SystemName, State and StateDetail under Resource.
 
     Args:
         system_name_or_uuid: Exact SystemName or UUID of the managed system.
