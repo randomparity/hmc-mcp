@@ -8,7 +8,12 @@ from __future__ import annotations
 
 import httpx
 import pytest
-from conftest import captured_lpar_entry, captured_system_entry, live_fixture
+from conftest import (
+    captured_lpar_entry,
+    captured_system_entry,
+    live_fixture,
+    mock_system_summaries,
+)
 
 from hmcpctl.server_tools.inventory.composite import hmc_system_summary
 
@@ -135,6 +140,7 @@ def test_system_summary_no_lpars_no_vios(monkeypatch, mock_hmc):
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer").mock(
         return_value=httpx.Response(200, text=EMPTY_FEED)
     )
+    mock_system_summaries(mock_hmc, (SYSTEM_UUID, "empty-sys", "operating"))
 
     result = hmc_system_summary(SYSTEM_UUID)
 
@@ -175,6 +181,7 @@ def test_system_summary_by_name_resolves_uuid(monkeypatch, mock_hmc):
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer").mock(
         return_value=httpx.Response(200, text=EMPTY_FEED)
     )
+    mock_system_summaries(mock_hmc, (SYSTEM_UUID, "p9-prod", "operating"))
 
     result = hmc_system_summary("p9-prod")
 
@@ -204,6 +211,7 @@ def _mock_bare_system(mock_hmc, *omit: str) -> None:
         mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/{child}").mock(
             return_value=httpx.Response(200, text=EMPTY_FEED)
         )
+    mock_system_summaries(mock_hmc, (SYSTEM_UUID, "bare-sys", "operating"))
 
 
 def test_system_summary_missing_optional_fields(monkeypatch, mock_hmc):

@@ -456,12 +456,10 @@ SYS_UUID_A = "00000000-0000-0000-0000-00000000000a"
 SYS_UUID_B = "00000000-0000-0000-0000-00000000000b"
 
 
-def _mock_operating_system(router, uuid: str, name: str) -> None:
-    """Answer the system GET an empty partition feed triggers (#1301)."""
-    router.get(f"/rest/api/uom/ManagedSystem/{uuid}").mock(
-        return_value=httpx.Response(
-            200, text=_sys_feed(captured_system_entry(uuid, name))
-        )
+def _mock_operating_systems(router, *systems: tuple[str, str]) -> None:
+    """Answer the quick/All read an empty partition feed triggers (#1301, #1500)."""
+    mock_system_summaries(
+        router, *((uuid, name, "operating") for uuid, name in systems)
     )
 
 
@@ -542,7 +540,7 @@ def test_capacity_report_empty_lpar_list(monkeypatch, mock_hmc):
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_A}/LogicalPartition").mock(
         return_value=httpx.Response(200, text=EMPTY_FEED)
     )
-    _mock_operating_system(mock_hmc, SYS_UUID_A, "empty-sys")
+    _mock_operating_systems(mock_hmc, (SYS_UUID_A, "empty-sys"))
 
     result = hmc_capacity_report()
     assert result[0].free_memory_mib == 112448
@@ -564,11 +562,12 @@ def test_find_placement_returns_candidates(monkeypatch, mock_hmc):
             ),
         )
     )
-    for uuid, name in ((SYS_UUID_A, "big-sys"), (SYS_UUID_B, "small-sys")):
+    systems = ((SYS_UUID_A, "big-sys"), (SYS_UUID_B, "small-sys"))
+    for uuid, _ in systems:
         mock_hmc.get(f"/rest/api/uom/ManagedSystem/{uuid}/LogicalPartition").mock(
             return_value=httpx.Response(200, text=EMPTY_FEED)
         )
-        _mock_operating_system(mock_hmc, uuid, name)
+    _mock_operating_systems(mock_hmc, *systems)
 
     # Request 4096 MiB and 0.5 procs → only big-sys qualifies (small-sys has 2048 MiB free)
     result = hmc_find_placement(desired_memory_mib=4096, desired_proc_units=0.5)
@@ -593,7 +592,7 @@ def test_find_placement_no_candidates(monkeypatch, mock_hmc):
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYS_UUID_A}/LogicalPartition").mock(
         return_value=httpx.Response(200, text=EMPTY_FEED)
     )
-    _mock_operating_system(mock_hmc, SYS_UUID_A, "full-sys")
+    _mock_operating_systems(mock_hmc, (SYS_UUID_A, "full-sys"))
 
     result = hmc_find_placement(desired_memory_mib=512)
     assert result == []

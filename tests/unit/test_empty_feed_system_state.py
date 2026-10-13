@@ -4,7 +4,10 @@ V11R2 SP1120 answered ``ManagedSystem/{uuid}/LogicalPartition`` and
 ``.../VirtualIOServer`` with 204 and no body while a POWER10 9080-HEX read
 ``State`` ``recovery`` (``DetailedState`` ``Recovery``) and later
 ``no connection`` (``Unknown``). The values are in
-``tests/fixtures/live/vocabulary/v11r2-p10-9080-hex.json``.
+``tests/fixtures/live/vocabulary/v11r2-p10-9080-hex.json``. The check reads
+``State`` from ``ManagedSystem/quick/All``, because ``ManagedSystem/{uuid}``
+timed out for a ``no connection`` system on the same release (#1500); that
+route raises a timeout here and must stay unread.
 """
 
 from __future__ import annotations
@@ -51,8 +54,9 @@ from hmcpctl.resource_identity import (
 SYSTEM_UUID = "11111111-1111-1111-1111-111111111111"
 SYSTEM_NAME = "sys-R1"
 SYSTEM_PATH = f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}"
+QUICK_ALL = "/rest/api/uom/ManagedSystem/quick/All"
 OPERATING_UUID = "33333333-3333-3333-3333-333333333333"
-OPERATING_PATH = f"/rest/api/uom/ManagedSystem/{OPERATING_UUID}"
+OPERATING_FEED = f"/rest/api/uom/ManagedSystem/{OPERATING_UUID}/LogicalPartition"
 LPAR_UUID = "22222222-2222-2222-2222-222222222222"
 LPAR_FEED = f"{SYSTEM_PATH}/LogicalPartition"
 VIOS_FEED = f"{SYSTEM_PATH}/VirtualIOServer"
@@ -63,7 +67,7 @@ _VOCABULARY = json.loads(
     ).read_text()
 )["rest"]["values"]
 
-NOT_OPERATING = [("recovery", "Recovery"), ("no connection", "Unknown")]
+NOT_OPERATING = ["recovery", "no connection"]
 
 Read = Callable[[HMCClient], Awaitable[Any]]
 
@@ -117,40 +121,66 @@ def _system(*elements: str) -> str:
 """
 
 
-def _state(state: str, detailed: str) -> str:
-    return _system(
-        f"<State>{state}</State>", f"<DetailedState>{detailed}</DetailedState>"
+def _summary(state: str, uuid: str = SYSTEM_UUID, name: str = SYSTEM_NAME, **extra):
+    return {
+        "UUID": uuid,
+        "SystemName": name,
+        "State": state,
+        "StateDetail": "",
+        **extra,
+    }
+
+
+def _quick_all(router, *summaries: object):
+    """Answer quick/All with *summaries*, and stall the per-system entry (#1500)."""
+    router.get(SYSTEM_PATH).mock(side_effect=httpx.ReadTimeout("stalled"))
+    return router.get(QUICK_ALL).mock(
+        return_value=httpx.Response(200, json=list(summaries))
     )
 
 
+def _assert_entry_unread(router) -> None:
+    assert SYSTEM_PATH not in [call.request.url.path for call in router.calls]
+
+
 def test_states_are_the_captured_values() -> None:
-    for state, detailed in [*NOT_OPERATING, ("operating", "None")]:
+    for state in [*NOT_OPERATING, "operating"]:
         assert state in _VOCABULARY["State"]
-        assert detailed in _VOCABULARY["DetailedState"]
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("read", sorted(READS))
-@pytest.mark.parametrize(("state", "detailed"), NOT_OPERATING)
+@pytest.mark.parametrize("state", NOT_OPERATING)
 async def test_empty_feed_from_a_system_not_operating_raises(
-    mock_hmc, read, state, detailed
+    mock_hmc, read, state
 ) -> None:
     feed, call = READS[read]
     mock_hmc.get(feed).mock(return_value=httpx.Response(204))
-    mock_hmc.get(SYSTEM_PATH).mock(
-        return_value=httpx.Response(200, text=_state(state, detailed))
-    )
+    _quick_all(mock_hmc, _summary(state), _summary("operating", OPERATING_UUID))
 
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError) as caught:
             await call(hmc)
 
     message = str(caught.value)
-    assert repr(SYSTEM_NAME) in message
-    assert SYSTEM_UUID in message
-    assert f"State {state!r}" in message
-    assert f"DetailedState {detailed!r}" in message
+    assert f"{SYSTEM_NAME!r} ({SYSTEM_UUID})" in message
+    assert f"State {state!r}," in message
+    assert "StateDetail" not in message
+    assert "retry when it reconnects" in message
     assert caught.value.status_code is None
+    _assert_entry_unread(mock_hmc)
+
+
+@pytest.mark.asyncio
+async def test_a_state_detail_is_named_when_present(mock_hmc) -> None:
+    mock_hmc.get(LPAR_FEED).mock(return_value=httpx.Response(204))
+    _quick_all(mock_hmc, _summary("recovery", StateDetail="Recovery"))
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(
+            HMCError, match=r"State 'recovery' \(StateDetail 'Recovery'\),"
+        ):
+            await hmc.list_logical_partitions(SYSTEM_UUID)
 
 
 @pytest.mark.asyncio
@@ -163,62 +193,87 @@ async def test_empty_feed_from_an_operating_system_is_empty(
 ) -> None:
     feed, call = READS[read]
     mock_hmc.get(feed).mock(return_value=httpx.Response(204))
-    system = mock_hmc.get(SYSTEM_PATH).mock(
-        return_value=httpx.Response(200, text=_state(state, "None"))
+    summaries = _quick_all(
+        mock_hmc,
+        _summary("no connection", OPERATING_UUID),
+        _summary(state, ReferenceCode="0102-0001-00004012"),
     )
 
     async with HMCClient(make_config()) as hmc:
         assert await call(hmc) == []
 
-    assert system.call_count == 1
+    assert summaries.call_count == 1
+    _assert_entry_unread(mock_hmc)
+
+
+@pytest.mark.asyncio
+async def test_the_system_uuid_matches_in_any_letter_case(mock_hmc) -> None:
+    upper = SYSTEM_UUID.upper().replace("1", "A")
+    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{upper}/LogicalPartition").mock(
+        return_value=httpx.Response(204)
+    )
+    _quick_all(mock_hmc, _summary("operating", upper.lower()))
+
+    async with HMCClient(make_config()) as hmc:
+        assert await hmc.list_logical_partitions(upper) == []
 
 
 @pytest.mark.asyncio
 async def test_scoped_lpar_lookup_on_an_operating_system_is_not_found(mock_hmc):
     mock_hmc.get(LPAR_FEED).mock(return_value=httpx.Response(204))
-    system = mock_hmc.get(SYSTEM_PATH).mock(
-        return_value=httpx.Response(200, text=_state("operating", "None"))
-    )
+    summaries = _quick_all(mock_hmc, _summary("operating"))
 
     async with HMCClient(make_config()) as hmc:
         assert await get_lpar(hmc, "lpar-a", system_name_or_uuid=SYSTEM_UUID) is None
 
-    assert system.call_count == 1
+    assert summaries.call_count == 1
 
 
 @pytest.mark.asyncio
 async def test_scoped_vios_lookup_on_an_operating_system_is_not_found(mock_hmc):
     mock_hmc.get(VIOS_FEED).mock(return_value=httpx.Response(204))
-    system = mock_hmc.get(SYSTEM_PATH).mock(
-        return_value=httpx.Response(200, text=_state("operating", "None"))
-    )
+    summaries = _quick_all(mock_hmc, _summary("operating"))
 
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(ResourceNotFoundError):
             await resolve_vios_uuid(hmc, "vios-a", system_name_or_uuid=SYSTEM_UUID)
 
-    assert system.call_count == 1
+    assert summaries.call_count == 1
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "document", [_system(), None], ids=["no-state-elements", "no-document"]
+    ("summaries", "label"),
+    [
+        ([{"UUID": SYSTEM_UUID, "SystemName": SYSTEM_NAME}], repr(SYSTEM_NAME)),
+        ([_summary("operating", OPERATING_UUID)], SYSTEM_UUID),
+        ([SYSTEM_UUID, {"UUID": None, "State": "operating"}], SYSTEM_UUID),
+    ],
+    ids=["no-state", "not-listed", "not-an-object"],
 )
-async def test_unreadable_state_reads_unknown(mock_hmc, document) -> None:
+async def test_unreadable_state_reads_unknown(mock_hmc, summaries, label) -> None:
     mock_hmc.get(LPAR_FEED).mock(return_value=httpx.Response(204))
-    mock_hmc.get(SYSTEM_PATH).mock(
-        return_value=httpx.Response(200, text=document)
-        if document is not None
-        else httpx.Response(204)
-    )
+    _quick_all(mock_hmc, *summaries)
 
     async with HMCClient(make_config()) as hmc:
         with pytest.raises(HMCError) as caught:
             await list_lpars(hmc, SYSTEM_UUID)
 
     message = str(caught.value)
-    assert "State 'unknown'" in message
-    assert "DetailedState 'unknown'" in message
+    assert f"managed system {label}" in message
+    assert "State 'unknown'," in message
+
+
+@pytest.mark.asyncio
+async def test_a_failed_quick_all_read_propagates(mock_hmc) -> None:
+    mock_hmc.get(LPAR_FEED).mock(return_value=httpx.Response(204))
+    mock_hmc.get(QUICK_ALL).mock(return_value=httpx.Response(500))
+
+    async with HMCClient(make_config()) as hmc:
+        with pytest.raises(HMCError, match="quick/All failed") as caught:
+            await hmc.list_logical_partitions(SYSTEM_UUID)
+
+    assert caught.value.status_code == 500
 
 
 @pytest.mark.asyncio
@@ -229,15 +284,13 @@ async def test_non_empty_feed_does_not_read_the_system(mock_hmc) -> None:
         f"{captured_lpar_entry(lpar_uuid, 'lpar-a')}</feed>"
     )
     mock_hmc.get(LPAR_FEED).mock(return_value=httpx.Response(200, text=feed))
-    system = mock_hmc.get(SYSTEM_PATH).mock(
-        return_value=httpx.Response(200, text=_state("recovery", "Recovery"))
-    )
+    summaries = _quick_all(mock_hmc, _summary("recovery"))
 
     async with HMCClient(make_config()) as hmc:
         assert (await list_lpars(hmc, SYSTEM_UUID, state="running")).entries == []
         assert await get_lpar(hmc, "lpar-b", system_name_or_uuid=SYSTEM_UUID) is None
 
-    assert not system.called
+    assert not summaries.called
 
 
 @pytest.mark.asyncio
@@ -248,15 +301,13 @@ async def test_non_empty_vios_feed_does_not_read_the_system(mock_hmc) -> None:
     )
     feed = f'<feed xmlns="http://www.w3.org/2005/Atom">{entry}</feed>'
     mock_hmc.get(VIOS_FEED).mock(return_value=httpx.Response(200, text=feed))
-    system = mock_hmc.get(SYSTEM_PATH).mock(
-        return_value=httpx.Response(200, text=_state("recovery", "Recovery"))
-    )
+    summaries = _quick_all(mock_hmc, _summary("recovery"))
 
     async with HMCClient(make_config()) as hmc:
         (vios,) = await hmc.list_vios(SYSTEM_UUID)
 
     assert vios["UUID"] == vios_uuid
-    assert not system.called
+    assert not summaries.called
 
 
 def _fleet_entry(state: str, uuid: str = SYSTEM_UUID, name: str = SYSTEM_NAME):
@@ -266,8 +317,10 @@ def _fleet_entry(state: str, uuid: str = SYSTEM_UUID, name: str = SYSTEM_NAME):
 def _mock_no_connection_system(router) -> None:
     router.get(LPAR_FEED).mock(return_value=httpx.Response(204))
     router.get(VIOS_FEED).mock(return_value=httpx.Response(204))
-    router.get(SYSTEM_PATH).mock(
-        return_value=httpx.Response(200, text=_state("no connection", "Unknown"))
+    _quick_all(
+        router,
+        _summary("no connection"),
+        _summary("operating", OPERATING_UUID, "sys-R2"),
     )
 
 
@@ -313,12 +366,7 @@ async def test_capacity_report_omits_a_non_operating_system(
     mock_hmc, monkeypatch, caplog
 ) -> None:
     _mock_no_connection_system(mock_hmc)
-    mock_hmc.get(f"{OPERATING_PATH}/LogicalPartition").mock(
-        return_value=httpx.Response(204)
-    )
-    mock_hmc.get(OPERATING_PATH).mock(
-        return_value=httpx.Response(200, text=_state("operating", "None"))
-    )
+    mock_hmc.get(OPERATING_FEED).mock(return_value=httpx.Response(204))
 
     async with HMCClient(make_config()) as hmc:
         fleet = AsyncMock(return_value=_capacity_fleet("no connection"))
@@ -335,9 +383,7 @@ async def test_capacity_report_fails_on_an_operating_system_refusal(
     mock_hmc, monkeypatch
 ) -> None:
     _mock_no_connection_system(mock_hmc)
-    mock_hmc.get(f"{OPERATING_PATH}/LogicalPartition").mock(
-        return_value=httpx.Response(500, text="failure")
-    )
+    mock_hmc.get(OPERATING_FEED).mock(return_value=httpx.Response(500, text="failure"))
 
     async with HMCClient(make_config()) as hmc:
         fleet = AsyncMock(return_value=_capacity_fleet("no connection"))
@@ -382,6 +428,9 @@ async def test_system_summary_warns_for_a_non_operating_system(mock_hmc) -> None
     mock_hmc.get(LPAR_FEED).mock(return_value=httpx.Response(204))
     mock_hmc.get(VIOS_FEED).mock(return_value=httpx.Response(204))
     mock_hmc.get(SYSTEM_PATH).mock(return_value=httpx.Response(200, text=document))
+    mock_hmc.get(QUICK_ALL).mock(
+        return_value=httpx.Response(200, json=[_summary("no connection")])
+    )
 
     async with HMCClient(make_config()) as hmc:
         summary = await fetch_system_summary(hmc, SYSTEM_UUID)
@@ -437,7 +486,7 @@ async def test_partition_membership_check_names_the_system_state(mock_hmc) -> No
     message = str(caught.value)
     assert repr(SYSTEM_NAME) in message
     assert "State 'no connection'" in message
-    assert "retry" not in message
+    assert "omit the selector" not in message
     assert isinstance(caught.value.__cause__, HMCError)
 
 
