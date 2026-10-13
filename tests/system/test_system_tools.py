@@ -78,7 +78,7 @@ def _fleet(mock_hmc) -> list:
     """
     mock_system_summaries(
         mock_hmc,
-        (OFFLINE_UUID, "sys-R1", "No Connection"),
+        (OFFLINE_UUID, "sys-R1", "no connection"),
         (SYSTEM_UUID, "sys-E2", "operating"),
     )
     return [
@@ -97,7 +97,7 @@ def _fleet(mock_hmc) -> list:
     ]
 
 
-SKIPPED = [UnreadableSystem("sys-R1", OFFLINE_UUID, "No Connection", None)]
+SKIPPED = [UnreadableSystem("sys-R1", OFFLINE_UUID, "no connection", None)]
 
 
 LPAR_SEARCH_FEED = """\
