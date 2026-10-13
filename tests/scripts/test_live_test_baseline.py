@@ -307,15 +307,18 @@ def test_missing_group_rejected(document):
         baseline.validate(document)
 
 
-def test_empty_xml_backing_rejected(document, tmp_path):
+@pytest.mark.parametrize("storage", ["<Storage><VirtualDisk/></Storage>", ""])
+def test_empty_xml_backing_rejected(document, tmp_path, storage):
     from hmcpctl.xmlutil import parse_feed
 
-    raw = """<entry xmlns="http://www.w3.org/2005/Atom"><content>
+    raw = f"""<entry xmlns="http://www.w3.org/2005/Atom"><content>
     <VirtualIOServer xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
     <VirtualSCSIMappings><VirtualSCSIMapping><ServerAdapter>
     <AdapterName>adapter-R1</AdapterName><VirtualSlotNumber>10</VirtualSlotNumber>
     <RemoteLogicalPartitionID>3</RemoteLogicalPartitionID><RemoteSlotNumber>11</RemoteSlotNumber>
-    </ServerAdapter><Storage><VirtualDisk/></Storage></VirtualSCSIMapping></VirtualSCSIMappings>
+    </ServerAdapter>{storage}<TargetDevice><LogicalVolumeVirtualTargetDevice>
+    <TargetName>target-R1</TargetName></LogicalVolumeVirtualTargetDevice></TargetDevice>
+    </VirtualSCSIMapping></VirtualSCSIMappings>
     </VirtualIOServer></content></entry>"""
     resource = parse_feed(raw)[0]["Resource"]
     with pytest.raises(ValueError, match="backing"):
@@ -333,7 +336,14 @@ def test_empty_xml_backing_rejected(document, tmp_path):
             "remote_slot": "11",
             "target": "",
             "client": "{}",
-            "backing": json.dumps({"storage": {"VirtualDisk": ""}, "target": {}}),
+            "backing": json.dumps(
+                {
+                    "storage": {"VirtualDisk": ""} if storage else {},
+                    "target": {
+                        "LogicalVolumeVirtualTargetDevice": {"TargetName": "target-R1"}
+                    },
+                }
+            ),
         }
     ]
     path = tmp_path / "incomplete.json"

@@ -60,8 +60,13 @@ TABLES = {
 }
 
 
-def validate_storage(storage):
+def validate_backing(storage, target):
     """A present backing needs one known resource and its local identity."""
+    if storage == {} and isinstance(target, dict):
+        kinds = {key for key in target if not key.startswith("@")}
+        if not kinds or kinds == {"VirtualOpticalTargetDevice"}:
+            return
+        raise ValueError("VIOS disk target has no backing")
     fields = {
         "VirtualDisk": "DiskName",
         "PhysicalVolume": "VolumeName",
@@ -142,8 +147,7 @@ def validate(document):
                     "target",
                 }:
                     raise ValueError("VIOS mapping backing document is malformed")
-                if backing["storage"] != {}:
-                    validate_storage(backing["storage"])
+                validate_backing(backing["storage"], backing["target"])
             normalized.append(row)
         result[name] = sorted(
             normalized, key=lambda row: tuple(row[k] for k in keys.split(","))
@@ -232,8 +236,9 @@ def mapping_rows(resource, vios_id):
         ):
             raise ValueError("VIOS mapping has malformed target")
         backing = mapping.get("Storage", {})
-        if "Storage" in mapping:
-            validate_storage(backing)
+        if "Storage" in mapping and not backing:
+            raise ValueError("VIOS mapping has empty present backing")
+        validate_backing(backing, target)
         client = mapping.get("AssociatedLogicalPartition", {})
         if not isinstance(client, dict):
             raise ValueError("VIOS mapping has malformed client")  # noqa: TRY004 — invalid external document
