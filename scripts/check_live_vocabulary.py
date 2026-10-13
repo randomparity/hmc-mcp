@@ -117,6 +117,10 @@ def load_evidence(root: Path) -> Evidence:
         # An enum list may bind elements itself, as the documented job statuses do.
         for element, enum in enum_list.get("elements", {}).items():
             bindings.setdefault(element, set()).add(enum)
+    # A stated binding overrides one a vocabulary inferred from its literals: `Status` is
+    # shared by jobs and VNIC backing devices, and a capture of only the latter infers
+    # their enum, which would admit its values as job statuses (#1498).
+    stated = set(bindings)
     vocabularies = [
         p
         for p in sorted(directory.glob("*.json"))
@@ -135,7 +139,8 @@ def load_evidence(root: Path) -> Evidence:
                 v for v in values if v[:1] != "<"
             )
         for element, enum in rest["element_enums"].items():
-            bindings.setdefault(element, set()).add(enum)
+            if element not in stated:
+                bindings.setdefault(element, set()).add(enum)
         endpoints += [e["path"] for e in rest["endpoints"] if e["method"] == "GET"]
         commands += [c["command"] for c in vocabulary["cli"]["commands"]]
     allowed = {
