@@ -289,11 +289,12 @@ def _append_mapping(
 
 # A mapping create names no adapter, so the HMC pairs or creates one itself. In the
 # #1085 window a create refused with 500 REST0269 still left a VIOS server adapter
-# with no mapping, which list-mappings does not show; this read-only listing does
-# (#1237).
+# with no target device. A partition-scoped list-mappings does not show it and an
+# unscoped one shows it with no identity (#1250); this read-only listing does (#1237).
 _ADAPTER_SIDE_EFFECT = (
     "A failed mapping create can leave a VIOS virtual SCSI server adapter with no "
-    "mapping, which list-mappings does not show. List the VIOS server adapters with "
+    "target device. A partition-scoped list-mappings does not show it, and an unscoped one "
+    "shows it with no identity. List the VIOS server adapters with "
     "`lshwres -r virtualio --rsubtype scsi -m <managed-system> --level lpar "
     "--filter lpar_names=<vios-name> -F slot_num,remote_lpar_name,remote_slot_num` "
     "and compare them with the mappings."
