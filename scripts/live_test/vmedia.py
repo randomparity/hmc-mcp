@@ -820,20 +820,9 @@ class _RoundTrip:
         self.vg = str(state.artifacts.vmedia_vg_uuid)
         self.name = f"{BLANK_PREFIX}{_run_tag()}"
 
-    def note(
-        self,
-        tool: str,
-        label: str,
-        result: tuple[str, Any],
-        expected: ExpectedOutcome | None = None,
-    ) -> tuple[str, Any]:
+    def note(self, tool: str, label: str, result: tuple[str, Any]) -> tuple[str, Any]:
         """Record one call's row and hand its result back."""
-        if expected is None:
-            self.state.record(19, f"{tool} ({label})", *result)
-        else:
-            self.state.record_with_expected(
-                19, f"{tool} ({label})", *result, [expected]
-            )
+        self.state.record(19, f"{tool} ({label})", *result)
         return result
 
     def skip(self, reason: str) -> None:
@@ -1156,18 +1145,21 @@ class _RoundTrip:
                 raise _Stop("mount state unknown")
             return False, False
 
-        st_d, _ = self.note(
+        st_d, data_d = await self.state.call(
+            self.client,
             "hmc_delete_optical_media",
-            "while mounted",
-            await self.state.call(
-                self.client,
-                "hmc_delete_optical_media",
-                vios_name_or_uuid=self.vios,
-                vg_uuid=self.vg,
-                media_name=self.name,
-                system_name_or_uuid=self.config.system_name,
-            ),
-            _DELETE_REFUSED_WHILE_MOUNTED,
+            vios_name_or_uuid=self.vios,
+            vg_uuid=self.vg,
+            media_name=self.name,
+            system_name_or_uuid=self.config.system_name,
+            expected=[_DELETE_REFUSED_WHILE_MOUNTED],
+        )
+        self.state.record_with_expected(
+            19,
+            "hmc_delete_optical_media (while mounted)",
+            st_d,
+            data_d,
+            [_DELETE_REFUSED_WHILE_MOUNTED],
         )
         _, _, still = await self.media("after the guarded delete")
         refused = st_d == "FAIL" and still is not None and self.name in still

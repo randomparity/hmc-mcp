@@ -585,6 +585,7 @@ async def test_the_guards_refusal_while_mounted_is_expected_not_failed(arm):
         "refused-while-mounted" in _observations(state)["media.delete"][0]["assertions"]
     )
     assert not [r for r in state.results if r["status"] == "FAIL"]
+    assert not state.gaps
 
 
 @pytest.mark.asyncio
