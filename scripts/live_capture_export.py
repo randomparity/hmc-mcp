@@ -28,6 +28,7 @@ import os
 import re
 import shlex
 import sys
+import urllib.parse
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
@@ -676,7 +677,13 @@ def kept(element: str, value: str, members: set[str]) -> str:
 
 
 def path_template(path: str) -> str:
-    """A captured path with identifiers templated; structure and `group=` kept."""
+    """A captured path with identifiers templated; structure and `group=` kept.
+
+    An absolute href (a link the HMC returned, fetched as given) keeps only its path.
+    """
+    href = urllib.parse.urlsplit(path)
+    if href.netloc:
+        path = urllib.parse.urlunsplit(("", "", href.path, href.query, ""))
     base, _, query = path.partition("?")
     base = UUID.sub("{uuid}", base)
     base = re.sub(r"\(([A-Za-z]+)==[^)]*\)", r"(\1=={value})", base)
