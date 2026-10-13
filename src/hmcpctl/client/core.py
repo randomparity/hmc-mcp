@@ -22,9 +22,7 @@ import httpx
 
 from ..audit import records as audit
 from ..config import HMCConfig, env_var_value
-from ..documents import (
-    build_logon_request_document,
-)
+from ..documents.logon import build_logon_request_document
 from ..errors import HMCError, HMCTransportError
 from ..jobs import TERMINAL_JOB_STATUSES, canonical_job_path
 from .client_adapters import AdaptersMixin

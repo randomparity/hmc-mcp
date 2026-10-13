@@ -20,9 +20,13 @@ from decimal import Decimal
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-from ...documents import LparResources, PartitionType, StorageKind
-from ...documents.lpar import shared_units_over_vcpus, validate_partition_type
-from ...documents.storage import STORAGE_KINDS, validate_virtual_disk
+from ...documents.lpar import (
+    LparResources,
+    PartitionType,
+    shared_units_over_vcpus,
+    validate_partition_type,
+)
+from ...documents.storage import STORAGE_KINDS, StorageKind, validate_virtual_disk
 from ...errors import HMCError, HMCTransportError
 from ...resource_identity import is_uuid
 from ...ssh.affinity import MinimumAffinityPolicy, validate_minimum_affinity_policy

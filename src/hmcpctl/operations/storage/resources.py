@@ -23,7 +23,7 @@ from hmcpctl.operations.lpar.ownership import resolve_and_authorize_lpar_mutatio
 from hmcpctl.operations.lpar.profile_sync import ChangeLocation, read_change_location
 
 from ...config import ISO_URL_ALLOWLIST_HELP
-from ...documents import StorageKind
+from ...documents.storage import StorageKind
 from ...errors import HMCError
 from ...resource_identity import resolve_lpar_uuid, resolve_vios_uuid
 

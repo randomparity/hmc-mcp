@@ -12,8 +12,25 @@ from pathlib import Path
 import pytest
 from defusedxml import ElementTree as DET
 
-from hmcpctl import documents
+from hmcpctl.documents.adapters import (
+    build_client_network_adapter_document,
+    build_vfc_adapter_document,
+    build_vscsi_adapter_document,
+)
 from hmcpctl.documents.common import UOM_NS
+from hmcpctl.documents.lpar import (
+    LparResources,
+    build_lpar_document,
+    build_vios_document,
+)
+from hmcpctl.documents.storage import (
+    build_virtual_disk_element,
+    build_virtual_network_document,
+    build_virtual_optical_mapping_document,
+    build_volume_group_document,
+    build_vscsi_mapping_document,
+    build_web_file_document,
+)
 from hmcpctl.xmlutil import localname
 
 STORAGE_FIXTURES = Path(__file__).parents[1] / "storage"
@@ -43,7 +60,7 @@ def _is_subsequence(needle: list[str], haystack: list[str]) -> bool:
 
 
 def test_vscsi_adapter_matches_fixture() -> None:
-    built = _tree(documents.build_vscsi_adapter_document(7, 11, slot_number=4))
+    built = _tree(build_vscsi_adapter_document(7, 11, slot_number=4))
     live = _first(FIXTURE, "ClientAdapter")
     assert _is_subsequence(_children(built), _children(live))
     for child in built:
@@ -54,7 +71,7 @@ def test_vscsi_adapter_matches_fixture() -> None:
 LINK = "https://hmc.example.invalid/rest/api/uom/LogicalPartition/lpar-1"
 RECORDED = [
     (
-        documents.build_client_network_adapter_document(42, 3, 1, True, "020000000001"),
+        build_client_network_adapter_document(42, 3, 1, True, "020000000001"),
         {
             "VirtualSlotNumber": "COD",
             "VirtualSwitchID": "ROR",
@@ -62,21 +79,21 @@ RECORDED = [
             "MACAddress": "CUR",
         },
     ),
-    (documents.build_volume_group_document("vg1", ["hdisk1"]), {"VolumeName": "CUR"}),
+    (build_volume_group_document("vg1", ["hdisk1"]), {"VolumeName": "CUR"}),
     (
-        documents.build_vscsi_mapping_document("PhysicalVolume", "hdisk5", LINK),
+        build_vscsi_mapping_document("PhysicalVolume", "hdisk5", LINK),
         {"VolumeName": "CUR"},
     ),
     (
-        documents.build_virtual_optical_mapping_document("a.iso", LINK),
+        build_virtual_optical_mapping_document("a.iso", LINK),
         {"MediaName": "CUR"},
     ),
     (
-        documents.build_virtual_network_document("n1", 10, 0, tagged=True),
+        build_virtual_network_document("n1", 10, 0, tagged=True),
         {"NetworkVLANID": "COD", "VswitchID": "ROR", "TaggedNetwork": "COD"},
     ),
     (
-        documents.build_vfc_adapter_document(1, 2, 3),
+        build_vfc_adapter_document(1, 2, 3),
         {
             "AdapterType": "ROR",  # live-vocabulary: allow a kb code, not an element value
             "VirtualSlotNumber": "COD",
@@ -96,9 +113,7 @@ def test_recorded_kb_values(xml: str, expected: dict[str, str]) -> None:
 
 
 def test_virtual_disk_create_matches_fixture() -> None:
-    built = _first(
-        _tree(documents.build_virtual_disk_element("lv1", 2048)), "VirtualDisk"
-    )
+    built = _first(_tree(build_virtual_disk_element("lv1", 2048)), "VirtualDisk")
     live = _first(FIXTURE, "VirtualDisk")
     assert _kbx(built) == _kbx(live)
     names = [n for n in _children(built) if n != "Metadata"]
@@ -109,7 +124,7 @@ def test_virtual_disk_create_matches_fixture() -> None:
 
 
 def test_vscsi_mapping_matches_fixture() -> None:
-    xml = documents.build_vscsi_mapping_document("VirtualDisk", "vd1", LINK, "vtscsi9")
+    xml = build_vscsi_mapping_document("VirtualDisk", "vd1", LINK, "vtscsi9")
     built = _first(_tree(xml), "VirtualSCSIMapping")
     live = _first(FIXTURE, "VirtualSCSIMapping")
     assert _kbx(built) == _kbx(live)
@@ -142,14 +157,12 @@ def test_vscsi_mapping_matches_fixture() -> None:
     ("xml", "storage", "target"),
     [
         (
-            documents.build_vscsi_mapping_document(
-                "PhysicalVolume", "hdisk5", LINK, "vt1"
-            ),
+            build_vscsi_mapping_document("PhysicalVolume", "hdisk5", LINK, "vt1"),
             "PhysicalVolume",
             "PhysicalVolumeVirtualTargetDevice",
         ),
         (
-            documents.build_virtual_optical_mapping_document("a.iso", LINK, "vtopt1"),
+            build_virtual_optical_mapping_document("a.iso", LINK, "vtopt1"),
             "VirtualOpticalMedia",
             "VirtualOpticalTargetDevice",
         ),
@@ -168,7 +181,7 @@ def test_mapping_wrappers_and_target_device(
 
 
 def test_mapping_without_target_device_omits_it() -> None:
-    root = _tree(documents.build_vscsi_mapping_document("VirtualDisk", "vd1", LINK))
+    root = _tree(build_vscsi_mapping_document("VirtualDisk", "vd1", LINK))
     assert _children(_first(root, "VirtualSCSIMapping")) == [
         "Metadata",
         "AssociatedLogicalPartition",
@@ -186,45 +199,43 @@ def _assert_matches_live(built, live) -> None:
 
 
 def test_volume_group_create_matches_fixture() -> None:
-    built = _tree(documents.build_volume_group_document("vg1", ["hdisk1", "hdisk2"]))
+    built = _tree(build_volume_group_document("vg1", ["hdisk1", "hdisk2"]))
     assert _children(_first(built, "PhysicalVolumes")).count("PhysicalVolume") == 2
     _assert_matches_live(built, VOLUME_GROUP)
 
 
 def test_volume_group_physical_volume_attributes() -> None:
-    root = _tree(documents.build_volume_group_document("vg1", ["hdisk1"]))
+    root = _tree(build_volume_group_document("vg1", ["hdisk1"]))
     assert _first(root, "PhysicalVolume").attrib == {"schemaVersion": "V1_0"}
 
 
-RESOURCES = documents.LparResources(
+RESOURCES = LparResources(
     min_memory=512,
     desired_memory=1024,
     max_memory=2048,
     desired_procs=0.5,
     desired_vcpus=1,
 )
-DEDICATED = documents.LparResources(desired_procs=1, dedicated=True)
+DEDICATED = LparResources(desired_procs=1, dedicated=True)
 BUILT = {
-    "vscsi-adapter": documents.build_vscsi_adapter_document(1, 2, 3),
-    "vfc-adapter": documents.build_vfc_adapter_document(1, 2, 3),
-    "network-adapter": documents.build_client_network_adapter_document(
+    "vscsi-adapter": build_vscsi_adapter_document(1, 2, 3),
+    "vfc-adapter": build_vfc_adapter_document(1, 2, 3),
+    "network-adapter": build_client_network_adapter_document(
         1, 2, 0, True, "020000000001"
     ),
-    "volume-group": documents.build_volume_group_document("vg1", ["hdisk1"]),
-    "virtual-disk": documents.build_virtual_disk_element("lv1", 1024),
-    "vscsi-mapping": documents.build_vscsi_mapping_document(
+    "volume-group": build_volume_group_document("vg1", ["hdisk1"]),
+    "virtual-disk": build_virtual_disk_element("lv1", 1024),
+    "vscsi-mapping": build_vscsi_mapping_document(
         "PhysicalVolume", "hdisk1", LINK, "vt1"
     ),
-    "optical-mapping": documents.build_virtual_optical_mapping_document(
-        "a.iso", LINK, "vt2"
-    ),
-    "virtual-network": documents.build_virtual_network_document("n1", 10, 0, LINK),
-    "web-file": documents.build_web_file_document(
+    "optical-mapping": build_virtual_optical_mapping_document("a.iso", LINK, "vt2"),
+    "virtual-network": build_virtual_network_document("n1", 10, 0, LINK),
+    "web-file": build_web_file_document(
         "a.iso", 1, "00000000-0000-0000-0000-000000000001"
     ),
-    "lpar-shared": documents.build_lpar_document("p1", resources=RESOURCES),
-    "lpar-dedicated": documents.build_lpar_document("p1", resources=DEDICATED),
-    "vios": documents.build_vios_document("v1"),
+    "lpar-shared": build_lpar_document("p1", resources=RESOURCES),
+    "lpar-dedicated": build_lpar_document("p1", resources=DEDICATED),
+    "vios": build_vios_document("v1"),
 }
 
 
@@ -294,7 +305,7 @@ SCHEMA_SEQUENCES = {
     ],
     "PartitionIOConfiguration": ["Metadata", "MaximumVirtualIOSlots"],
 }
-FULL_SHARED = documents.LparResources(
+FULL_SHARED = LparResources(
     min_memory=1,
     desired_memory=2,
     max_memory=3,
@@ -306,7 +317,7 @@ FULL_SHARED = documents.LparResources(
     max_vcpus=2,
     uncapped=False,
 )
-FULL_DEDICATED = documents.LparResources(
+FULL_DEDICATED = LparResources(
     desired_memory=2,
     dedicated=True,
     min_procs=1,
@@ -319,7 +330,7 @@ FULL_DEDICATED = documents.LparResources(
 @pytest.mark.parametrize("resources", [FULL_SHARED, FULL_DEDICATED])
 def test_create_elements_follow_the_schema_sequence(resources) -> None:
     root = _tree(
-        documents.build_lpar_document(
+        build_lpar_document(
             "p1",
             partition_id=3,
             resources=resources,

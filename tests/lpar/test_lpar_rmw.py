@@ -15,7 +15,7 @@ from conftest import make_config
 from defusedxml import ElementTree as DET
 
 from hmcpctl.client.core import HMCClient
-from hmcpctl.documents import LparResources, partition_updates
+from hmcpctl.documents.lpar import LparResources, partition_updates
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.lpar.assignments import LparPcieAssignments
 from hmcpctl.operations.lpar.core import rename_lpar

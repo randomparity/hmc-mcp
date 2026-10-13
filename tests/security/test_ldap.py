@@ -6,7 +6,7 @@ from conftest import live_fixture, make_config
 from defusedxml import ElementTree as DET
 
 from hmcpctl.client.core import HMCClient
-from hmcpctl.documents import build_remote_access_document
+from hmcpctl.documents.remote_access import build_remote_access_document
 from hmcpctl.errors import HMCError
 
 CONSOLE = "console-1"

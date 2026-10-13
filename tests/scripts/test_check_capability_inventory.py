@@ -992,6 +992,20 @@ def test_lifecycle_closure_excludes_split_tool_modules() -> None:
     assert lpar / "lifecycle_create.py" not in paths
 
 
+def test_lpar_get_closure_excludes_the_user_profile_builder() -> None:
+    """Editing the UserProfile builder re-stales only the operations that build it (#1495).
+
+    Every operation logs on, so the module holding the logon builder is in every
+    closure; it shared `documents/access.py` with the UserProfile builder, and the
+    package initializer re-exported every builder module besides.
+    """
+    paths = inventory.closure_paths(ROOT, "hmcpctl.server_tools.systems.core")
+    documents = ROOT / "src" / "hmcpctl" / "documents"
+
+    assert documents / "logon.py" in paths
+    assert documents / "access.py" not in paths
+
+
 def test_closure_containment(tmp_path: Path) -> None:
     """The walk never reads a symlink and never resolves above the package.
 

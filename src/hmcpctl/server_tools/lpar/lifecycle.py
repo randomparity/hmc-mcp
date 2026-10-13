@@ -8,7 +8,7 @@ from ..._app import (
     with_client,
 )
 from ...client.core import HMCClient
-from ...documents import LparResources
+from ...documents.lpar import LparResources
 from ...jobs import BootMode, PowerOnKeylock, PowerOnOperationType
 from ...operations.affinity.rest import ProvisionAffinityAssessment
 from ...operations.lpar.assignments import (

@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from ..._app import with_client
-from ...documents import LparResources, PartitionType
-from ...documents.lpar import validate_partition_type
+from ...documents.lpar import LparResources, PartitionType, validate_partition_type
 from ...operations.affinity.rest import ProvisionAffinityAssessment
 from ...operations.lpar.assignments import LparPcieAssignments
 from ...operations.lpar.provision import (

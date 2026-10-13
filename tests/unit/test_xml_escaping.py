@@ -22,8 +22,10 @@ For each string-carrying parameter the harness asserts one of two outcomes:
 from __future__ import annotations
 
 import dataclasses
+import importlib
 import inspect
 import pathlib
+import pkgutil
 import re
 import sys
 import types
@@ -34,6 +36,14 @@ import pytest
 from defusedxml import ElementTree as DET
 
 from hmcpctl import documents, jobs
+from hmcpctl.documents.access import build_hmc_user_document
+from hmcpctl.documents.logon import build_logon_request_document
+from hmcpctl.documents.lpar import build_lpar_document
+from hmcpctl.documents.remote_access import build_remote_access_document
+from hmcpctl.documents.storage import (
+    build_vscsi_mapping_document,
+    build_web_file_document,
+)
 from hmcpctl.jobs import requests as jobs_requests
 from hmcpctl.operations.updates import models as update_jobs
 from hmcpctl.xmlutil import escape_xml, escapes_string_arguments, localname
@@ -45,7 +55,13 @@ from hmcpctl.xmlutil import escape_xml, escapes_string_arguments, localname
 PAYLOAD = "R&D <a> \"b\" 'c'"
 BENIGN = "benign"
 
-BUILDER_MODULES = (documents, jobs, jobs_requests, update_jobs)
+# Each builder lives in its owning `hmcpctl.documents` submodule; the package
+# re-exports nothing (#1495), so the submodules are enumerated rather than named.
+DOCUMENT_MODULES = tuple(
+    importlib.import_module(f"{documents.__name__}.{info.name}")
+    for info in pkgutil.iter_modules(documents.__path__)
+)
+BUILDER_MODULES = (*DOCUMENT_MODULES, jobs, jobs_requests, update_jobs)
 
 ADR_0042 = (
     pathlib.Path(__file__).resolve().parents[2]
@@ -335,7 +351,7 @@ def test_every_documents_builder_escapes_its_arguments():
     unprotected = [
         name
         for module, name, builder in _builders()
-        if module is documents
+        if module in DOCUMENT_MODULES
         and not getattr(builder, "__xml_escaped_arguments__", False)
     ]
     assert unprotected == []
@@ -378,7 +394,7 @@ def test_job_request_is_the_jobs_module_choke_point():
 
 def test_ldap_search_filter_accepts_an_ordinary_conjunction():
     search_filter = "(&(objectClass=person)(uid=*))"
-    xml = documents.build_remote_access_document({"SearchFilter": search_filter})
+    xml = build_remote_access_document({"SearchFilter": search_filter})
 
     parsed = DET.fromstring(xml.encode("utf-8"))
     found = [el.text for el in parsed.iter() if localname(el.tag) == "SearchFilter"]
@@ -386,7 +402,7 @@ def test_ldap_search_filter_accepts_an_ordinary_conjunction():
 
 
 def test_hmc_user_description_cannot_add_a_second_user_id():
-    xml = documents.build_hmc_user_document(
+    xml = build_hmc_user_document(
         user_id="alice",
         description="</Description><UserID>root</UserID><Description>x",
     )
@@ -397,7 +413,7 @@ def test_hmc_user_description_cannot_add_a_second_user_id():
 
 
 def test_vscsi_target_device_cannot_add_a_second_lpar_href():
-    xml = documents.build_vscsi_mapping_document(
+    xml = build_vscsi_mapping_document(
         storage_kind="VirtualDisk",
         storage_name="disk1",
         lpar_link="https://h/LP/AUTH",
@@ -454,7 +470,7 @@ def test_repository_password_with_an_ampersand_stays_well_formed():
 def test_logon_password_with_an_ampersand_stays_well_formed():
     """The reported defect: an ordinary password made logon impossible."""
     value = "pa&ss"
-    xml = documents.build_logon_request_document(user="hscroot", password=value)
+    xml = build_logon_request_document(user="hscroot", password=value)
 
     parsed = DET.fromstring(xml.encode("utf-8"))
     found = [el.text for el in parsed.iter() if localname(el.tag) == "Password"]
@@ -464,7 +480,7 @@ def test_logon_password_with_an_ampersand_stays_well_formed():
 def test_logon_user_cannot_add_a_second_user_id():
     """Unescaped, this produced a *well-formed* body with two identities."""
     username = "a</UserID><UserID>root"
-    xml = documents.build_logon_request_document(user=username, password="p")
+    xml = build_logon_request_document(user=username, password="p")
 
     parsed = DET.fromstring(xml.encode("utf-8"))
     user_ids = [el.text for el in parsed.iter() if localname(el.tag) == "UserID"]
@@ -473,7 +489,7 @@ def test_logon_user_cannot_add_a_second_user_id():
 
 def test_web_file_filename_cannot_add_a_sibling_element():
     filename = "a.iso</Filename><Filename>evil.iso"
-    xml = documents.build_web_file_document(
+    xml = build_web_file_document(
         filename=filename,
         size_bytes=1,
         vios_uuid="00000000-0000-0000-0000-000000000001",
@@ -493,7 +509,7 @@ def test_logon_rejects_characters_xml_cannot_carry_without_quoting_them(
 ):
     """Reject at the boundary, and name the codepoint rather than the value."""
     with pytest.raises(ValueError, match=re.escape(codepoint)) as raised:
-        documents.build_logon_request_document(user="hscroot", password=value)
+        build_logon_request_document(user="hscroot", password=value)
 
     assert value not in str(raised.value)
     assert "unleakable" not in str(raised.value)
@@ -528,12 +544,12 @@ def test_escaping_is_the_identity_for_ordinary_values(value):
 def test_characters_xml_cannot_carry_are_rejected(value, codepoint):
     """Escaping cannot rescue these, so the boundary refuses them by name."""
     with pytest.raises(ValueError, match=re.escape(codepoint)):
-        documents.build_hmc_user_document(user_id=value)
+        build_hmc_user_document(user_id=value)
 
 
 @pytest.mark.parametrize("value", ["a\tb", "a\nb", "a\rb", "caf\u00e9", "\U0001f600"])
 def test_characters_xml_can_carry_are_accepted(value):
-    xml = documents.build_hmc_user_document(user_id=value)
+    xml = build_hmc_user_document(user_id=value)
 
     assert DET.fromstring(xml.encode("utf-8")) is not None
 
@@ -582,7 +598,7 @@ def test_benign_input_produces_no_entity_at_all(builder):
 def test_valid_input_is_unchanged_by_escaping():
     """Escaping must be invisible to every caller that was already correct."""
     assert '<PartitionName kb="CUR" kxe="false">lpar1</PartitionName>' in (
-        documents.build_lpar_document(name="lpar1")
+        build_lpar_document(name="lpar1")
     )
     assert (
         '<ParameterValue kb="CUR" kxe="false">false</ParameterValue>'

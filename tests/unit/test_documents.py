@@ -4,48 +4,22 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from hmcpctl import documents
-from hmcpctl.documents import (
-    AUTHENTICATION_TYPES,
+from hmcpctl.documents import common
+from hmcpctl.documents.access import AUTHENTICATION_TYPES, build_hmc_user_document
+from hmcpctl.documents.common import UOM_NS
+from hmcpctl.documents.logon import build_logon_request_document
+from hmcpctl.documents.lpar import (
     PARTITION_TYPES,
     SHARING_MODES,
     LparResources,
-    build_hmc_user_document,
     build_lpar_document,
     partition_updates,
 )
-from hmcpctl.documents.common import UOM_NS
+from hmcpctl.documents.remote_access import build_remote_access_document
 
 _EMPTY_LPAR = ET.fromstring(
     '<LogicalPartition xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"/>'
 )
-
-
-@pytest.mark.parametrize(
-    ("name", "owner"),
-    [
-        ("AUTHENTICATION_TYPES", "access"),
-        ("AuthenticationType", "access"),
-        ("join_boot_device_paths", "boot"),
-        ("KEYLOCK_POSITIONS", "lpar"),
-        ("PARTITION_TYPES", "lpar"),
-        ("SHARING_MODES", "lpar"),
-        ("Keylock", "lpar"),
-        ("LparResources", "lpar"),
-        ("PartitionType", "lpar"),
-        ("SharingMode", "lpar"),
-        ("STORAGE_KINDS", "storage"),
-        ("StorageKind", "storage"),
-        ("MEM_MIRRORING_MODES", "system"),
-        ("POWER_OFF_POLICIES", "system"),
-        ("POWER_ON_LPAR_START_POLICIES", "system"),
-        ("MemoryMirroringMode", "system"),
-        ("PowerOffPolicy", "system"),
-        ("PowerOnLparStartPolicy", "system"),
-    ],
-)
-def test_document_facade_exports_domain_owned_objects(name, owner):
-    assert getattr(documents, name) is getattr(getattr(documents, owner), name)
 
 
 @pytest.mark.parametrize(
@@ -76,7 +50,7 @@ def test_document_facade_exports_domain_owned_objects(name, owner):
     ],
 )
 def test_common_has_no_domain_or_xml_primitive_exports(name):
-    assert not hasattr(documents.common, name)
+    assert not hasattr(common, name)
 
 
 def test_minimal_create_document():
@@ -341,3 +315,70 @@ def test_keylock_outside_the_schema_is_refused(keylock):
     """V10R3's KeylockPosition.Enum is manual, normal, unknown; unknown is not creatable."""
     with pytest.raises(ValueError, match="keylock must be one of: normal, manual"):
         build_lpar_document(name="mypart", keylock=keylock)
+
+
+# Output captured before #1495 moved these builders between modules; the move must
+# leave every byte of the documents unchanged.
+_ENVELOPE = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+_UOM = 'xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"'
+_CUD = 'ksv="V1_17_0" kb="CUD" kxe="false"'
+
+
+def test_logon_request_document_is_unchanged():
+    xml = build_logon_request_document(
+        user="operator",
+        password="s3cret",  # pragma: allowlist secret
+    )
+
+    assert xml == (
+        _ENVELOPE
+        + '<LogonRequest xmlns="http://www.ibm.com/xmlns/systems/power/firmware/web/'
+        'mc/2012_10/" schemaVersion="V1_0">\n'
+        "  <Metadata>\n    <Atom/>\n  </Metadata>\n"
+        '  <UserID kb="CUR" kxe="false">operator</UserID>\n'
+        '  <Password kb="CUR" kxe="false">s3cret</Password>\n'
+        "</LogonRequest>\n"
+    )
+
+
+def test_user_profile_document_is_unchanged():
+    xml = build_hmc_user_document(
+        user_id="operator",
+        password="p",
+        description="d",
+        authentication_type="LDAP",
+        associated_task_role="hmcviewer",
+        associated_resource_roles=["AllSystemResources"],
+        session_timeout=5,
+    )
+
+    assert xml == (
+        _ENVELOPE + f'<UserProfile {_UOM} schemaVersion="V1_0">\n'
+        "  <Metadata><Atom/></Metadata>\n"
+        '  <UserID ksv="V1_17_0" kb="COR" kxe="false">operator</UserID>\n'
+        f"  <UserDescription {_CUD}>d</UserDescription>\n"
+        f"  <AuthenticationType {_CUD}>ldap</AuthenticationType>\n"
+        f"  <UserProfilePassword {_CUD}>p</UserProfilePassword>\n"
+        f"  <AssociatedTaskRole {_CUD}>hmcviewer</AssociatedTaskRole>\n"
+        f'  <AssociatedResourceRoles {_CUD} schemaVersion="V1_0"><Metadata><Atom/>'
+        f"</Metadata><AssociatedResourceRole {_CUD}>AllSystemResources"
+        "</AssociatedResourceRole></AssociatedResourceRoles>\n"
+        f"  <SessionTimeout {_CUD}>5</SessionTimeout>\n"
+        "</UserProfile>\n"
+    )
+
+
+def test_remote_access_document_is_unchanged():
+    xml = build_remote_access_document({"LdapEnabled": True}, ["KerberosEnabled"])
+
+    assert xml == (
+        _ENVELOPE + f'<ManagementConsole {_UOM} schemaVersion="V1_0">\n'
+        "  <Metadata><Atom/></Metadata>\n"
+        '  <LdapConfiguration schemaVersion="V1_0">\n'
+        '    <LdapEnabled kb="CUR" kxe="false">true</LdapEnabled>\n'
+        "  </LdapConfiguration>\n"
+        '  <KerberosConfiguration schemaVersion="V1_0">\n'
+        '    <KerberosEnabled kb="CUR" kxe="false"/>\n'
+        "  </KerberosConfiguration>\n"
+        "</ManagementConsole>\n"
+    )

@@ -2,7 +2,7 @@
 
 import pytest
 
-from hmcpctl.documents import (
+from hmcpctl.documents.storage import (
     build_virtual_disk_element,
     build_volume_group_document,
     build_vscsi_mapping_document,

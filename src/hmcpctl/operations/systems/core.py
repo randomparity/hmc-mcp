@@ -7,7 +7,7 @@ from typing import Any
 
 from hmcpctl.client.core import HMCClient
 
-from ...documents import (
+from ...documents.system import (
     MemoryMirroringMode,
     PowerOffPolicy,
     PowerOnLparStartPolicy,
