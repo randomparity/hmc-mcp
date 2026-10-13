@@ -35,7 +35,7 @@ COMMITTED = ROOT / "docs" / "tools"
 # Absolute, not relative: the sdist ships README.md as the PyPI long description and
 # does not ship docs/, so a relative link dangles for every reader who arrives from
 # the package page rather than from GitHub.
-README_POINTER = "https://github.com/randomparity/hmc-mcp/blob/main/docs/tools/index.md"
+README_POINTER = "https://github.com/randomparity/hmcpctl/blob/main/docs/tools/index.md"
 
 SECURITY = {
     "hmc_alpha": ToolSecurity(

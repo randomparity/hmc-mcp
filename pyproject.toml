@@ -26,9 +26,9 @@ app = [
 ]
 
 [project.urls]
-Repository = "https://github.com/randomparity/hmc-mcp"
-Contributing = "https://github.com/randomparity/hmc-mcp/blob/main/CONTRIBUTING.md"
-Security = "https://github.com/randomparity/hmc-mcp/security/policy"
+Repository = "https://github.com/randomparity/hmcpctl"
+Contributing = "https://github.com/randomparity/hmcpctl/blob/main/CONTRIBUTING.md"
+Security = "https://github.com/randomparity/hmcpctl/security/policy"
 
 [project.scripts]
 hmcpctl = "hmcpctl:main"

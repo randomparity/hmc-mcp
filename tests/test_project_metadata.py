@@ -10,11 +10,11 @@ POLICY_LINKS = {
     "SECURITY.md": "[Security policy](SECURITY.md)",
 }
 PROJECT_URLS = {
-    "Repository": "https://github.com/randomparity/hmc-mcp",
-    "Contributing": "https://github.com/randomparity/hmc-mcp/blob/main/CONTRIBUTING.md",
-    "Security": "https://github.com/randomparity/hmc-mcp/security/policy",
+    "Repository": "https://github.com/randomparity/hmcpctl",
+    "Contributing": "https://github.com/randomparity/hmcpctl/blob/main/CONTRIBUTING.md",
+    "Security": "https://github.com/randomparity/hmcpctl/security/policy",
 }
-PRIVATE_ADVISORY_URL = "https://github.com/randomparity/hmc-mcp/security/advisories/new"
+PRIVATE_ADVISORY_URL = "https://github.com/randomparity/hmcpctl/security/advisories/new"
 GOVERNANCE_HEADING = "## Contributing, security, and license"
 GOVERNANCE_NEXT = None
 CONTRIBUTING_HEADING = "# Contributing"

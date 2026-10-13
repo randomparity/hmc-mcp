@@ -292,7 +292,7 @@ on that ordering: export one spelling.
 The authorization audit record's `attribution` folds the same way, so casing no
 longer splits the trail: whichever spelling of `HMC_AGENT_ID` you export, the
 ADR 0040 record names the claimant the ADR 0011 ownership stamp and the
-`X-Audit-Memento` header carry ([#543](https://github.com/randomparity/hmc-mcp/issues/543)).
+`X-Audit-Memento` header carry ([#543](https://github.com/randomparity/hmcpctl/issues/543)).
 `audit.py` imports nothing from the package by design and so carries its own copy
 of the fold, which a test pins against `config.env_var_value` directly.
 
