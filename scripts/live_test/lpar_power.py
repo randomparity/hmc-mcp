@@ -1476,7 +1476,7 @@ def _report_left_adapters(
 
 def _provision_assertions(run: Run) -> list[Assertion]:
     """`provision.lpar`'s assertions."""
-    assertions = [
+    return [
         Assertion(
             "workflow-completed", run.holds("provision.lpar", "workflow-completed")
         ),
@@ -1500,7 +1500,6 @@ def _provision_assertions(run: Run) -> list[Assertion]:
             run.holds("provision.lpar", "dedicated-slot-refused"),
         ),
     ]
-    return assertions
 
 
 def _observe_a(state: RunState, run: Run, cleanup: str) -> None:
