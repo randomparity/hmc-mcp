@@ -248,6 +248,14 @@ each carries an optional selector; they should reuse
 > (`operations/lpar/ownership.py::resolve_and_authorize_lpar_mutation`). ADR 0092's #1135
 > note records the same rename.
 
+> **Amended by #1501** (2026-10-13): `_discover_owning_system` lists the fleet from
+> `ManagedSystem/quick/All`, not `list_managed_systems()`. On V11R2 the unfiltered
+> `ManagedSystem` feed timed out while a system was `No Connection` (#1290). The
+> `SystemName` comes from the matching `quick/All` summary. The walk skips a system whose
+> `State` is not `operating` before reading its partition feed, and counts it among the
+> frames it could not read, with its state. A failed `quick/All` read still names
+> `supply managed-system scope`.
+
 ## Considered & rejected
 
 **Make the selector required on the operation, and on the tool.** The simplest

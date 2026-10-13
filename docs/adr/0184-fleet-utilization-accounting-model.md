@@ -62,6 +62,11 @@ V11R2, POWER9 to POWER11; private evidence, public-safe summary here) establishe
 - A roll-up's split columns can sum to less than its capacity columns when some systems lack a
   split figure; the shortfall note is what tells a reader so.
 - The two systems whose CPU remainder is non-zero show it as other reserved rather than hiding it.
+- *Update (#1501):* the survey lists systems from `ManagedSystem/quick/All` and reads the full
+  entry and feeds of operating systems only, because the `ManagedSystem` feed and a
+  `No Connection` system's own entry time out. A system that is not operating still gets a
+  reading: its name and `State` from `quick/All`, every figure unknown, and one gap naming the
+  state.
 
 ## Considered & rejected
 
