@@ -9,6 +9,7 @@ from unittest.mock import ANY, AsyncMock, patch
 import httpx
 import pytest
 import respx
+from conftest import mock_system_summaries
 
 from hmcpctl.operations.lpar.assignments import (
     LparPcieAssignments,
@@ -75,6 +76,8 @@ def _setup_mock(router):
 </entry>""",
         )
     )
+    # The empty name-check feed reads the system's State from quick/All
+    mock_system_summaries(router, (SYSTEM_UUID, "server1", "operating"))
     # REST LPAR create
     router.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(

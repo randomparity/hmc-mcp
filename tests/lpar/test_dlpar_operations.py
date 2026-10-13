@@ -19,7 +19,12 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from conftest import LPAR_RESOURCE_CONFIG, live_response, make_config
+from conftest import (
+    LPAR_RESOURCE_CONFIG,
+    live_response,
+    make_config,
+    mock_system_summaries,
+)
 
 from hmcpctl.audit import sink as audit_sink
 from hmcpctl.client.client_resolution import MAX_PARENT_DISCOVERY_SYSTEMS
@@ -135,11 +140,7 @@ def _mock_empty_other_system(router) -> None:
     router.get(
         f"/rest/api/uom/ManagedSystem/{OTHER_SYSTEM_UUID}/LogicalPartition"
     ).mock(return_value=httpx.Response(200, text=_feed()))
-    router.get(f"/rest/api/uom/ManagedSystem/{OTHER_SYSTEM_UUID}").mock(
-        return_value=httpx.Response(
-            200, text=SYSTEM_ENTRY.format(uuid=OTHER_SYSTEM_UUID, name="server0")
-        )
-    )
+    mock_system_summaries(router, (OTHER_SYSTEM_UUID, "server0", "operating"))
 
 
 def _mock_modify(router, uuid: str = LPAR_UUID) -> httpx.Response:

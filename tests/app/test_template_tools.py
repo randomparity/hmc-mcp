@@ -10,7 +10,14 @@ from unittest.mock import ANY, AsyncMock, patch
 
 import httpx
 import pytest
-from conftest import COMPLETED_JOB_ENTRY, JOB_ENTRY, JOB_ID, live_fixture, live_response
+from conftest import (
+    COMPLETED_JOB_ENTRY,
+    JOB_ENTRY,
+    JOB_ID,
+    live_fixture,
+    live_response,
+    mock_system_summaries,
+)
 
 from hmcpctl.errors import HMCError
 from hmcpctl.server_tools.templates.core import (
@@ -185,9 +192,7 @@ def test_deploy_partition_template_wait_true_polls_to_completion(monkeypatch, mo
         f"/rest/api/uom/ManagedSystem/{TARGET_SYSTEM_UUID}/LogicalPartition"
     ).mock(return_value=httpx.Response(200, text=_lpar_feed()))
     # An empty partition feed is trusted only from an operating system (#1301).
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{TARGET_SYSTEM_UUID}").mock(
-        return_value=httpx.Response(200, text=_operating_system_entry())
-    )
+    mock_system_summaries(mock_hmc, (TARGET_SYSTEM_UUID, "sys-R1", "operating"))
     submit_route = mock_hmc.put(
         "/rest/api/templates/PartitionTemplate/draft-uuid/do/deploy"
     ).mock(return_value=httpx.Response(202, text=JOB_ENTRY))
@@ -202,20 +207,6 @@ def test_deploy_partition_template_wait_true_polls_to_completion(monkeypatch, mo
     assert set(result) == {"job", "ownership_stamped", "warnings"}
     assert result["job"]["Resource"]["Status"] == "COMPLETED_OK"
     assert result["ownership_stamped"] is None
-
-
-def _operating_system_entry() -> str:
-    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<entry xmlns="http://www.w3.org/2005/Atom">
-  <id>urn:uuid:{TARGET_SYSTEM_UUID}</id>
-  <content type="application/vnd.ibm.powervm.uom+xml">
-    <ManagedSystem xmlns="http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/">
-      <SystemName>sys-R1</SystemName>
-      <State>operating</State>
-    </ManagedSystem>
-  </content>
-</entry>
-"""
 
 
 def _lpar_feed(*entries: tuple[str, str]) -> str:

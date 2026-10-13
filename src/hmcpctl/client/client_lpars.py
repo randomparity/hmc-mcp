@@ -50,7 +50,7 @@ class LparsMixin:
         entries = _parse_feed(xml, path) if xml else []
         if not entries:
             await require_operating_system(
-                self.get_managed_system, system_uuid, "LPARs"
+                self.list_system_summaries, system_uuid, "LPARs"
             )
         return entries
 

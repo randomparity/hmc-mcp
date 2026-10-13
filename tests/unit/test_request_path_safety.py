@@ -249,14 +249,14 @@ def test_new_uuid_builders_preserve_mixed_case_paths(
         requested.append(path)
         return ""
 
-    async def operating(_system_uuid):
-        return {"Resource": {"State": "operating"}}
+    async def operating():
+        return [{"UUID": mixed.lower(), "State": "operating"}]
 
     for helper in ("_get", "_put", "_post", "_delete", "submit_job"):
         monkeypatch.setattr(client, helper, record)
-    # An empty scoped feed reads the system's state (#1301); keep that off the
-    # recorded request paths.
-    monkeypatch.setattr(client, "get_managed_system", operating)
+    # An empty scoped feed reads the system's state from quick/All (#1301,
+    # #1500), matching the UUID in any case; keep that off the recorded paths.
+    monkeypatch.setattr(client, "list_system_summaries", operating)
     asyncio.run(getattr(client, method)(*arguments))
     assert requested == ["/rest/api/uom/" + suffix.replace(UUID_B, mixed)]
 

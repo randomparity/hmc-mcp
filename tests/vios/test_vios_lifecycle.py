@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import httpx
 import pytest
-from conftest import live_fixture, make_config
+from conftest import live_fixture, make_config, mock_system_summaries
 
 from hmcpctl.client.core import HMCClient
 from hmcpctl.documents import LparResources, build_vios_document
@@ -270,12 +270,10 @@ def test_install_vios_unknown_name_fails_before_submission(monkeypatch, mock_hmc
     mock_hmc.get("/rest/api/uom/ManagedSystem/search/(SystemName==sys1)").mock(
         return_value=httpx.Response(200, text=_system_feed("sys1"))
     )
-    mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
-        return_value=httpx.Response(200, text=_system_feed("sys1"))
-    )
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/VirtualIOServer").mock(
         return_value=httpx.Response(200, text='<?xml version="1.0"?><feed/>')
     )
+    mock_system_summaries(mock_hmc, (SYSTEM_UUID, "sys1", "operating"))
 
     async def fail(config, cmd):  # pragma: no cover — must never be reached
         raise AssertionError("run_installios must not be called")

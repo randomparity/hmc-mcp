@@ -338,7 +338,7 @@ class SystemsMixin:
         entries = _parse_feed(xml, path) if xml else []
         if not entries:
             await require_operating_system(
-                self.get_managed_system, system_uuid, "VIOSes"
+                self.list_system_summaries, system_uuid, "VIOSes"
             )
         return entries
 
