@@ -2,6 +2,8 @@
 
 ## Status
 
+> **Superseded in part by [0212](0212-release-scoped-live-verification.md)** (2026-10-13): currency, catalog promotion, and scheduled-report policy only; evidence safeguards remain.
+
 Accepted
 
 Extended by [ADR 0132](0132-confirmed-live-limitation-gaps.md): maturity format 3 adds

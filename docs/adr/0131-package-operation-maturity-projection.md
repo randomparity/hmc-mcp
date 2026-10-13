@@ -2,6 +2,8 @@
 
 ## Status
 
+> **Superseded in part by [0212](0212-release-scoped-live-verification.md)** (2026-10-13): per-commit verification freshness and runtime age decay only; the other projection contracts remain.
+
 Accepted
 
 ## Context
