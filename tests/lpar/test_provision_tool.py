@@ -24,7 +24,11 @@ from hmcpctl.operations.affinity.rest import (
     PostActivationAffinityAssessment,
     validate_affinity_request,
 )
-from hmcpctl.operations.lpar.assignments import WorkflowStep
+from hmcpctl.operations.lpar.assignments import (
+    DedicatedPcieAssignment,
+    LparPcieAssignments,
+    WorkflowStep,
+)
 from hmcpctl.operations.lpar.core import LparCreationResult, LparPowerResult
 from hmcpctl.operations.lpar.provision import (
     ProvisionAdapters,
@@ -1258,4 +1262,44 @@ def test_provision_tool_refuses_a_vios_type_before_logon(monkeypatch, mock_hmc):
         hmc_provision_lpar(
             **_provision_args(partition_type="Virtual IO Server"),
         )
+    assert not mock_hmc.calls
+
+
+_DEDICATED = LparPcieAssignments(
+    dedicated=(DedicatedPcieAssignment(profile_name="default_profile", drc_index="1"),)
+)
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_provision_operation_refuses_a_dedicated_slot_before_any_round_trip(
+    monkeypatch, dry_run
+):
+    """Provision's PowerOn activates the current configuration, so a slot written to
+    the profile is never owned (#1390); refuse before reading or writing anything."""
+    _hmc_env(monkeypatch)
+    from hmcpctl.operations.lpar.provision import provision_lpar
+
+    args = _provision_args()
+
+    with pytest.raises(ValueError, match="hmc_assign_dedicated_pcie_slot"):
+        asyncio.run(
+            provision_lpar(
+                None,
+                args["system_name_or_uuid"],
+                ProvisionRequest(
+                    name=args["name"],
+                    adapters=args["adapters"],
+                    storage=args["storage"],
+                    resources=args["resources"],
+                    dry_run=dry_run,
+                    assignments=_DEDICATED,
+                ),
+            )  # type: ignore[arg-type]
+        )
+
+
+def test_provision_tool_refuses_a_dedicated_slot_before_logon(monkeypatch, mock_hmc):
+    _hmc_env(monkeypatch)
+    with pytest.raises(ValueError, match="partition_profile_uuid"):
+        hmc_provision_lpar(**_provision_args(assignments=_DEDICATED))
     assert not mock_hmc.calls

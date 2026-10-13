@@ -22,6 +22,7 @@ from ...operations.lpar.provision import (
     ProvisionResult,
     ProvisionStorage,
     provision_lpar,
+    validate_provision_assignments,
 )
 from ..output import VerbatimTable, console, print_json, usage_error
 from ..runtime import with_client
@@ -65,7 +66,10 @@ def lpars_provision(
     pcie_assignments: Path | None = typer.Option(
         None,
         "--pcie-assignments",
-        help="JSON file using the declarative LparPcieAssignments schema",
+        help=(
+            "JSON file using the declarative LparPcieAssignments schema; "
+            "dedicated slots are refused"
+        ),
     ),
     as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
@@ -78,6 +82,10 @@ def lpars_provision(
     and remaining steps as "skipped". No automatic rollback is performed.
     """
     assignments = load_pcie_assignments(pcie_assignments)
+    try:
+        validate_provision_assignments(assignments)
+    except ValueError as exc:
+        usage_error(f"--pcie-assignments: {exc}")
 
     try:
         lpar_type = validate_partition_type(partition_type)

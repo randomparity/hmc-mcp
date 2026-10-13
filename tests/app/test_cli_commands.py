@@ -5435,3 +5435,43 @@ def test_lpars_create_and_provision_refuse_a_vios_type_before_client_call(
     assert result.exit_code == 2
     assert "hmc_create_vios" in result.stderr
     assert fake_hmc.calls == []
+
+
+def test_lpars_provision_refuses_a_dedicated_slot_before_client_call(
+    fake_hmc, monkeypatch, tmp_path
+):
+    provision = AsyncMock()
+    monkeypatch.setattr(cli_lpar_provision, "provision_lpar", provision)
+    assignments = tmp_path / "assignments.json"
+    assignments.write_text(
+        json.dumps(
+            {"dedicated": [{"profile_name": "default_profile", "drc_index": "1"}]}
+        ),
+        encoding="utf-8",
+    )
+
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "lpars",
+            "provision",
+            "--system",
+            SYSTEM_UUID,
+            "--name",
+            "newlpar",
+            "--vlan",
+            "100",
+            "--vios-uuid",
+            VIOS_UUID,
+            "--storage-name",
+            "rootvg",
+            "--pcie-assignments",
+            str(assignments),
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "hmc_assign_dedicated_pcie_slot" in unstyle(result.stderr)
+    provision.assert_not_awaited()
+    assert fake_hmc.calls == []
