@@ -44,6 +44,17 @@ partition with no mapping, read while it existed, and removed. The REST body is 
 `ViosSCSIMapping` group, and the listing is the #1237 `lshwres` command. Its `MACAddressPrefix`
 is zeroed, which the exporter does not do. Their token map is their own, as for the exports above.
 
+`rest-user-create-remote-user-id-refused` and `rest-user-profile-kerberos` (`capture` prefix
+`2026-10-13-q1414/`) come from an operator-authorized window for #1414 on the V10R3 HMC, each
+run making at most one disposable Kerberos-type user with a synthetic principal, then deleting
+it. The first is hmcpctl's create refused with REST0001 because it sent `RemoteUserID` after
+`AssociatedTaskRole` (`probe.capture.jsonl`). The second is the profile hmcpctl created once
+that was fixed, with no description given (`probe3.capture.jsonl`); its `desc-1` was `HMC User`
+before tokenizing. The exporter's e-mail rule rewrote the principal to
+`hmcpctl-test/user@example.test`. The HMC serves `RemoteUserID` with a trailing newline that
+the create did not send; the fixture keeps it, and hmcpctl does not strip it on read. Their
+token map is their own, as for the exports above.
+
 ## Format
 
 Every file is a JSON object with these keys:
