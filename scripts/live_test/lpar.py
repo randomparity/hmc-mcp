@@ -762,9 +762,12 @@ async def _check_memory_pool_removal_refusal(client: Client, state: RunState) ->
         client, "hmc_list_memory_pools", system_name_or_uuid=config.system_name
     )
     if status != "PASS" or pools != []:
-        state.record(
-            10, tool, "SKIP", pools, "the system may have a pool; not removing it"
+        note = (
+            "the system lists a pool; not removing it"
+            if status == "PASS"
+            else "the pool list read failed; not removing"
         )
+        state.record(10, tool, "SKIP", pools, note)
         return
     status, data = await state.call(
         client, "hmc_remove_memory_pool", system_name_or_uuid=config.system_name

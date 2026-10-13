@@ -69,6 +69,11 @@ _DEDICATED_PARTITIONS = (
 )
 
 
+def _dedicated_profiles() -> str:
+    """Every captured profile reads ``mem_mode=ded``."""
+    return live_fixture("cli-prof-all")["stdout"]
+
+
 # ---------------------------------------------------------------------- #
 # hmc_list_memory_pools
 # ---------------------------------------------------------------------- #
@@ -172,7 +177,9 @@ def test_remove_memory_pool_sends_the_documented_remove(monkeypatch, mock_hmc):
     """With a pool and every partition dedicated, the remove names no pool."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
-    conn_mock = _sequenced_ssh_mock(_POOL_ROW, _DEDICATED_PARTITIONS, "")
+    conn_mock = _sequenced_ssh_mock(
+        _POOL_ROW, _DEDICATED_PARTITIONS, _dedicated_profiles(), ""
+    )
 
     with patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock):
         result = hmc_remove_memory_pool(SYSTEM_UUID)
@@ -180,27 +187,56 @@ def test_remove_memory_pool_sends_the_documented_remove(monkeypatch, mock_hmc):
     assert _sent(conn_mock) == [
         f"lshwres -r mempool -m {SYSTEM_NAME}",
         f"lshwres -r mem --level lpar -m {SYSTEM_NAME}",
+        f"lssyscfg -r prof -m {SYSTEM_NAME}",
         f"chhwres -r mempool -m {SYSTEM_NAME} -o r",
     ]
     assert result == ""
 
 
 @pytest.mark.parametrize(
-    "row,named",
+    "partitions,profiles,named",
     [
-        ("lpar_name=lpar-s,lpar_id=3,mem_mode=shared", "lpar-s (mem_mode=shared)"),
-        ("lpar_name=lpar-u,lpar_id=4,curr_mem=2048", "lpar-u (mem_mode=<absent>)"),
-        ("lpar_name=lpar-x,lpar_id=5,mem_mode=", "lpar-x (mem_mode=)"),
+        (
+            "lpar_name=lpar-s,lpar_id=3,mem_mode=shared",
+            "",
+            "partition lpar-s (mem_mode=shared)",
+        ),
+        (
+            "lpar_name=lpar-u,lpar_id=4,curr_mem=2048",
+            "",
+            "partition lpar-u (mem_mode=<absent>)",
+        ),
+        ("lpar_name=lpar-x,lpar_id=5,mem_mode=", "", "partition lpar-x (mem_mode=)"),
+        (
+            "",
+            "name=prof-s,lpar_name=lpar-p,lpar_id=6,mem_mode=shared",
+            "profile prof-s of lpar-p (mem_mode=shared)",
+        ),
+        (
+            "",
+            "name=prof-u,lpar_name=lpar-q,lpar_id=7,min_mem=1024",
+            "profile prof-u of lpar-q (mem_mode=<absent>)",
+        ),
     ],
-    ids=["shared", "field-absent", "field-empty"],
+    ids=[
+        "partition-shared",
+        "partition-field-absent",
+        "partition-field-empty",
+        "profile-shared",
+        "profile-field-absent",
+    ],
 )
-def test_remove_memory_pool_refuses_unless_every_partition_is_dedicated(
-    monkeypatch, mock_hmc, row, named
+def test_remove_memory_pool_refuses_unless_everything_is_dedicated(
+    monkeypatch, mock_hmc, partitions, profiles, named
 ):
-    """A partition not confirmed as ``mem_mode=ded`` blocks the remove."""
+    """A partition or profile not confirmed as ``mem_mode=ded`` blocks the remove."""
     _hmc_env(monkeypatch)
     mock_uuid_resolution(mock_hmc, SYSTEM_UUID, SYSTEM_NAME)
-    conn_mock = _sequenced_ssh_mock(_POOL_ROW, _DEDICATED_PARTITIONS + row + "\n")
+    conn_mock = _sequenced_ssh_mock(
+        _POOL_ROW,
+        _DEDICATED_PARTITIONS + partitions + "\n",
+        _dedicated_profiles() + profiles + "\n",
+    )
 
     with (
         patch("hmcpctl.ssh.transport.asyncssh.connect", return_value=conn_mock),
@@ -208,6 +244,8 @@ def test_remove_memory_pool_refuses_unless_every_partition_is_dedicated(
     ):
         hmc_remove_memory_pool(SYSTEM_UUID)
 
-    assert named in str(exc_info.value)
-    assert "lpar-a" not in str(exc_info.value)
+    message = str(exc_info.value)
+    assert named in message
+    assert "lpar-a" not in message
+    assert "default_profile" not in message
     assert not any("chhwres" in cmd for cmd in _sent(conn_mock))

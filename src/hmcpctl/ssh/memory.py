@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shlex
+from collections.abc import Callable
 from typing import Any
 
 from ..config import HMCConfig
@@ -38,22 +39,34 @@ async def list_memory_pools(
     return _parse_lshwres_output(output)
 
 
+def _not_dedicated(
+    rows: list[dict[str, Any]], label: Callable[[dict[str, Any]], str]
+) -> list[str]:
+    """Name each row whose ``mem_mode`` is not the captured ``ded`` value."""
+    return [
+        f"{label(row)} (mem_mode={row.get('mem_mode', '<absent>')})"
+        for row in rows
+        if row.get("mem_mode") != "ded"
+    ]
+
+
 async def remove_memory_pool(config: HMCConfig, system_name: str) -> str:
     """Remove the shared memory pool from *system_name* via SSH.
 
     Refuses without issuing ``chhwres`` when the system has no pool, or when
-    any partition is not confirmed to use dedicated memory: every
-    ``lshwres -r mem --level lpar`` row must carry ``mem_mode=ded``. A
-    ``shared`` row is still paged from the pool, and a row without the field
-    cannot be confirmed either way, so both refuse. Otherwise runs the
-    documented ``chhwres -r mempool -m <system_name> -o r``, which takes no
-    pool name because the system has at most one pool.
+    any partition or profile is not confirmed to use dedicated memory: every
+    ``lshwres -r mem --level lpar`` row and every ``lssyscfg -r prof`` row
+    must carry ``mem_mode=ded``. A ``shared`` partition is paged from the
+    pool, a ``shared`` profile could no longer be activated, and a row
+    without the field cannot be confirmed either way, so all of them refuse.
+    Otherwise runs the documented ``chhwres -r mempool -m <system_name> -o r``,
+    which takes no pool name because the system has at most one pool.
 
     Returns the HMC CLI output (immediate delete — no job to poll).
 
     Raises:
         HMCCLIError: If *system_name* has no shared memory pool, or if any
-            partition is not confirmed in dedicated memory mode.
+            partition or profile is not confirmed in dedicated memory mode.
     """
     system = shlex.quote(system_name)
     if not await list_memory_pools(config, system_name):
@@ -66,18 +79,23 @@ async def remove_memory_pool(config: HMCConfig, system_name: str) -> str:
     partitions = _parse_lshwres_output(
         await run_hmc_command(config, f"lshwres -r mem --level lpar -m {system}")
     )
-    unconfirmed = [
-        f"{row.get('lpar_name', '<unnamed>')} "
-        f"(mem_mode={row.get('mem_mode', '<absent>')})"
-        for row in partitions
-        if row.get("mem_mode") != "ded"
-    ]
+    profiles = _parse_lshwres_output(
+        await run_hmc_command(config, f"lssyscfg -r prof -m {system}")
+    )
+    unconfirmed = _not_dedicated(
+        partitions, lambda row: f"partition {row.get('lpar_name', '<unnamed>')}"
+    ) + _not_dedicated(
+        profiles,
+        lambda row: (
+            f"profile {row.get('name', '<unnamed>')} of "
+            f"{row.get('lpar_name', '<unnamed>')}"
+        ),
+    )
     if unconfirmed:
         raise HMCCLIError(
-            f"Cannot remove the shared memory pool on '{system_name}' — these "
-            "partitions are not confirmed in dedicated memory mode: "
-            f"{', '.join(unconfirmed)}. Change them to mem_mode=ded before "
-            "retrying."
+            f"Cannot remove the shared memory pool on '{system_name}' — not "
+            f"confirmed in dedicated memory mode: {', '.join(unconfirmed)}. "
+            "Change them to mem_mode=ded before retrying."
         )
 
     return await run_hmc_command(config, f"chhwres -r mempool -m {system} -o r")
