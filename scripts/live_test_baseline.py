@@ -175,6 +175,27 @@ def validate(document):
             raise ValueError("SR-IOV physical-port coverage is incomplete")
     if any(row["adapter_id"] not in adapters for row in result["sriov_physical"]):
         raise ValueError("SR-IOV physical-port coverage contains an unknown adapter")
+    physical = {
+        (row["adapter_id"], row["phys_port_id"]): row
+        for row in result["sriov_physical"]
+    }
+    if any(
+        (row["adapter_id"], row["phys_port_id"]) not in physical
+        or row["logical_port_type"] != "eth"
+        for row in result["sriov_logical"]
+    ):
+        raise ValueError(
+            "SR-IOV logical-port coverage contains an unknown physical port"
+        )
+    for identity, port in physical.items():
+        logical = [
+            row
+            for row in result["sriov_logical"]
+            if (row["adapter_id"], row["phys_port_id"]) == identity
+        ]
+        count = port["curr_eth_logical_ports"]
+        if not count.isdigit() or len(logical) != int(count):
+            raise ValueError("SR-IOV logical-port coverage is incomplete")
     partitions = {row["lpar_id"]: row for row in result["partitions"]}
     if any(not re.fullmatch(r"[0-9]+", key) for key in partitions):
         raise ValueError("partition ID is malformed")
@@ -241,6 +262,8 @@ def mapping_rows(resource, vios_id):
     collection = resource.get("VirtualSCSIMappings")
     if not isinstance(collection, dict):
         raise ValueError("VIOS read has no mapping container")  # noqa: TRY004 — invalid external document
+    if set(collection) - {"@attrs", "Metadata", "VirtualSCSIMapping"}:
+        raise ValueError("VIOS mapping container has unknown fields")
     mappings = collection.get("VirtualSCSIMapping", [])
     if isinstance(mappings, dict):
         mappings = [mappings]

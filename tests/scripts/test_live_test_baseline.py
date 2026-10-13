@@ -196,6 +196,7 @@ def test_mapping_capture():
     for invalid in (
         {},
         {"VirtualSCSIMappings": ""},
+        {"VirtualSCSIMappings": {"error": "unavailable"}},
         {"VirtualSCSIMappings": {"VirtualSCSIMapping": [{}]}},
     ):
         with pytest.raises(ValueError):
@@ -414,4 +415,21 @@ async def test_physical_port_coverage(document, monkeypatch):
     document["tables"]["sriov_physical"] = await sriov.list_sriov_physical_port_rows(
         object(), "sys-R1", "2"
     )
+    with pytest.raises(ValueError, match="logical-port coverage"):
+        baseline.validate(document)
+    remote.side_effect = None
+    remote.return_value = json.loads(
+        (fixture.parent / "cli-sriov-logport-eth-v11r2-p9.json").read_text()
+    )["stdout"]
+    document["tables"][
+        "sriov_logical"
+    ] = await sriov.list_sriov_configured_logical_port_rows(object(), "sys-R1", "2")
     assert len(baseline.validate(document)["tables"]["sriov_physical"]) == 4
+    assert len(baseline.validate(document)["tables"]["sriov_logical"]) == 5
+    document["tables"]["sriov_logical"][0]["phys_port_id"] = "99"
+    with pytest.raises(ValueError, match="logical-port coverage"):
+        baseline.validate(document)
+    document["tables"]["sriov_logical"] = []
+    for port in document["tables"]["sriov_physical"]:
+        port["curr_eth_logical_ports"] = port["config_logical_ports"] = "0"
+    assert baseline.validate(document)["tables"]["sriov_logical"] == []
