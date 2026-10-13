@@ -23,11 +23,10 @@ Changes:
 - Fixtures `rest-vios-scsi-mapping-unmapped-adapter` and `cli-vios-scsi-unmapped-adapter`
   (tokenized, cited in the fixture README), and the window's rows folded into
   `vocabulary/v10r3-p9.json`.
-- `_ADAPTER_SIDE_EFFECT` adds that an unscoped `list-mappings` shows the adapter with a null
-  id; CHANGELOG `[Unreleased]` records it.
-- Text-only updates to the `_unmapped_server_adapters` docstring, `docs/live-testing.md`'s
-  recovery note, ADR 0168's consequences, and the 2026-10-01 recovery spec's two #1250
-  references.
+- `_ADAPTER_SIDE_EFFECT` keeps naming only the `lshwres` listing: an unscoped null-id row
+  names no slot or partition and has other causes (ADR 0168), so it would not help.
+- Text only: the `_unmapped_server_adapters` docstring, `docs/live-testing.md`, ADR 0168's
+  consequences, and the 2026-10-01 recovery spec's two #1250 references.
 
 No transition is needed. No product behaviour, identity or projection changes.
 
@@ -46,14 +45,16 @@ No transition is needed. No product behaviour, identity or projection changes.
    two identified mappings.
 2. The adapter-only mapping pins the observed shape: slot, remote partition and remote slot
    are present; client adapter, target, storage and partition link are absent.
-3. Recovery fed the captured listing reports the unmapped adapter with both slots named.
-4. The failure note names the unscoped null-id entry and the `lshwres` listing.
+3. Recovery fed the captured listing, with its mapping list projected from the captured REST
+   fixture, reports the unmapped adapter naming slots 3 and 5 against one mapped adapter.
+4. Both new fixtures carry no lab identifier.
 5. `just verify` and `prek run --all-files` pass.
 
 ## Validation
 
 - Success 1–2: focused-test, `tests/storage/test_mapping_inventory.py` (fixture-driven).
 - Success 3: focused-test, `tests/scripts/test_live_test_recovery.py`.
-- Success 4: focused-test, `tests/storage/test_mapping_rmw.py`.
+- Success 4: task-test-not-applicable — the exporter's fail-closed scan plus a manual `rg`
+  for lab names, hosts, serials and addresses over both files before commit.
 - Vocabulary, docs and ADR prose: task-test-not-applicable. They are prose and data that
   `just live-vocabulary`, `just doc-freshness` and `just adr-numbering` gate.
