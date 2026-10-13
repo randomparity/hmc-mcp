@@ -14,7 +14,12 @@ from unittest.mock import ANY, AsyncMock, patch
 
 import httpx
 import pytest
-from conftest import JOB_ENTRY, assert_no_mutating_requests, mock_change_location
+from conftest import (
+    JOB_ENTRY,
+    assert_no_mutating_requests,
+    mock_change_location,
+    mock_system_summary,
+)
 
 from hmcpctl.documents.lpar import LparResources
 from hmcpctl.jobs import JobOutcome
@@ -260,10 +265,11 @@ def _mock_execution_steps(mock_hmc, *, sync="Disabled"):
     create_route = mock_hmc.put(
         f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition"
     ).mock(return_value=httpx.Response(201, text=CREATED_LPAR_FEED))
-    # get_managed_system for stamp system-name resolution (REST-first)
+    # The full system entry for the memory bound; quick/All for the stamp's name.
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
+    mock_system_summary(mock_hmc, SYSTEM_UUID, "sys1")
 
     mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"
@@ -824,6 +830,7 @@ def test_provision_lpar_partial_failure_skips_remaining(monkeypatch, mock_hmc):
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
+    mock_system_summary(mock_hmc, SYSTEM_UUID, "sys1")
 
     mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"
@@ -872,6 +879,7 @@ def test_policy_provision_network_failure_records_each_step_once(monkeypatch, mo
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
+    mock_system_summary(mock_hmc, SYSTEM_UUID, "sys1")
     mock_hmc.put(
         f"/rest/api/uom/LogicalPartition/{LPAR_UUID}/ClientNetworkAdapter"
     ).mock(return_value=httpx.Response(500))
@@ -924,6 +932,7 @@ def test_provision_lpar_reports_created_resource_without_uuid(monkeypatch, mock_
     mock_hmc.get(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}").mock(
         return_value=httpx.Response(200, text=SYSTEM_ENTRY)
     )
+    mock_system_summary(mock_hmc, SYSTEM_UUID, "sys1")
     mock_hmc.put(f"/rest/api/uom/ManagedSystem/{SYSTEM_UUID}/LogicalPartition").mock(
         return_value=httpx.Response(201)
     )

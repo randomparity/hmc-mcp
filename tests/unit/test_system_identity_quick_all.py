@@ -12,13 +12,19 @@ from __future__ import annotations
 
 import json
 import re
+from unittest.mock import patch
 
 import httpx
 import pytest
 from conftest import captured_lpar_entry, live_fixture, live_response, make_config
 
 from hmcpctl.client.core import HMCClient
-from hmcpctl.resource_identity import ResourceNotFoundError, resolve_system_uuid
+from hmcpctl.resource_identity import (
+    ResourceNotFoundError,
+    resolve_system_uuid,
+    system_name_from_uuid,
+)
+from hmcpctl.ssh.selectors import resolve_system_name
 
 QUICK_ALL = "rest-ms-quick-all-no-connection-v11r2"
 SUMMARIES = json.loads(live_fixture(QUICK_ALL)["body"])
@@ -132,6 +138,41 @@ async def test_a_matching_summary_without_a_uuid_is_refused(mock_hmc):
 
     with pytest.raises(ValueError, match="UUID metadata is incomplete"):
         await _resolve("sys-R1")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", ["sys-R8", "sys-R1"])
+async def test_a_system_uuid_names_its_system_from_quick_all(mock_hmc, name):
+    stalling = _stalling_routes(mock_hmc)
+    _quick_all(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        assert await system_name_from_uuid(hmc, UUIDS[name].upper()) == name
+
+    _assert_unread(stalling)
+
+
+@pytest.mark.asyncio
+async def test_a_uuid_quick_all_does_not_list_has_no_name(mock_hmc):
+    stalling = _stalling_routes(mock_hmc)
+    _quick_all(mock_hmc)
+
+    async with HMCClient(make_config()) as hmc:
+        assert await system_name_from_uuid(hmc, LPAR_A) is None
+
+    _assert_unread(stalling)
+
+
+@pytest.mark.asyncio
+async def test_an_ssh_selector_names_a_disconnected_system_without_ssh(mock_hmc):
+    stalling = _stalling_routes(mock_hmc)
+    _quick_all(mock_hmc)
+
+    with patch("hmcpctl.ssh.transport.asyncssh.connect") as connect:
+        assert await resolve_system_name(make_config(), UUIDS["sys-R11"]) == "sys-R11"
+
+    connect.assert_not_called()
+    _assert_unread(stalling)
 
 
 def _system_feeds(mock_hmc, collection: str, owners: dict[str, str]):

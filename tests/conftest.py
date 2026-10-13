@@ -426,6 +426,18 @@ LPAR_ENTRY = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 """
 
 
+def mock_system_summary(router, system_uuid: str, system_name: str):
+    """Register ``ManagedSystem/quick/All`` listing one operating system."""
+    return router.get("/rest/api/uom/ManagedSystem/quick/All").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"UUID": system_uuid, "SystemName": system_name, "State": "operating"}
+            ],
+        )
+    )
+
+
 def mock_uuid_resolution(
     router,
     system_uuid: str,
@@ -436,14 +448,10 @@ def mock_uuid_resolution(
     """Register respx routes resolving system/lpar UUIDs to their CLI names.
 
     SSH-passthrough tools look up a UUID via REST before running the HMC
-    command, so tests must mock the ``get_managed_system`` /
+    command, so tests must mock the ``ManagedSystem/quick/All`` and
     ``get_logical_partition`` GETs in addition to ``asyncssh.connect``.
     """
-    router.get(f"/rest/api/uom/ManagedSystem/{system_uuid}").mock(
-        return_value=httpx.Response(
-            200, text=SYSTEM_ENTRY.format(uuid=system_uuid, name=system_name)
-        )
-    )
+    mock_system_summary(router, system_uuid, system_name)
     if lpar_uuid is not None:
         lpar_entry = LPAR_ENTRY.format(uuid=lpar_uuid, name=lpar_name)
         router.get(f"/rest/api/uom/LogicalPartition/{lpar_uuid}").mock(

@@ -178,8 +178,8 @@ async def test_resolve_system_name_uses_supplied_config():
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.get_managed_system = AsyncMock(
-            return_value={"Resource": {"SystemName": SYSTEM_NAME}}
+        mock_client.list_system_summaries = AsyncMock(
+            return_value=[{"UUID": SYSTEM_UUID, "SystemName": SYSTEM_NAME}]
         )
         mock_client_type.return_value = mock_client
 
@@ -198,8 +198,8 @@ async def test_resolve_system_name_uses_one_rest_client():
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.get_managed_system = AsyncMock(
-            return_value={"Resource": {"SystemName": SYSTEM_NAME}}
+        mock_client.list_system_summaries = AsyncMock(
+            return_value=[{"UUID": SYSTEM_UUID, "SystemName": SYSTEM_NAME}]
         )
         mock_client_type.return_value = mock_client
 
@@ -251,7 +251,7 @@ async def test_resolve_system_name_ssh_fallback_uses_supplied_config():
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.get_managed_system = AsyncMock(
+        mock_client.list_system_summaries = AsyncMock(
             side_effect=HMCTransportError("GET managed system failed: unreachable")
         )
         mock_client_type.return_value = mock_client

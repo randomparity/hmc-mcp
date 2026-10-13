@@ -270,7 +270,9 @@ def test_partition_name_rejects_whitespace_only_name():
 
 def test_resolve_lpar_ownership_names_rejects_whitespace_only_partition_name():
     hmc = AsyncMock()
-    hmc.get_managed_system.return_value = {"Resource": {"SystemName": "sys1"}}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": "sys-uuid", "SystemName": "sys1"}
+    ]
     hmc.get_logical_partition.return_value = {"Resource": {"PartitionName": "  "}}
     with pytest.raises(ValueError, match="LPAR 'lpar-uuid' has no partition name"):
         asyncio.run(

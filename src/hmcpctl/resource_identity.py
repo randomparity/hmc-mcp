@@ -6,6 +6,8 @@ import re
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
+from hmcpctl.client.client_resolution import summary_for
+
 if TYPE_CHECKING:
     from hmcpctl.client.core import HMCClient
 
@@ -76,15 +78,23 @@ async def resolve_system_uuid(hmc: HMCClient, value: str) -> str:
     return str(uuids[0])
 
 
-def _resource_name(entry: dict[str, Any] | None, field: str) -> str | None:
-    resource = entry.get("Resource") if entry else None
-    name = resource.get(field) if isinstance(resource, Mapping) else None
+def _named(name: object) -> str | None:
     return name if isinstance(name, str) and name.strip() else None
 
 
+def _resource_name(entry: dict[str, Any] | None, field: str) -> str | None:
+    resource = entry.get("Resource") if entry else None
+    return _named(resource.get(field) if isinstance(resource, Mapping) else None)
+
+
 async def system_name_from_uuid(hmc: HMCClient, system_uuid: str) -> str | None:
-    """Return the managed system's REST ``SystemName``, or None when it is unusable."""
-    return _resource_name(await hmc.get_managed_system(system_uuid), "SystemName")
+    """Return the managed system's ``SystemName``, or None when it is unusable.
+
+    Read from ``ManagedSystem/quick/All``: ``ManagedSystem/{uuid}`` times out
+    for a system with no connection (#1501).
+    """
+    summaries = await hmc.list_system_summaries()
+    return _named(summary_for(summaries, system_uuid).get("SystemName"))
 
 
 async def lpar_name_from_uuid(hmc: HMCClient, lpar_uuid: str) -> str | None:

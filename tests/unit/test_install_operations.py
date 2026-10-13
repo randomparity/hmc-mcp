@@ -83,7 +83,7 @@ async def test_operation_rejects_install_target_before_submission(
 
 @pytest.mark.asyncio
 async def test_uuid_target_rejects_before_ssh_submission():
-    hmc = _hmc(get_managed_system={"Resource": {"SystemName": "sys1"}})
+    hmc = _hmc(list_system_summaries=[{"UUID": SYSTEM_UUID, "SystemName": "sys1"}])
     hmc.get_vios.return_value["Resource"]["PartitionState"] = "running"
     ssh = _Ssh()
 
@@ -165,7 +165,7 @@ async def test_operation_returns_without_polling_for_completion():
 @pytest.mark.asyncio
 async def test_operation_resolves_uuid_targets_to_cli_names():
     """A UUID target is named over REST for the system and SSH for the partition."""
-    hmc = _hmc(get_managed_system={"Resource": {"SystemName": "sys1"}})
+    hmc = _hmc(list_system_summaries=[{"UUID": SYSTEM_UUID, "SystemName": "sys1"}])
     ssh = _Ssh(name_rows=f"{LPAR_UUID},target1\n")
 
     with _patch_ssh(ssh):
@@ -174,7 +174,7 @@ async def test_operation_resolves_uuid_targets_to_cli_names():
     assert result["system"] == "sys1"
     assert result["partition"] == "target1"
     assert ssh.commands[0] == "lssyscfg -r lpar -m sys1 -F uuid,name"
-    hmc.get_managed_system.assert_awaited_once_with(SYSTEM_UUID)
+    hmc.list_system_summaries.assert_awaited_once_with()
 
 
 @pytest.mark.parametrize(
@@ -236,7 +236,7 @@ async def test_operation_surfaces_a_failed_submission():
 @pytest.mark.asyncio
 async def test_unresolvable_uuid_target_raises_before_submitting():
     """An HMCCLIError from name resolution must leave nothing submitted."""
-    hmc = _hmc(get_managed_system={"Resource": {"SystemName": "sys1"}})
+    hmc = _hmc(list_system_summaries=[{"UUID": SYSTEM_UUID, "SystemName": "sys1"}])
     ssh = _Ssh(name_rows="99999999-9999-4999-8999-999999999999,other\n")
 
     with _patch_ssh(ssh), pytest.raises(HMCCLIError, match="Could not resolve"):
