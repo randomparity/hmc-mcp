@@ -153,7 +153,8 @@ partitions/states, slot owners, every profile's `io_slots`, and SR-IOV adapters 
 ports. Repeat `--vios-id ID` only for VIOS partitions whose mapping and volume-group
 reads are authorized; without it there are no VIOS-side reads. `--profile NAME`
 uses the normal connection configuration and environment precedence. VIOS capture
-refuses UUID-shaped system or partition names because the shared resolver cannot
+refuses surrounding system-name whitespace and UUID-shaped system or partition
+names because the shared resolver cannot
 distinguish those names from resource UUIDs. Keep other
 changes quiescent during these sequential reads. Dry-run opens no connections.
 Snapshots contain private infrastructure identifiers, are created mode 0600,

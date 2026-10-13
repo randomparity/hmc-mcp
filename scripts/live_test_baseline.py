@@ -160,6 +160,21 @@ def validate(document):
         raise ValueError("system identity is incomplete or does not match scope")
     if {row["id"] for row in result["vios"]} != {str(i) for i in ids}:
         raise ValueError("selected VIOS coverage is incomplete")
+    adapters = {
+        row["adapter_id"]: row
+        for row in result["sriov_adapters"]
+        if not (row["config_state"] == "dedicated" and row["adapter_id"] == "null")
+    }
+    for adapter_id, adapter in adapters.items():
+        ports = [
+            row for row in result["sriov_physical"] if row["adapter_id"] == adapter_id
+        ]
+        if not adapter["phys_ports"].isdigit() or len(ports) != int(
+            adapter["phys_ports"]
+        ):
+            raise ValueError("SR-IOV physical-port coverage is incomplete")
+    if any(row["adapter_id"] not in adapters for row in result["sriov_physical"]):
+        raise ValueError("SR-IOV physical-port coverage contains an unknown adapter")
     partitions = {row["lpar_id"]: row for row in result["partitions"]}
     if any(not re.fullmatch(r"[0-9]+", key) for key in partitions):
         raise ValueError("partition ID is malformed")
@@ -190,6 +205,27 @@ async def read_resources(hmc, path, kind):
     root = ET.fromstring(raw)
     if root.tag not in {f"{{{ATOM_NS}}}feed", f"{{{ATOM_NS}}}entry"}:
         raise ValueError("REST read has no Atom envelope")
+    if root.tag == f"{{{ATOM_NS}}}feed":
+        metadata = {
+            "entry",
+            "id",
+            "title",
+            "updated",
+            "published",
+            "author",
+            "contributor",
+            "link",
+            "category",
+            "generator",
+            "subtitle",
+            "rights",
+        }
+        if (root.text or "").strip() or any(
+            child.tag not in {f"{{{ATOM_NS}}}{name}" for name in metadata}
+            or child.get("rel") in {"next", "previous", "prev"}
+            for child in root
+        ):
+            raise ValueError("REST feed is malformed or incomplete")
     entries = parse_feed(raw)
     if kind == "VirtualIOServer" and len(entries) != 1:
         raise ValueError("VIOS read has no unique resource")
@@ -288,7 +324,11 @@ def volume_rows(raw, group):
 
 
 async def capture_vios(config, system, partitions, tables):
-    if is_uuid(system) or any(is_uuid(partition["name"]) for partition in partitions):
+    if (
+        system != system.strip()
+        or is_uuid(system)
+        or any(is_uuid(partition["name"]) for partition in partitions)
+    ):
         raise ValueError("UUID-shaped names cannot safely select VIOS reads")
     async with HMCClient(config) as hmc:
         for partition in partitions:
@@ -332,6 +372,7 @@ async def capture(config, system, vios_ids):
     if (
         not isinstance(system, str)
         or not system.strip()
+        or system != system.strip()
         or any(ord(c) < 32 for c in system)
     ):
         raise ValueError("system must be a nonblank printable name")

@@ -352,12 +352,14 @@ def test_empty_xml_backing_rejected(document, tmp_path, storage):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("uuid_field", ["system", "partition"])
+@pytest.mark.parametrize("uuid_field", ["system", "partition", "whitespace"])
 async def test_uuid_shaped_names_refused_before_resolution(
     monkeypatch, document, uuid_field
 ):
     ambiguous = "11111111-1111-1111-1111-111111111111"
     system = ambiguous if uuid_field == "system" else "sys-R1"
+    if uuid_field == "whitespace":
+        system = f" {ambiguous} "
     partitions = document["tables"]["partitions"]
     if uuid_field == "partition":
         partitions[0]["name"] = ambiguous
@@ -367,7 +369,49 @@ async def test_uuid_shaped_names_refused_before_resolution(
     hmc._get.side_effect = AssertionError("ambiguous name reached remote reads")
     resolver = AsyncMock(return_value=ambiguous)
     monkeypatch.setattr(baseline, "resolve_vios_uuid", resolver)
-    with pytest.raises(ValueError, match="UUID-shaped"):
+    with pytest.raises(ValueError, match="cannot safely select"):
         await baseline.capture_vios(object(), system, partitions, document["tables"])
     resolver.assert_not_awaited()
     hmc._get.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "child", ["<error>unavailable</error>", '<link rel="next" href="page2"/>']
+)
+async def test_incomplete_atom_collection(child):
+    hmc = AsyncMock()
+    hmc._get.return_value = f'<feed xmlns="{baseline.ATOM_NS}">{child}</feed>'
+    with pytest.raises(ValueError, match="feed"):
+        await baseline.read_resources(hmc, "/fixture", "VolumeGroup")
+
+
+@pytest.mark.asyncio
+async def test_physical_port_coverage(document, monkeypatch):
+    from hmcpctl.ssh import sriov
+    from hmcpctl.ssh.commands import HMC_NO_RESULTS
+
+    fixture = (
+        Path(__file__).parents[1] / "fixtures/live/cli-sriov-adapters-v11r2-p9.json"
+    )
+    remote = AsyncMock(return_value=json.loads(fixture.read_text())["stdout"])
+    monkeypatch.setattr(sriov, "run_hmc_command", remote)
+    document["tables"]["sriov_adapters"] = await sriov.list_sriov_adapter_rows(
+        object(), "sys-R1"
+    )
+    remote.return_value = HMC_NO_RESULTS
+    document["tables"]["sriov_physical"] = await sriov.list_sriov_physical_port_rows(
+        object(), "sys-R1", "2"
+    )
+    with pytest.raises(ValueError, match="physical-port coverage"):
+        baseline.validate(document)
+    remote.side_effect = [
+        json.loads(
+            (fixture.parent / f"cli-sriov-physport-{level}-v11r2-p9.json").read_text()
+        )["stdout"]
+        for level in ("roce", "ethc", "eth")
+    ]
+    document["tables"]["sriov_physical"] = await sriov.list_sriov_physical_port_rows(
+        object(), "sys-R1", "2"
+    )
+    assert len(baseline.validate(document)["tables"]["sriov_physical"]) == 4
