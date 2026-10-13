@@ -25,8 +25,8 @@ from conftest import (
 from defusedxml import ElementTree as DET
 
 from hmcpctl.config import HMCConfig
-from hmcpctl.documents import LparResources, build_lpar_document
 from hmcpctl.documents.common import UOM_NS
+from hmcpctl.documents.lpar import LparResources, build_lpar_document
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.lpar.core import LparCreation, create_and_stamp_lpar
 from hmcpctl.operations.lpar.ownership import _resolve_system_name as _system_name

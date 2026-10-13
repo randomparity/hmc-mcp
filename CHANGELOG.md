@@ -33,6 +33,11 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
   write when the target cannot be read. A partition of the same name on another managed system no
   longer blocks the create. An unscoped lookup of such a name reports the ambiguity, except while
   one of the two systems cannot be read, when it finds the other; pass the system selector (#1309).
+- `hmcpctl.documents` no longer re-exports its builders: import each from its owning submodule.
+  The logon document builder is now in `hmcpctl.documents.logon` and the RemoteAccess builders
+  in `hmcpctl.documents.remote_access`; `hmcpctl.documents.access` keeps the UserProfile builder.
+  A change to the UserProfile builder no longer marks every operation's live verification
+  stale, only those of the operations that import it (#1495).
 
 ### Fixed
 

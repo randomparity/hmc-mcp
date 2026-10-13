@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..documents import build_virtual_network_document
+from ..documents.storage import build_virtual_network_document
 from .client_contracts import NetworkClient, _reject_non_uuid_path_argument
 from .client_parse import _parse_feed
 

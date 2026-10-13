@@ -8,7 +8,7 @@ import pytest
 from conftest import live_fixture, make_config
 
 from hmcpctl.client.core import HMCClient
-from hmcpctl.documents import build_virtual_network_document
+from hmcpctl.documents.storage import build_virtual_network_document
 from hmcpctl.operations.virtualization.network import (
     VirtualNetworkResult,
     create_virtual_network,

@@ -21,7 +21,7 @@ from conftest import (
 )
 
 from hmcpctl.client.core import HMCClient
-from hmcpctl.documents import LparResources
+from hmcpctl.documents.lpar import LparResources
 from hmcpctl.errors import HMCError
 from hmcpctl.operations.lpar.core import LparCreation, create_and_stamp_lpar
 from hmcpctl.operations.lpar.provision import (

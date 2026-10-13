@@ -15,9 +15,8 @@ from hmcpctl.client.core import HMCClient
 from hmcpctl.operations.lpar.ownership import resolve_and_authorize_lpar_mutation
 from hmcpctl.operations.lpar.profile_sync import ChangeLocation, read_change_location
 
-from ...documents import LparResources, PartitionType, StorageKind
-from ...documents.lpar import validate_partition_type
-from ...documents.storage import validate_virtual_disk
+from ...documents.lpar import LparResources, PartitionType, validate_partition_type
+from ...documents.storage import StorageKind, validate_virtual_disk
 from ...errors import HMCError
 from ...jobs import JobOutcome, job_outcome
 from ...resource_identity import resolve_lpar_uuid, resolve_system_uuid

@@ -9,13 +9,8 @@ from typing import cast
 import typer
 from rich.text import Text
 
-from ...documents import (
-    PARTITION_TYPES,
-    STORAGE_KINDS,
-    LparResources,
-    StorageKind,
-)
-from ...documents.lpar import validate_partition_type
+from ...documents.lpar import PARTITION_TYPES, LparResources, validate_partition_type
+from ...documents.storage import STORAGE_KINDS, StorageKind
 from ...operations.lpar.provision import (
     ProvisionAdapters,
     ProvisionRequest,

@@ -16,7 +16,7 @@ import httpx
 import pytest
 from conftest import JOB_ENTRY, assert_no_mutating_requests, mock_change_location
 
-from hmcpctl.documents import LparResources
+from hmcpctl.documents.lpar import LparResources
 from hmcpctl.jobs import JobOutcome
 from hmcpctl.operations.affinity.rest import (
     AffinityAssessmentResult,

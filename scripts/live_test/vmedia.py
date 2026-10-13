@@ -31,7 +31,7 @@ from fastmcp import Client
 
 from hmcpctl.client.client_storage import storage_mapping_id
 from hmcpctl.config import env_var_value
-from hmcpctl.documents import join_boot_device_paths
+from hmcpctl.documents.boot import join_boot_device_paths
 from hmcpctl.ssh.commands import HMC_NO_RESULTS, build_filter
 
 from .observation import Assertion, CallFailure, ExpectedOutcome

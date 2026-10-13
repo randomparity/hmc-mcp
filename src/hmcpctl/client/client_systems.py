@@ -236,7 +236,7 @@ class SystemsMixin:
 
         Supported fields include system name, power-off policy, LPAR start
         policy, pending memory region size, huge pages, and mirroring mode.
-        See documents.build_managed_system_document for the document builder.
+        See documents.system.build_managed_system_document for the document builder.
         """
         _reject_non_uuid_path_argument("system_uuid", system_uuid)
         path = f"/rest/api/uom/ManagedSystem/{system_uuid}"
@@ -356,7 +356,7 @@ class SystemsMixin:
     ) -> dict[str, Any] | None:
         """Create a VIOS on a managed system and return its entry.
 
-        PUTs a VirtualIOServer document (see documents.build_vios_document) to
+        PUTs a VirtualIOServer document (see documents.lpar.build_vios_document) to
         the system's ``VirtualIOServer`` collection: V10R3 answers a VIOS PUT to
         ``LogicalPartition`` with 500 REST0140 (#1214). Omits the
         X-HMC-Schema-Version header; the write headers follow ADR 0178.

@@ -20,7 +20,7 @@ import httpx
 from defusedxml import ElementTree as DET
 from defusedxml.common import DefusedXmlException
 
-from ..documents import (
+from ..documents.storage import (
     STORAGE_KINDS,
     StorageKind,
     build_virtual_disk_element,

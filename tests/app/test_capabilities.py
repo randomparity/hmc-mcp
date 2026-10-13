@@ -277,12 +277,9 @@ def test_closed_vocab_enum_matches_runtime_constant():
         ADAPTER_TYPES,
         VALID_AUTHENTICATION_FILTERS,
     )
-    from hmcpctl.documents import (
-        AUTHENTICATION_TYPES,
-        PARTITION_TYPES,
-        SHARING_MODES,
-        STORAGE_KINDS,
-    )
+    from hmcpctl.documents.access import AUTHENTICATION_TYPES
+    from hmcpctl.documents.lpar import PARTITION_TYPES, SHARING_MODES
+    from hmcpctl.documents.storage import STORAGE_KINDS
     from hmcpctl.jobs import DEVICE_TYPES, LU_TYPES
     from hmcpctl.operations.vios.core import _VALID_BACKUP_TYPES
     from hmcpctl.ssh.io_inventory import _VALID_PCI_CLASSES

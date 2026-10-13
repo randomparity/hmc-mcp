@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from ..._app import with_client
-from ...documents import Keylock, LparResources, PartitionType
-from ...documents.lpar import validate_partition_type
+from ...documents.lpar import (
+    Keylock,
+    LparResources,
+    PartitionType,
+    validate_partition_type,
+)
 from ...operations.lpar.assignments import LparPcieAssignments, LparPcieWorkflowResult
 from ...operations.lpar.core import LparCreation
 from ...operations.lpar.workflows import create_lpar
