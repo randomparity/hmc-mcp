@@ -47,6 +47,9 @@ arrives only after `HMC_TIMEOUT` and names a timeout instead of the system state
    N systems with empty feeds reads `quick/All` up to N times, where it read N per-system entries.
    A `quick/All` row whose `UUID` is not a string is skipped, so its system reads `unknown` and
    is refused.
+   A target system given by name is resolved through `ManagedSystem/search/(SystemName==…)`
+   before this check runs; no capture shows whether that search stalls for a system with no
+   connection, so the prompt refusal is proven for a UUID target only.
 
 ## Success
 
