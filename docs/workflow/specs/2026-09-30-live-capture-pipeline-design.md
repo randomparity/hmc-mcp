@@ -106,7 +106,13 @@ Three subcommands, all offline:
   template, `Accept`, status, response content type); `rest.values` (per XML element
   local name, sorted observed literals or shape classes `<int>`, `<float>`, `<empty>`,
   `<uuid>`, `<text>`); `rest.element_enums` (element to enum type: stated by a captured
-  schema, else the only enum whose values contain every observed literal);
+  schema, else the only enum named for the element whose values contain every observed
+  literal: the same-named enum on one literal, an enum whose name ends in the element's or
+  whose name the element's ends in on two. Literals never bind an enum the name does not
+  relate to: that catch-all bound `CurrentSharingMode` and seventeen other elements on
+  coincidence and was dropped (#1498). The binding is by local name, so an element two
+  objects share, such as `Status`, can still bind to the wrong object's enum; the gate
+  below lets a stated binding override it);
   `rest.errors` (path template, status, error form, reason code, message with
   identifiers templated); `cli.commands` (command template, exit statuses, HSCL codes,
   one-line sentinels, and which streams carried output on a nonzero exit: V10R3 prints
@@ -142,7 +148,11 @@ exporter's own test modules, which hold uncaptured values on purpose):
    as `Status`). Checked only for elements whose set is closed:
    bound to a schema enum in some vocabulary. Allowed values are the union, over every
    vocabulary and enum list, of that element's enum values and observed literals: a
-   value any release answered or enumerates passes.
+   value any release answered or enumerates passes. An element an enum list binds itself
+   (a schema-stated binding, or `Status` in the documented job statuses) takes its enums
+   from those bindings only, never from one a vocabulary inferred: a capture whose only
+   `Status` values were VNIC backing-device states infers the VNIC enum, which would
+   otherwise admit its values as job statuses (#1498).
 2. **REST read coverage.** Every `/rest/api/...` template in `src/hmcpctl` (f-strings,
    placeholders as one path segment) used by a function that issues a GET, plus
    `list_uom`/`get_uom`/`list_child`/`get_quick_property`/`search_uom` call sites with
