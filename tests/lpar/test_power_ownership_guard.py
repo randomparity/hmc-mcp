@@ -309,7 +309,7 @@ async def test_enabled_guard_fails_closed_when_the_ownership_read_fails() -> Non
 
 
 @pytest.mark.asyncio
-async def test_enabled_guard_resolves_the_managed_system_once() -> None:
+async def test_enabled_guard_resolves_the_selector_once_and_scopes_the_lpar() -> None:
     """The named selector is resolved once and scopes the partition lookup.
 
     Resolving it again inside the guard would buy a second REST GET, and it

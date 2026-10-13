@@ -356,10 +356,10 @@ async def test_resolve_lpar_name_falls_back_scoped_by_system(mock_hmc):
 async def test_resolve_system_name_does_not_fall_back_on_rest_status_error(
     mock_hmc,
 ):
-    """A REST 4xx (HMCError) is a real answer — no SSH fallback.
+    """A REST error status (HMCError) is a real answer — no SSH fallback.
 
-    REST responded, so the unknown UUID should surface as an error rather
-    than silently resolving via SSH.
+    REST responded, so its failure should surface as an error rather than
+    silently resolving via SSH.
     """
     # logon succeeds (fixture default); the summary GET returns 500.
     mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(

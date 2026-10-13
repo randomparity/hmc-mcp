@@ -111,7 +111,7 @@ async def resolve_system_name(hmc: HMCClient, value: str) -> str:
         raise ResourceNotFoundError(
             "managed system",
             value,
-            f"Managed system {value!r} has no SystemName. "
+            f"No managed system {value!r} with a SystemName found. "
             "Use hmc_list_systems to inspect available systems.",
         )
     return name

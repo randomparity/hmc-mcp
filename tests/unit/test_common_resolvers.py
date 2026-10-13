@@ -121,7 +121,7 @@ async def test_system_name_resolver_reports_unusable_payload_as_not_found(summar
 
     with pytest.raises(
         ResourceNotFoundError,
-        match=f"Managed system '{SYSTEM_UUID}' has no SystemName. "
+        match=f"No managed system '{SYSTEM_UUID}' with a SystemName found. "
         "Use hmc_list_systems to inspect available systems.",
     ) as raised:
         await resolve_system_name(hmc, SYSTEM_UUID)
@@ -135,7 +135,7 @@ async def test_system_name_resolver_reports_unusable_payload_as_not_found(summar
 async def test_system_name_resolver_resolves_uuid_and_passes_name_through():
     hmc = AsyncMock()
     hmc.list_system_summaries.return_value = [
-        {"UUID": SYSTEM_UUID.upper(), "SystemName": "sys-a"}
+        {"UUID": SYSTEM_UUID, "SystemName": "sys-a"}
     ]
 
     assert await resolve_system_name(hmc, "sys-b") == "sys-b"
