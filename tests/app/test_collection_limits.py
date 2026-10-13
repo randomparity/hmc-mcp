@@ -218,8 +218,9 @@ def test_limit_is_not_sent_on_root_child_search_or_job_requests(monkeypatch, moc
 
     forbidden = {"limit", "_limit", "maxCount", "count"}
     for route, invoke in cases:
+        before = route.call_count
         assert invoke() == []
-        assert route.called
+        assert route.call_count > before
         assert forbidden.isdisjoint(route.calls[-1].request.url.params.keys())
 
 

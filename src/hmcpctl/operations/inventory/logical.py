@@ -20,7 +20,7 @@ from ...resource_identity import is_uuid, summary_matching
 from ...xmlutil import leaf_text
 from ..lpar.ownership import lpar_ownership_entry
 from ..partition_state import PartitionState
-from ..systems.fleet import sparse_system_entry, system_entry
+from ..systems.fleet import sparse_system_entry, system_entry, unreadable_system
 from .capacity import system_capacity
 from .composite import _container, _processor_figures
 
@@ -341,6 +341,10 @@ class _Reader:
             return _status(CAPACITY_TOOL, self.capacity_denial), None, entry, None
         if (halted := self.stalled or halted) is not None:
             return _unavailable(CAPACITY_TOOL, halted), None, entry, None
+        skipped = unreadable_system(candidate.summary)
+        if skipped is not None:
+            text = f"managed system {candidate.uuid} is in State {skipped.state!r}"
+            return _unavailable(CAPACITY_TOOL, text), None, entry, None
         try:
             entry = await system_entry(self.hmc, candidate.summary)
             return _status(CAPACITY_TOOL, None), system_capacity(entry), entry, None

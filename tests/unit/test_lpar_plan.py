@@ -1229,6 +1229,7 @@ def test_placement_enumeration_bounded_to_16() -> None:
     assert plan.candidates_limit == 16
     assert len(plan.candidates) == 16
     assert ("list_logical_partitions", _uuid(17)) not in hmc.calls
+    assert ("get_managed_system", _uuid(17)) not in hmc.calls
 
 
 def test_enumeration_denied_or_unavailable_is_a_request_blocker() -> None:

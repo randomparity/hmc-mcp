@@ -59,6 +59,8 @@ The last readers of the full `ManagedSystem` feed, the `SystemName` and `State` 
    - A sparse entry lacks every detail field. Callers that read `MachineTypeModelAndSerialNumber`
      or IP addresses see them missing for exactly the systems the HMC cannot read.
    - The `state` filter is exact string equality on `quick/All`'s `State`.
+   - The plan reads its candidates' entries in one step, so an error on one operating
+     system's entry fails the enumeration, as a failed feed read did before.
 
 ## Success
 

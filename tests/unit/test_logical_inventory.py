@@ -86,6 +86,7 @@ class FakeHMC:
         missing: frozenset[str] = frozenset(),
         extra: tuple[dict, ...] = (),
         systems_error: Exception | None = None,
+        entry_errors: dict[str, Exception] | None = None,
     ) -> None:
         self.systems = systems
         self.partitions = partitions or {}
@@ -93,6 +94,7 @@ class FakeHMC:
         self.missing = missing
         self.extra = extra
         self.systems_error = systems_error
+        self.entry_errors = entry_errors or {}
         self.calls: list[tuple[str, str | None]] = []
 
     async def list_system_summaries(self) -> list[dict]:
@@ -112,6 +114,8 @@ class FakeHMC:
 
     async def get_managed_system(self, uuid: str) -> dict | None:
         self.calls.append(("get_managed_system", uuid))
+        if uuid in self.entry_errors:
+            raise self.entry_errors[uuid]
         return next((entry for entry in self.systems if entry["UUID"] == uuid), None)
 
     async def list_logical_partitions(self, uuid: str) -> list[dict]:
@@ -376,6 +380,38 @@ def test_transport_error_ends_the_page_with_a_cursor():
     assert page.systems[1].sources.partitions.status == "unavailable"
     assert ("list_logical_partitions", _uuid(3)) not in hmc.calls
     assert page.next_cursor == encode_cursor(_uuid(3), None)
+
+
+def test_a_partition_stall_skips_that_systems_entry_read():
+    hmc = FakeHMC(
+        [_system(n) for n in (1, 2)], {_uuid(1): HMCTransportError("timed out")}
+    )
+    page = _read(hmc)
+    assert ("get_managed_system", _uuid(1)) not in hmc.calls
+    assert page.systems[0].sources.capacity.status == "unavailable"
+
+
+def test_an_entry_stall_ends_the_page_with_a_cursor():
+    hmc = FakeHMC(
+        [_system(n) for n in (1, 2, 3)],
+        entry_errors={_uuid(2): HMCTransportError("timed out")},
+    )
+    page = _read(hmc)
+    assert [s.uuid for s in page.systems] == [_uuid(1), _uuid(2)]
+    assert page.systems[1].sources.capacity.status == "unavailable"
+    assert ("list_logical_partitions", _uuid(3)) not in hmc.calls
+    assert page.next_cursor == encode_cursor(_uuid(3), None)
+
+
+def test_a_non_operating_system_names_its_state_for_capacity():
+    standby = _system(2)
+    standby["Resource"]["State"] = "standby"
+    hmc = FakeHMC([_system(1), standby])
+    page = _read(hmc)
+    capacity = page.systems[1].sources.capacity
+    assert capacity.status == "unavailable"
+    assert capacity.detail == f"managed system {_uuid(2)} is in State 'standby'"
+    assert ("get_managed_system", _uuid(2)) not in hmc.calls
 
 
 def test_transport_error_stops_selector_resolution():
