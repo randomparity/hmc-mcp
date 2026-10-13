@@ -328,7 +328,9 @@ def test_self_closing_element_keeps_the_text_after_it(
     assert corpus[-1]["body"] == body
 
 
-@pytest.mark.parametrize("attribute", ['href="a/"', 'kb="x/>"', "kb='x/>'"])
+@pytest.mark.parametrize(
+    "attribute", ['href="a/"', 'kb="x/>"', "kb='x/>'", 'kb="x', 'kb="a<b"']
+)
 def test_valued_element_with_a_slash_attribute_is_still_scrubbed(
     attribute: str,
 ) -> None:
