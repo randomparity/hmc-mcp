@@ -14,8 +14,25 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
 
 ## [Unreleased]
 
+### Changed
+
+- `hmc_provision_lpar` and `hmcpctl lpars provision` refuse a dedicated PCIe slot
+  (`assignments.dedicated`) before any HMC call, dry runs included. Provision powers on the
+  current configuration, so a slot written into the new profile was never owned by the
+  running partition: the 0.1.0 known issue (#1390). To give a new partition a dedicated slot,
+  create it with `hmc_create_lpar` (optionally with `assignments.dedicated`) or assign the slot
+  with `hmc_assign_dedicated_pcie_slot`, then power on with the partition profile, as the
+  [bare-CEC LPAR recipe](docs/recipes/bare-cec-lpar.md) does. Profile-first provisioning, which
+  would lift the refusal, is tracked in #1225.
+- `hmc_remove_memory_pool` and `hmcpctl memory-pools remove` no longer take a pool name. A
+  managed system has at most one shared memory pool, so the remove now sends the documented
+  `chhwres -r mempool -m <system> -o r`. It refuses when the system has no pool, and when any
+  partition or profile does not report `mem_mode=ded` (#1245).
+
 ### Fixed
 
+- `hmc_list_memory_pools` no longer documents pool row field names that no capture has
+  confirmed (#1245).
 - Creating an HMC user with `remote_user_id` no longer fails with REST0001 on V10R3: the
   `UserProfile` document now sends `RemoteUserID` where the HMC's schema expects it, before
   `AssociatedTaskRole` (#1414). A modify builds the same document; only the create was run live.
