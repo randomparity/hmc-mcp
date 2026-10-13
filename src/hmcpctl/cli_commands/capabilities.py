@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Mapping
-from datetime import datetime
 from typing import cast
 
 import typer
@@ -17,7 +16,7 @@ from .output import VerbatimTable, console, print_json
 
 
 def capability_rows(
-    tool_security: Mapping[str, ToolSecurity], *, now: datetime | None = None
+    tool_security: Mapping[str, ToolSecurity],
 ) -> list[dict[str, object]]:
     """Group tools by operation and project each operation's maturity once."""
     tools_by_operation: dict[str, list[str]] = defaultdict(list)
@@ -26,7 +25,7 @@ def capability_rows(
 
     rows: list[dict[str, object]] = []
     for operation in sorted(tools_by_operation):
-        maturity = operation_maturity(operation, now=now)
+        maturity = operation_maturity(operation)
         row: dict[str, object] = {
             "operation": operation,
             "tools": sorted(tools_by_operation[operation]),

@@ -1019,7 +1019,90 @@ def derive_states(
     return states
 
 
-def render_runtime_projection(
+def load_release_verification(path: Path) -> dict[str, dict[str, object]]:
+    """Validate the historical snapshot before using any frozen evidence."""
+    try:
+        with path.open("rb") as source:
+            content = source.read(1_048_577)
+        if len(content) > 1_048_576:
+            raise InventoryError("release verification snapshot exceeds 1 MiB")
+        document = json.loads(content.decode("utf-8"), object_pairs_hook=_unique_pairs)
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise InventoryError(
+            f"cannot read release verification snapshot {path}: {error}"
+        ) from error
+    if not isinstance(document, dict) or set(document) != {
+        "format_version",
+        "operations",
+    }:
+        raise InventoryError(
+            "release verification snapshot must contain format_version and operations"
+        )
+    if type(document["format_version"]) is not int or document["format_version"] != 1:
+        raise InventoryError(
+            "release verification snapshot format_version must be integer 1"
+        )
+    if not isinstance(document["operations"], list):
+        raise InventoryError(
+            "release verification snapshot operations must be an array"
+        )
+    result: dict[str, dict[str, object]] = {}
+    for row in document["operations"]:
+        _validate_release_row(row)
+        operation = row["operation"]
+        if operation in result:
+            raise InventoryError(
+                f"duplicate release verification operation {operation!r}"
+            )
+        result[operation] = row
+    if list(result) != sorted(result):
+        raise InventoryError("release verification operations must be sorted")
+    return result
+
+
+def _validate_release_row(row: Any) -> None:
+    keys = {"operation", "verification", "reason", "observed_at"}
+    if not isinstance(row, dict) or set(row) != keys:
+        raise InventoryError(
+            f"release verification row must contain exactly {sorted(keys)}"
+        )
+    operation, state, reason, timestamp = (
+        row[key] for key in ("operation", "verification", "reason", "observed_at")
+    )
+    if (
+        not isinstance(operation, str)
+        or re.fullmatch(r"[a-z0-9_]+\.[a-z0-9_]+", operation) is None
+    ):
+        raise InventoryError("release verification row has invalid operation ID")
+    if not isinstance(state, str) or state not in {
+        "unevidenced",
+        "current",
+        "stale",
+        "failed",
+    }:
+        raise InventoryError(f"{operation}: invalid release verification state")
+    if reason is not None and (
+        not isinstance(reason, str) or reason not in {"closure-changed", "age-exceeded"}
+    ):
+        raise InventoryError(f"{operation}: invalid release verification reason")
+    if (state == "stale") != (reason is not None):
+        raise InventoryError(f"{operation}: inconsistent release verification reason")
+    if timestamp is not None:
+        if not isinstance(timestamp, str) or TIMESTAMP.fullmatch(timestamp) is None:
+            raise InventoryError(f"{operation}: invalid release verification timestamp")
+        try:
+            datetime.fromisoformat(timestamp)
+        except ValueError as error:
+            raise InventoryError(
+                f"{operation}: invalid release verification timestamp"
+            ) from error
+    if (state == "unevidenced") != (timestamp is None):
+        raise InventoryError(
+            f"{operation}: inconsistent release verification timestamp"
+        )
+
+
+def render_release_verification(
     records: Sequence[Mapping[str, object]],
     registry: Collection[RegistryTool],
     repo_root: Path,
@@ -1027,7 +1110,7 @@ def render_runtime_projection(
     *,
     _fingerprints: dict[tuple[Path, str], str] | None = None,
 ) -> str:
-    """Render the sparse, generated package projection as canonical JSON."""
+    """Derive a release snapshot from candidate closures, without age decay."""
     recorded = {
         str(record["operation"])
         for record in records
@@ -1044,13 +1127,48 @@ def render_runtime_projection(
     operations = [
         {
             "operation": operation,
-            "implementation": states[operation].implementation,
             "verification": states[operation].state,
             "reason": states[operation].reason,
             "observed_at": states[operation].observed_at,
         }
         for operation in sorted(recorded & states.keys())
     ]
+    return (
+        json.dumps(
+            {
+                "format_version": 1,
+                "operations": operations,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+
+
+def render_runtime_projection(
+    records: Sequence[Mapping[str, object]],
+    registry: Collection[RegistryTool],
+    snapshot: Mapping[str, Mapping[str, object]],
+) -> str:
+    """Combine current catalog structure with the release's frozen evidence."""
+    registered = {tool.operation for tool in registry}
+    operations = []
+    for record in sorted(records, key=lambda row: str(row["operation"])):
+        operation = str(record["operation"])
+        if operation not in registered:
+            continue
+        implementation = record["implementation"]
+        assert isinstance(implementation, dict)
+        frozen = snapshot.get(operation, {})
+        operations.append(
+            {
+                "operation": operation,
+                "implementation": implementation["state"],
+                "verification": frozen.get("verification", "unevidenced"),
+                "reason": frozen.get("reason"),
+                "observed_at": frozen.get("observed_at"),
+            }
+        )
     return (
         json.dumps(
             {
@@ -1112,16 +1230,32 @@ def _process_runtime_projection(
     registry: Collection[RegistryTool],
     output: Path | None,
     fingerprints: dict[tuple[Path, str], str],
+    inventory: Path,
+    *,
+    release: bool,
 ) -> list[str]:
-    rendered = render_runtime_projection(
-        records, registry, ROOT, datetime.now(UTC), _fingerprints=fingerprints
-    )
-    if output is None:
-        return _check_runtime_projection(DEFAULT_RUNTIME_PROJECTION, rendered)
     try:
+        snapshot = load_release_verification(inventory / "release-verification.json")
+        if release:
+            derived = json.loads(
+                render_release_verification(
+                    records,
+                    registry,
+                    ROOT,
+                    datetime.now(UTC),
+                    _fingerprints=fingerprints,
+                )
+            )["operations"]
+            if derived != list(snapshot.values()):
+                return [
+                    "release verification snapshot differs from candidate closures/catalog; record release evidence before releasing"
+                ]
+        rendered = render_runtime_projection(records, registry, snapshot)
+        if output is None:
+            return _check_runtime_projection(DEFAULT_RUNTIME_PROJECTION, rendered)
         write_runtime_projection(output, rendered)
-    except OSError as error:
-        return [f"cannot write runtime projection: {error}"]
+    except (OSError, InventoryError) as error:
+        return [f"cannot process runtime projection: {error}"]
     print(f"wrote runtime projection: {output}")
     return []
 
@@ -1369,6 +1503,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=Path,
         help="atomically write the generated runtime projection to PATH",
     )
+    parser.add_argument(
+        "--release",
+        action="store_true",
+        help="require the release snapshot to match candidate closures",
+    )
     args = parser.parse_args(argv)
     if args.fail_on_stale and not args.verification_report:
         parser.error("--fail-on-stale requires --verification-report")
@@ -1390,7 +1529,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         maturity_records = _maturity_records(args.inventory)
         errors.extend(
             _process_runtime_projection(
-                maturity_records, registry, args.write_runtime_projection, fingerprints
+                maturity_records,
+                registry,
+                args.write_runtime_projection,
+                fingerprints,
+                args.inventory,
+                release=args.release,
             )
         )
     for error in errors:
