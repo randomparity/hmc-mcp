@@ -55,7 +55,9 @@ field values, volume allocation/state and mapping identities. Output only change
 category names, not resource values. Snapshots remain private local
 artifacts: create mode 0600, require an existing parent, refuse existing output
 (including symlinks), install only after successful capture/validation, and
-remove owned temporary files on failure. Raw identifiers never enter public output.
+remove owned temporary files on failure. The script's own status and generic error
+messages omit raw identifiers. Inherited transport/configuration diagnostics may
+contain private identifiers; keep terminal output local or redact it before publication.
 
 ## Success and validation
 

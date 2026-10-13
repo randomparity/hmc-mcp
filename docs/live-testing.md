@@ -158,7 +158,9 @@ names because the shared resolver cannot
 distinguish those names from resource UUIDs. Keep other
 changes quiescent during these sequential reads. Dry-run opens no connections.
 Snapshots contain private infrastructure identifiers, are created mode 0600,
-and must stay local. Existing files and symlinks are refused. Comparison ignores
+and must stay local. Inherited transport/configuration diagnostics may also contain
+private identifiers; keep terminal output local or redact it before publication.
+Existing files and symlinks are refused. Comparison ignores
 row order and profile slot order, but preserves structural identity and state.
 Exit 0 means capture succeeded or snapshots match, 1 means drift, and 2 means
 unreadable/incomplete evidence. Only category names appear in comparison output.
