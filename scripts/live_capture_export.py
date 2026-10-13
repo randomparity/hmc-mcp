@@ -195,7 +195,8 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
         r"\g<1><REDACTED-SERIAL>",
     ),
     (re.compile(r"\b(\d{4}-[0-9A-Z]{3}\*)[0-9A-Z]{7}\b"), r"\g<1><REDACTED-SERIAL>"),
-    (re.compile(r"(<(?:\w+:)?MACAddress\b[^>]*>)[^<]+"), r"\g<1>000000000000"),
+    # Every `MACAddress*` element: `MACAddressPrefix` is a VIOS's real MAC prefix.
+    (re.compile(r"(<(?:\w+:)?MACAddress\w*[^>]*>)[^<]+"), r"\g<1>000000000000"),
     (re.compile(r"(?i)\b(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\b"), "00:00:00:00:00:00"),
     (re.compile(r"(?i)(mac_addr=)[0-9a-f]{12}"), r"\g<1>000000000000"),
     (re.compile(r"(?i)\b(?:fe80|[0-9a-f]{1,4})(?::[0-9a-f]{0,4}){2,7}\b"), _ipv6),

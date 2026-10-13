@@ -275,6 +275,16 @@ def test_identifier_elements(element: str, value: str, token: str) -> None:
     assert corpus[-1]["body"] == f"<{element}>{token}</{element}>"
 
 
+def test_vios_mac_address_prefix_is_scrubbed() -> None:
+    """Regression #1497: `MACAddress\\b` let a VIOS's `<MACAddressPrefix>` through."""
+    body = (
+        '<VirtualIOServer><MACAddressPrefix kb="ROR" kxe="false">'
+        "0A1B2C3D4E5F</MACAddressPrefix></VirtualIOServer>"  # pragma: allowlist secret
+    )
+    corpus = export.tokenize_records(_records(_rest("/vios", body)))
+    assert corpus[-1]["body"] == body.replace("0A1B2C3D4E5F", "000000000000")
+
+
 def test_uuid_tokens_keep_case_and_are_consistent() -> None:
     corpus = export.tokenize_records(_records(_ssh("lssyscfg", LPAR_UUID.lower())))
     upper = corpus[1]["path"].rsplit("/", 1)[1]
