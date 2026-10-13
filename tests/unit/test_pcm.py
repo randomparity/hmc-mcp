@@ -920,10 +920,10 @@ def test_resolution_403_not_wrapped_as_pcm_error(monkeypatch, mock_hmc):
     the charter exclusion says it should propagate as a raw HMCError.
     """
     _hmc_env(monkeypatch)
-    # Stub the system name-search endpoint to return 403.
-    mock_hmc.get(
-        "/rest/api/uom/ManagedSystem/search/(SystemName==my-system-name)"
-    ).mock(return_value=httpx.Response(403, text="<error>Forbidden</error>"))
+    # Stub the managed-system summary endpoint that resolves names to return 403.
+    mock_hmc.get("/rest/api/uom/ManagedSystem/quick/All").mock(
+        return_value=httpx.Response(403, text="<error>Forbidden</error>")
+    )
 
     with pytest.raises(HMCError) as exc_info:
         hmc_get_pcm_preferences("ManagedSystem", "my-system-name")

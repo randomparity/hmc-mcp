@@ -68,7 +68,9 @@ def _set_env(monkeypatch, host: str, user: str, password: str) -> None:
 def _vios_client_factory():
     hmc = AsyncMock()
     hmc.config = DEV_CONFIG
-    hmc.find_system_by_name.return_value = {"UUID": SYSTEM_UUID}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": SYSTEM_UUID, "SystemName": SYSTEM_NAME}
+    ]
     hmc.find_vios_by_name.return_value = {"UUID": SYSTEM_UUID}
 
     @asynccontextmanager

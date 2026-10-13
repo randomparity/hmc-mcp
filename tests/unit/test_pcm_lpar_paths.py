@@ -51,7 +51,9 @@ async def test_processed_lpar_path_is_nested_under_owning_system(mock_hmc):
 @pytest.mark.asyncio
 async def test_resolve_pcm_lpar_scopes_name_to_owning_system():
     hmc = AsyncMock()
-    hmc.find_system_by_name.return_value = {"UUID": SYSTEM_UUID}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": SYSTEM_UUID, "SystemName": "server1"}
+    ]
     hmc.find_partition_by_name.return_value = {"UUID": LPAR_UUID}
 
     target = await resolve_pcm_resource(
@@ -76,7 +78,7 @@ async def test_pcm_rejects_unknown_category_before_resolution():
     with pytest.raises(ValueError, match="category must be one of"):
         await resolve_pcm_resource(hmc, "TypoCategory", LPAR_UUID)
 
-    hmc.find_system_by_name.assert_not_awaited()
+    hmc.list_system_summaries.assert_not_awaited()
     hmc.find_partition_by_name.assert_not_awaited()
 
 
@@ -95,7 +97,7 @@ async def test_pcm_rejects_unknown_metric_kind_before_resolution():
             no_of_samples=None,
         )
 
-    hmc.find_system_by_name.assert_not_awaited()
+    hmc.list_system_summaries.assert_not_awaited()
 
 
 @pytest.mark.asyncio

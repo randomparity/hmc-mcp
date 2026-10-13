@@ -87,7 +87,10 @@ def _vios_client_factory():
     hmc.config = HMCConfig.from_mapping(
         {"host": "hmc.test", "user": "hscroot", "password": "p"}
     )
-    hmc.find_system_by_name.return_value = {"UUID": SYSTEM_UUID}
+    hmc.list_system_summaries.return_value = [
+        {"UUID": SYSTEM_UUID, "SystemName": SYSTEM_NAME},
+        {"UUID": SYSTEM_UUID, "SystemName": HOSTILE},
+    ]
     hmc.find_vios_by_name.return_value = {"UUID": SYSTEM_UUID}
 
     @asynccontextmanager

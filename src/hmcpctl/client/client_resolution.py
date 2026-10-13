@@ -35,8 +35,8 @@ def ambiguity_candidate_ids(
 
 
 def bounded_parent_systems(
-    systems: list[dict[str, Any]], resource_label: str, name: str
-) -> list[dict[str, Any]]:
+    systems: list[Any], resource_label: str, name: str
+) -> list[Any]:
     """Reject parent discovery whose outbound request fan-out is too large."""
     if len(systems) > MAX_PARENT_DISCOVERY_SYSTEMS:
         raise ValueError(
@@ -49,20 +49,33 @@ def bounded_parent_systems(
 
 async def ambiguous_parent_details(
     entries: list[dict[str, Any]],
-    systems: list[dict[str, Any]],
+    systems: list[Any],
     resource_label: str,
     name: str,
     list_children: Callable[[str], Awaitable[list[dict[str, Any]]]],
 ) -> str:
-    """Resolve each ambiguous child to exactly one managed-system parent."""
+    """Resolve each ambiguous child to exactly one managed-system parent.
+
+    *systems* are ``ManagedSystem/quick/All`` summaries: the full feed times out
+    while a system has no connection (#1501). A system that is not operating is
+    not read, and is named if a candidate is then left without a parent.
+    """
     candidate_ids = ambiguity_candidate_ids(entries, resource_label, name)
     parents: dict[str, list[tuple[str, str]]] = {uuid: [] for uuid in candidate_ids}
     bounded_systems = bounded_parent_systems(systems, resource_label, name)
+    unreadable: list[dict[str, Any]] = []
     try:
         async with asyncio.timeout(PARENT_DISCOVERY_TIMEOUT_SECONDS):
             for system in bounded_systems:
-                parent_uuid = system.get("UUID")
-                parent_name = (system.get("Resource") or {}).get("SystemName")
+                if isinstance(system, dict) and not system_operating(
+                    system.get("State")
+                ):
+                    unreadable.append(system)
+                    continue
+                parent_uuid = system.get("UUID") if isinstance(system, dict) else None
+                parent_name = (
+                    system.get("SystemName") if isinstance(system, dict) else None
+                )
                 if (
                     not isinstance(parent_uuid, str)
                     or not parent_uuid
@@ -84,9 +97,16 @@ async def ambiguous_parent_details(
         ) from exc
     invalid = sorted(uuid for uuid, matches in parents.items() if len(matches) != 1)
     if invalid:
+        skipped = (
+            "; these managed systems cannot be read: "
+            + ", ".join(_summary_label(system) for system in unreadable)
+            if unreadable
+            else ""
+        )
         raise ValueError(
             f"Cannot resolve ambiguous {resource_label} name {name!r}: candidates "
             f"{', '.join(invalid)} must each belong to exactly one managed system"
+            f"{skipped}"
         )
     return ", ".join(
         f"{uuid} on {parents[uuid][0][0]!r} ({parents[uuid][0][1]})"
@@ -115,16 +135,7 @@ async def require_operating_system(
     a system with none. Its ``State`` comes from ``ManagedSystem/quick/All``:
     ``ManagedSystem/{uuid}`` can time out for a system with no connection (#1500).
     """
-    summary = next(
-        (
-            item
-            for item in await list_system_summaries()
-            if isinstance(item, dict)
-            and isinstance(item.get("UUID"), str)
-            and item["UUID"].lower() == system_uuid.lower()
-        ),
-        {},
-    )
+    summary = summary_for(await list_system_summaries(), system_uuid)
     if system_operating(summary.get("State")):
         return
     state = _state_text(summary.get("State"))
@@ -138,6 +149,20 @@ async def require_operating_system(
         f"Cannot list {resources} on managed system {system_label}: it is in "
         f"{state_label}, and an empty {resources} feed cannot be trusted unless "
         "the system is operating; retry when it reconnects"
+    )
+
+
+def summary_for(summaries: list[Any], system_uuid: str) -> dict[str, Any]:
+    """The quick/All summary whose ``UUID`` matches case-insensitively, or ``{}``."""
+    return next(
+        (
+            item
+            for item in summaries
+            if isinstance(item, dict)
+            and isinstance(item.get("UUID"), str)
+            and item["UUID"].lower() == system_uuid.lower()
+        ),
+        {},
     )
 
 

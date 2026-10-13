@@ -19,9 +19,9 @@ class _StorageClient:
         self.vios_queries: list[tuple[str, str | None]] = []
         self.volume_group_queries: list[str] = []
 
-    async def find_system_by_name(self, name: str) -> dict[str, str]:
-        self.system_queries.append(name)
-        return {"UUID": SYSTEM_UUID}
+    async def list_system_summaries(self) -> list[dict[str, str]]:
+        self.system_queries.append("quick/All")
+        return [{"UUID": SYSTEM_UUID, "SystemName": "system-a"}]
 
     async def find_vios_by_name(
         self, name: str, *, system_uuid: str | None = None
@@ -42,7 +42,7 @@ async def test_vios_name_is_resolved_with_managed_system_scope() -> None:
         cast(HMCClient, client), "shared-vios", system_name_or_uuid="system-a"
     )
 
-    assert client.system_queries == ["system-a"]
+    assert client.system_queries == ["quick/All"]
     assert client.vios_queries == [("shared-vios", SYSTEM_UUID)]
     assert client.volume_group_queries == [VIOS_UUID]
 

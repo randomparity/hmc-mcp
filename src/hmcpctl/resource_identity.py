@@ -45,18 +45,34 @@ def optional_system_selector(value: str | None) -> str | None:
 
 
 async def resolve_system_uuid(hmc: HMCClient, value: str) -> str:
-    """Resolve a managed-system name or pass through its UUID."""
+    """Resolve a managed-system name or pass through its UUID.
+
+    The name is matched exactly against ``ManagedSystem/quick/All``: the
+    ``SystemName`` search times out for a system with no connection (#1501).
+    """
     if is_uuid(value):
         return value
-    entry = await hmc.find_system_by_name(value)
-    if not entry or not entry.get("UUID"):
+    uuids = [
+        summary.get("UUID")
+        for summary in await hmc.list_system_summaries()
+        if isinstance(summary, Mapping) and summary.get("SystemName") == value
+    ]
+    if any(not isinstance(uuid, str) or not uuid for uuid in uuids):
+        raise ValueError(
+            f"Cannot resolve managed-system name {value!r}: its UUID metadata is "
+            "incomplete"
+        )
+    if len(uuids) > 1:
+        details = ", ".join(f"{value!r} ({uuid})" for uuid in sorted(uuids))
+        raise ValueError(f"Ambiguous managed-system name {value!r}: {details}")
+    if not uuids:
         raise ResourceNotFoundError(
             "managed system",
             value,
             f"No managed system named {value!r} found. "
             "Use hmc_list_systems to list available systems.",
         )
-    return str(entry["UUID"])
+    return str(uuids[0])
 
 
 def _resource_name(entry: dict[str, Any] | None, field: str) -> str | None:
