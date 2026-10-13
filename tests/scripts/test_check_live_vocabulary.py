@@ -163,6 +163,32 @@ def test_documented_job_statuses_mark_what_was_captured() -> None:
     assert all(source.startswith("docs/refs/") for source in jobs["sources"])
 
 
+#: The elements #1516's re-derived-vocabularies table lists; a stated binding outside it
+#: needs a source of its own, cited in the stated list (#1529).
+STATED_BY_1516 = frozenset(
+    {
+        "AIXCapable",
+        "ConfiguredOptions",
+        "CurrentManufacturingDefaulConfigurationtBootMode",
+        "CurrentManufacturingDefaultConfigurationSource",
+        "CurrentOptions",
+        "CurrentPowerOnSide",
+        "CurrentPowerSavingMode",
+        "CurrentSharingMode",
+        "PartitionType",
+        "PendingManufacturingDefaulConfigurationtBootMode",
+        "PendingManufacturingDefaultConfigurationSource",
+        "PendingPowerOnLogicalPartitionStartPolicy",
+        "PendingPowerOnSide",
+        "PortCapabilities",
+        "PowerOnLogicalPartitionStartPolicy",
+        "RequiredPowerSavingMode",
+        "SupportedOptions",
+        "SupportedPowerSavingModeTypes",
+    }
+)
+
+
 def test_stated_bindings_hold_every_captured_value() -> None:
     """Each stated binding is the only one for its element, and admits every capture (#1529).
 
@@ -171,13 +197,16 @@ def test_stated_bindings_hold_every_captured_value() -> None:
     """
     directory = Path(__file__).parents[2] / guard.VOCABULARY_DIR
     stated = json.loads((directory / "enums-stated-bindings.json").read_text())
-    assert sorted(stated["evidence"]) == sorted(stated["elements"])
+    assert set(stated["elements"]) == STATED_BY_1516
+    assert set(stated["evidence"]) == STATED_BY_1516
     types: dict[str, set[str]] = {}
-    for path in directory.glob("enums-v*.json"):
+    for path in directory.glob("enums-*.json"):
+        if path.name == "enums-stated-bindings.json":
+            continue
         enum_list = json.loads(path.read_text())
         for name, values in enum_list["types"].items():
             types.setdefault(name, set()).update(values)
-        assert not set(enum_list["elements"]) & set(stated["elements"]), path.name
+        assert not set(enum_list.get("elements", {})) & STATED_BY_1516, path.name
     for path in directory.glob("v*.json"):
         rest = json.loads(path.read_text())["rest"]
         for element, enum in stated["elements"].items():
@@ -192,10 +221,12 @@ def test_partition_type_is_checked_by_its_stated_binding() -> None:
     evidence = guard.load_evidence(Path(__file__).parents[2])
     text = (
         'A = "<PartitionType>AIX/Linux</PartitionType>"\n'
-        'B = "<PartitionType>Linux</PartitionType>"\n'
+        'B = "<PartitionType>NotAnEnvironment</PartitionType>"\n'
     )
     found = guard.literal_violations("t.py", text, evidence)
-    assert [(v.subject, v.value) for v in found] == [("PartitionType", "Linux")]
+    assert [(v.subject, v.value) for v in found] == [
+        ("PartitionType", "NotAnEnvironment")
+    ]
     assert evidence.bindings["PartitionType"] == "LogicalPartitionEnvironment.Enum"
 
 
