@@ -128,6 +128,14 @@ def _ipv6(match: re.Match[str]) -> str:
     return text
 
 
+def _mac_element(match: re.Match[str]) -> str:
+    """Zero each hex run in a MAC element's text; keywords such as `ALL` stay as evidence."""
+    text = re.sub(
+        r"\b[0-9A-Fa-f]+\b", lambda run: "0" * len(run.group(0)), match.group(2)
+    )
+    return match.group(1) + text
+
+
 # Replacements write `\g<1>`, never `\1` before a digit: `\1000000000000` is the
 # octal escape for `@` and deleted the opening <MACAddress> tag 959 times.
 SECRET_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
@@ -195,8 +203,8 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
         r"\g<1><REDACTED-SERIAL>",
     ),
     (re.compile(r"\b(\d{4}-[0-9A-Z]{3}\*)[0-9A-Z]{7}\b"), r"\g<1><REDACTED-SERIAL>"),
-    # Every `MACAddress*` element: `MACAddressPrefix` is a VIOS's real MAC prefix.
-    (re.compile(r"(<(?:\w+:)?MACAddress\w*[^>]*>)[^<]+"), r"\g<1>000000000000"),
+    # Every element naming a MAC address, `MACAddressPrefix` and `MacAddressValue` too.
+    (re.compile(r"(?i)(<(?:\w+:)?\w*MACAddress\w*[^>]*>)([^<]+)"), _mac_element),
     (re.compile(r"(?i)\b(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\b"), "00:00:00:00:00:00"),
     (re.compile(r"(?i)(mac_addr=)[0-9a-f]{12}"), r"\g<1>000000000000"),
     (re.compile(r"(?i)\b(?:fe80|[0-9a-f]{1,4})(?::[0-9a-f]{0,4}){2,7}\b"), _ipv6),
