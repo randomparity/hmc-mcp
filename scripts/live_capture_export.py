@@ -152,9 +152,12 @@ def _element_leak(element: str, token: str) -> re.Pattern[str]:
     )
 
 
-#: A run starts after a JSON escape such as `\\`, `\n` or `\u00e9`, as after a
-#: separator, but never on the escape's own letter or digits.
-_AFTER_ESCAPE = r"(?<=\\\\)|(?<=\\[bfnrt])|(?<=\\u[0-9A-Fa-f]{4})"
+#: The JSON escapes a value can follow: `\\`, `\n` or `\u00e9`. A lookbehind must be
+#: fixed width, so each gets its own.
+_JSON_ESCAPES = (r"\\\\", r"\\[bfnrt]", r"\\u[0-9A-Fa-f]{4}")
+#: A run starts after a JSON escape, as after a separator, but never on the escape's
+#: own letter or digits.
+_AFTER_ESCAPE = "|".join(f"(?<={escape})" for escape in _JSON_ESCAPES)
 #: A hex run with a non-zero digit: one no ASCII letter or digit adjoins, as the MAC
 #: element rule zeroes a word, or six or more digits joined to a word, as in
 #: `0x0A1B2C3D4E5F` or after a JSON escape, which `\b` reads as part of the value's
@@ -193,11 +196,37 @@ def _ipv6(match: re.Match[str]) -> str:
     return text
 
 
+#: A JSON escape and the hex run it directly precedes, or a hex run at a word boundary.
+#: The escape is matched first, so a run never starts on its letter: the `f` of
+#: `\fA1B2C3D4E5F6` is not zeroed into the invalid escape `\0`. Scanning left to
+#: right, a run follows only an escape the scan itself matched, never the `\u` of a
+#: literal `\\u` before a MAC. A surrogate pair is one escape, so replacing the digits
+#: of its low half never strands the high one.
+_MAC_ELEMENT_RUN = re.compile(
+    r"(?P<escape>\\u[dD][89abAB][0-9A-Fa-f]{2}\\u[dD][c-fC-F][0-9A-Fa-f]{2}"
+    rf"|{'|'.join(_JSON_ESCAPES)})(?P<run>[0-9A-Fa-f]+\b)?|\b[0-9A-Fa-f]+\b"
+)
+_ESCAPE_DIGITS = re.compile(r"(?<=\\u)[0-9A-Fa-f]{4}")
+
+
+def _zero_run(run: re.Match[str]) -> str:
+    """Zero *run*'s hex digits, keeping an escape before them.
+
+    Raw XML has no escapes, so a `\\u` there is literal and the four digits after it
+    may be the MAC's own: they become `\\u0030`, an escape for the digit `0`. Not
+    `\\u0000`: the NUL it decodes to is not a legal XML 1.0 character.
+    """
+    escape, value = run.group("escape", "run")
+    if escape is None:
+        return "0" * len(run.group(0))
+    if value is None:
+        return escape
+    return _ESCAPE_DIGITS.sub("0030", escape) + "0" * len(value)
+
+
 def _mac_element(match: re.Match[str]) -> str:
     """Zero each hex run in a MAC element's text; keywords such as `ALL` stay as evidence."""
-    text = re.sub(
-        r"\b[0-9A-Fa-f]+\b", lambda run: "0" * len(run.group(0)), match.group(2)
-    )
+    text = _MAC_ELEMENT_RUN.sub(_zero_run, match.group(2))
     return match.group(1) + text
 
 
