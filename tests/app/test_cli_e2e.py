@@ -328,6 +328,9 @@ def test_verify_ssl_without_trusted_ca_fails_e2e(mock_hmc, monkeypatch):
     monkeypatch.delenv("SSL_CERT_DIR", raising=False)
     env = _env(server.server_address[1], certificate_path)
     del env["SSL_CERT_FILE"]
+    # Disable the system store so the test cert (self-signed, not in OS store)
+    # is not trusted.  ADR 0222: trust_system_store=false falls back to certifi.
+    env["HMC_TRUST_SYSTEM_STORE"] = "false"
 
     result = RUNNER.invoke(cli.app, ["systems", "list"], env=env)
 
@@ -342,6 +345,9 @@ def test_requests_ca_bundle_alone_does_not_trust_e2e(mock_hmc, monkeypatch):
     env = _env(server.server_address[1], certificate_path)
     del env["SSL_CERT_FILE"]
     env["REQUESTS_CA_BUNDLE"] = certificate_path
+    # Disable the system store so REQUESTS_CA_BUNDLE alone is provably ignored.
+    # ADR 0222: trust_system_store=false falls back to certifi only.
+    env["HMC_TRUST_SYSTEM_STORE"] = "false"
 
     result = RUNNER.invoke(cli.app, ["systems", "list"], env=env)
 
