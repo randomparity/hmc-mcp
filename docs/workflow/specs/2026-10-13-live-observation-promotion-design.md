@@ -26,7 +26,10 @@ gaps, live channel, canonical timestamp no later than completion, current HEAD a
 Join each sidecar entry to a matching recorded result from this invocation by registered
 operation, producer-derived identity/outcome (or declared gap reason) and recording interval.
 Dispatcher completion comes from run/group metadata; result-row numbers are a separate
-producer identity. For non-registry recording labels, reuse source-declared release routes
+producer identity. The shared source-declaration reader binds each operation/result-row pair
+to its declared scenario; unresolved or ambiguous declarations fail closed. Apply that check
+to both registered tools and recording labels before matching identity/outcome/time.
+For non-registry recording labels, reuse source-declared release routes
 to validate operation/arm/scenario. Use the producer's second-resolution timestamp floor;
 reject missing, stale or mismatched results without copying their raw payloads. Reject
 stale/future evidence and duplicate ids within a sidecar; validate catalog-wide ids

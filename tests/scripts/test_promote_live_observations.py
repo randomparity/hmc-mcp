@@ -9,7 +9,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -38,10 +38,8 @@ def candidate(tmp_path):
     git(root, "config", "user.name", "Fixture")
     git(root, "config", "user.email", "fixture@example.test")
     git(root, "switch", "-c", "fixture-candidate")
-    shutil.copyfile(
-        ROOT / "scripts/promote_live_observations.py",
-        root / "scripts/promote_live_observations.py",
-    )
+    for name in ("promote_live_observations.py", "check_capability_inventory.py"):
+        shutil.copyfile(ROOT / "scripts" / name, root / "scripts" / name)
     claims = root / "docs/capabilities/releases/v0.0.0.json"
     write_json(
         claims,
@@ -56,7 +54,13 @@ def candidate(tmp_path):
             ],
         },
     )
-    git(root, "add", "scripts/promote_live_observations.py", str(claims))
+    git(
+        root,
+        "add",
+        "scripts/promote_live_observations.py",
+        "scripts/check_capability_inventory.py",
+        str(claims),
+    )
     git(root, "commit", "-qm", "Prepare anonymous offline fixture")
     (root / ".venv").symlink_to(ROOT / ".venv", target_is_directory=True)
     head = git(root, "rev-parse", "HEAD")
@@ -420,16 +424,16 @@ def test_confirmed_gap_matches_fresh_producer_result():
         "subtasks": [1],
         "finished_time": datetime.now(UTC),
     }
-    promotion._invocation(state.gaps[0], run)
+    promotion._invocation(state.gaps[0], run, {})
     state.results[0]["note"] = "known gap: " + outcome.reason
     with pytest.raises(promotion.PromotionError, match="invocation"):
-        promotion._invocation(state.gaps[0], run)
+        promotion._invocation(state.gaps[0], run, {})
     state.results[0]["note"] = outcome.reason
     state.gaps[0]["missing_scope"]["confirmation"]["observed_at"] = (
         datetime.now(UTC) - timedelta(days=1)
     ).strftime("%Y-%m-%dT%H:%M:%SZ")
     with pytest.raises(promotion.PromotionError, match="invocation"):
-        promotion._invocation(state.gaps[0], run)
+        promotion._invocation(state.gaps[0], run, {})
 
 
 def producer_states():
@@ -475,7 +479,7 @@ def test_accept_actual_producer_row_numbers(arm):
         "finished_time": datetime.now(UTC),
     }
     for observation in state.observations:
-        promotion._invocation(observation, run)
+        promotion._invocation(observation, run, inventory.discover_observation_sites())
 
 
 def test_accept_actual_producer_recording_label():
@@ -490,10 +494,10 @@ def test_accept_actual_producer_recording_label():
         "results": state.results,
         "finished_time": datetime.now(UTC),
     }
-    promotion._invocation(observation, run)
+    promotion._invocation(observation, run, inventory.discover_observation_sites())
     observation["observation"]["scenario"] = "st1-system-inventory"
     with pytest.raises(promotion.PromotionError, match="invocation"):
-        promotion._invocation(observation, run)
+        promotion._invocation(observation, run, inventory.discover_observation_sites())
 
 
 @pytest.fixture
@@ -519,13 +523,16 @@ def producer_candidate(candidate, request):
     )
     if getattr(request, "param", False):
         document = json.loads(claims.read_text())
-        document["operations"].append(
-            {
-                "operation": "command.run",
-                "arm": "dedicated",
-                "scenario": "st29-dedicated-pcie",
-            }
-        )
+        if request.param == "scenario":
+            document["operations"][1].update(arm="dedicated", scenario="st36-io-slots")
+        else:
+            document["operations"].append(
+                {
+                    "operation": "command.run",
+                    "arm": "dedicated",
+                    "scenario": "st29-dedicated-pcie",
+                }
+            )
         write_json(claims, document)
     git(root, "add", str(claims))
     git(root, "commit", "-qm", "Select anonymous fixture arm claims")
@@ -544,6 +551,8 @@ def producer_candidate(candidate, request):
             root,
         )
         results.append(path)
+    if getattr(request, "param", False) == "scenario":
+        results = results[:1]
     return root, claims, results
 
 
@@ -627,3 +636,84 @@ def test_reject_invalid_incidental_observation(producer_candidate, defect, capsy
         )
     assert git(root, "branch", "--show-current") == "fixture-candidate"
     assert "omitted" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("producer_candidate", ["scenario"], indirect=True)
+def test_reject_st31_relabelled_as_st36_before_branch_creation(producer_candidate):
+    root, claims, results = producer_candidate
+    sidecar = runner._observations_path(str(results[0]))
+    rows = json.loads(sidecar.read_text())
+    observation = next(
+        row["observation"]
+        for row in rows
+        if row["operation"] == "pcie.assign_dedicated_slot"
+    )
+    assert observation["id"].startswith("st31-")
+    observation["scenario"] = "st36-io-slots"
+    write_json(sidecar, rows)
+    with pytest.raises(promotion.PromotionError, match="invocation"):
+        promotion.promote(
+            root,
+            claims,
+            "promotion/producer",
+            results,
+            window_complete=True,
+            recovery_confirmed=True,
+        )
+    assert git(root, "branch", "--show-current") == "fixture-candidate"
+
+
+def test_accept_actual_st36_and_reject_relabelled_st31():
+    from live_test import pcie
+
+    state = runner.RunState()
+    pcie._record_dedicated_additions(
+        state,
+        SimpleNamespace(
+            evidence={"io-slots-add": (True, True, True)},
+            drc_index="1",
+        ),
+        True,
+    )
+    observation = state.observations[0]
+    assert state.results[0]["subtask"] == 36
+    assert observation["observation"]["scenario"] == "st36-io-slots"
+    run = {
+        "group": "dedicated",
+        "results": state.results,
+        "finished_time": datetime.now(UTC),
+    }
+    sites = inventory.discover_observation_sites()
+    promotion._invocation(observation, run, sites)
+    observation["observation"]["scenario"] = "st29-dedicated-pcie"
+    with pytest.raises(promotion.PromotionError, match="invocation"):
+        promotion._invocation(observation, run, sites)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "state.record_verified(31, 'label', operation=dynamic, scenario='st31-fixture')",
+        "state.record_verified(dynamic, 'label', operation='command.run', scenario='st31-fixture')",
+        "state.record_verified(31, 'label', operation='command.run', scenario=dynamic)",
+    ],
+)
+def test_reject_unresolved_source_recording_identity(monkeypatch, source):
+    monkeypatch.setattr(inventory.inspect, "getsource", lambda module: source)
+    with pytest.raises(inventory.InventoryError):
+        inventory._module_observation_sites(ModuleType("fixture"))
+
+
+def test_reject_ambiguous_source_recording_identity(monkeypatch):
+    module = ModuleType("fixture")
+    monkeypatch.setattr(runner, "_SCENARIO_MODULES", [module])
+    monkeypatch.setattr(
+        inventory.inspect,
+        "getsource",
+        lambda module: (
+            "state.record_verified(31, 'first', operation='command.run', scenario='st31-first')\n"
+            "state.record_verified(31, 'second', operation='command.run', scenario='st31-second')\n"
+        ),
+    )
+    with pytest.raises(inventory.InventoryError, match="ambiguous"):
+        inventory.discover_observation_sites()

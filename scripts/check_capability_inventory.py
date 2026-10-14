@@ -16,6 +16,7 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1218,6 +1219,64 @@ def _check_runtime_projection(path: Path, expected: str) -> list[str]:
     return []
 
 
+def _module_observation_sites(module: ModuleType | None) -> set[tuple[str, int, str]]:
+    if module is None:
+        raise InventoryError("cannot resolve observation source module")
+    tree = ast.parse(inspect.getsource(module))
+    constants = {
+        target.id: node.value.value
+        for node in tree.body
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    sites: set[tuple[str, int, str]] = set()
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "record_verified"
+        ):
+            continue
+        keywords = {keyword.arg: keyword.value for keyword in node.keywords}
+        operation = keywords.get("operation")
+        if not isinstance(operation, ast.Constant) or not isinstance(
+            operation.value, str
+        ):
+            raise InventoryError("observation operation must be a literal")
+        values = []
+        for field in (node.args[0] if node.args else None, keywords.get("scenario")):
+            if isinstance(field, ast.Constant):
+                values.append(field.value)
+            elif isinstance(field, ast.Name):
+                values.append(constants.get(field.id))
+            else:
+                values.append(None)
+        row, scenario = values
+        if type(row) is not int or row < 0 or not _matches(SCENARIO_ID, scenario):
+            raise InventoryError(
+                "observation row and scenario must resolve from source constants"
+            )
+        sites.add((operation.value, row, scenario))
+    return sites
+
+
+def discover_observation_sites() -> dict[tuple[str, int], str]:
+    """Associate result-row identities with scenarios, independently of dispatch IDs."""
+    from live_test_runner import _SCENARIO_MODULES
+
+    sites: dict[tuple[str, int], str] = {}
+    for module in _SCENARIO_MODULES:
+        for operation, row, scenario in _module_observation_sites(module):
+            key = (operation, row)
+            if key in sites and sites[key] != scenario:
+                raise InventoryError(
+                    "observation result-row identity has ambiguous scenarios"
+                )
+            sites[key] = scenario
+    return sites
+
+
 def _release_routes() -> set[tuple[str, str, str]]:
     from live_test_runner import RELEASE_SCENARIO_SUBTASKS, SUBTASK_GROUPS, SUBTASKS
 
@@ -1225,42 +1284,9 @@ def _release_routes() -> set[tuple[str, str, str]]:
     seen: set[str] = set()
     for subtask in set(RELEASE_SCENARIO_SUBTASKS.values()):
         module = inspect.getmodule(SUBTASKS[subtask])
-        if module is None:
-            raise InventoryError(f"cannot resolve release scenario subtask {subtask}")
-        tree = ast.parse(inspect.getsource(module))
-        constants = {
-            target.id: node.value.value
-            for node in tree.body
-            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
-            for target in node.targets
-            if isinstance(target, ast.Name) and isinstance(node.value.value, str)
-        }
-        for node in ast.walk(tree):
-            if not (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "record_verified"
-            ):
+        for operation, _row, scenario in _module_observation_sites(module):
+            if RELEASE_SCENARIO_SUBTASKS.get(scenario) != subtask:
                 continue
-            keywords = {keyword.arg: keyword.value for keyword in node.keywords}
-            scenario_node = keywords.get("scenario")
-            scenario = None
-            if isinstance(scenario_node, ast.Constant):
-                scenario = scenario_node.value
-            elif isinstance(scenario_node, ast.Name):
-                scenario = constants.get(scenario_node.id)
-            if (
-                not isinstance(scenario, str)
-                or RELEASE_SCENARIO_SUBTASKS.get(scenario) != subtask
-            ):
-                continue
-            operation = keywords.get("operation")
-            if not isinstance(operation, ast.Constant) or not isinstance(
-                operation.value, str
-            ):
-                raise InventoryError(
-                    f"release scenario {scenario}: operation must be a literal"
-                )
             seen.add(scenario)
             for arm, tasks in SUBTASK_GROUPS.items():
                 # The dedicated arm precedes bare-CEC in all; its row 29 makes
@@ -1268,7 +1294,7 @@ def _release_routes() -> set[tuple[str, str, str]]:
                 if arm == "all" and scenario == "st35-bare-cec":
                     continue
                 if subtask in tasks:
-                    routes.add((operation.value, arm, scenario))
+                    routes.add((operation, arm, scenario))
     if seen != set(RELEASE_SCENARIO_SUBTASKS):
         raise InventoryError(
             "release scenario registration has no record_verified declaration"

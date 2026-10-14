@@ -163,6 +163,7 @@ def _rows(
     rows: list, run: dict, fingerprints: dict[str, str], now: datetime
 ) -> list[dict]:
     identities: set[str] = set()
+    sites = inventory.discover_observation_sites()
     for row in rows:
         if not isinstance(row, dict) or set(row) not in (
             {"operation", "observation"},
@@ -191,11 +192,11 @@ def _rows(
                 raise PromotionError("sidecar gap lacks a valid confirmation")
             value = scope["confirmation"]
         _evidence(value, run, fingerprints[operation], now)
-        _invocation(row, run)
+        _invocation(row, run, sites)
     return rows
 
 
-def _invocation(sidecar: dict, run: dict) -> None:
+def _invocation(sidecar: dict, run: dict, sites: dict[tuple[str, int], str]) -> None:
     results = run["results"]
     if not isinstance(results, list) or not results:
         raise PromotionError("results invocation lacks recorded outcomes")
@@ -238,6 +239,11 @@ def _invocation(sidecar: dict, run: dict) -> None:
         if security is not None and security.operation != sidecar["operation"]:
             continue
         if observation:
+            if (
+                sites.get((sidecar["operation"], result["subtask"]))
+                != value["scenario"]
+            ):
+                continue
             # Some producer labels describe direct commands, not registry tools.
             # Reuse the source-declared release routes for those observations.
             if (
