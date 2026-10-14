@@ -30,6 +30,8 @@ def window(tmp_path):
     (root / ".venv").symlink_to(ROOT / ".venv", target_is_directory=True)
     git(root, "config", "user.name", "Fixture")
     git(root, "config", "user.email", "fixture@example.test")
+    git(root, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
     git(root, "switch", "-c", "fixture-window")
     script = ROOT / "scripts/run_release_window.py"
     if script.exists():
