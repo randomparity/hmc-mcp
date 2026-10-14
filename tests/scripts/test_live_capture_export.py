@@ -377,44 +377,82 @@ def test_quote_aware_branch_is_tried_before_the_fallback(attribute: str) -> None
     assert corpus[-1]["body"] == body.replace("1234ABC", "&lt;REDACTED-SERIAL&gt;")
 
 
-#: One element of each scrubbed set, with the token its rule writes (#1562).
+SESSION = "<REDACTED-SESSION>"
+SSH_KEY = "<REDACTED-SSHKEY>"
+SERIAL = "<REDACTED-SERIAL>"
+DEVID = "<REDACTED-DEVID>"
+ADDRESS = export.PLACEHOLDER_IP
+#: One element of each scrubbed set, with the text its rule writes (#1562, #1588).
 SCRUBBED_ELEMENTS = [
-    ("X-API-Session", "REDACTED-SESSION"),
-    ("x-api-session", "REDACTED-SESSION"),
-    ("SerialNumber", "REDACTED-SERIAL"),
-    ("ns:LogicalSerialNumber", "REDACTED-SERIAL"),
-    ("UniqueDeviceID", "REDACTED-DEVID"),
-    ("ns:WWPN", "REDACTED-DEVID"),
+    ("X-API-Session", SESSION),
+    ("x-api-session", SESSION),
+    ("PublicSSHKeyValue", SSH_KEY),
+    ("ns:AuthorizedKeysValue", SSH_KEY),
+    ("IPAddress", ADDRESS),
+    ("ns:PrimaryIPAddress", ADDRESS),
+    ("SerialNumber", SERIAL),
+    ("ns:LogicalSerialNumber", SERIAL),
+    ("UniqueDeviceID", DEVID),
+    ("ns:WWPN", DEVID),
 ]
 #: Names the scrub rules matched only in their declared case and after a `\w+:` prefix
-#: (#1572): neither the case nor the prefix may hide the value.
+#: (#1572, #1588), or after no prefix at all: neither may hide the value.
 VARIANT_ELEMENTS = [
-    ("serialnumber", "REDACTED-SERIAL"),
-    ("ns-1:SerialNumber", "REDACTED-SERIAL"),
-    ("ns.v1:LOGICALSERIALNUMBER", "REDACTED-SERIAL"),
-    ("uniquedeviceid", "REDACTED-DEVID"),
-    ("ns-1:UniqueDeviceID", "REDACTED-DEVID"),
-    ("ns.v1:wwpn", "REDACTED-DEVID"),
+    ("ns-1:x-api-session", SESSION),
+    ("ns.v1:X-API-SESSION", SESSION),
+    ("publicsshkeyvalue", SSH_KEY),
+    ("ns-1:AuthorizedKeysValue", SSH_KEY),
+    ("ipaddress", ADDRESS),
+    ("ns-1:NetworkAddress", ADDRESS),
+    ("ns.v1:IPV6ADDRESS", ADDRESS),
+    ("serialnumber", SERIAL),
+    ("ns-1:SerialNumber", SERIAL),
+    ("ns.v1:LOGICALSERIALNUMBER", SERIAL),
+    ("uniquedeviceid", DEVID),
+    ("ns-1:UniqueDeviceID", DEVID),
+    ("ns.v1:wwpn", DEVID),
+    # #1588: a prefix `json.dumps` writes with a `\u` escape, and more than one prefix.
+    *(
+        (f"{prefix}{element}", written)
+        for prefix in ("ns\u00e9:", "ns:v1:")
+        for element, written in [
+            ("X-API-Session", SESSION),
+            ("PublicSSHKeyValue", SSH_KEY),
+            ("IPAddress", ADDRESS),
+            ("SerialNumber", SERIAL),
+            ("WWPN", DEVID),
+        ]
+    ),
 ]
 SCRUBBED_ELEMENTS += VARIANT_ELEMENTS
 
 
+def _escaped(written: str) -> str:
+    """*written* as an XML body holds it: a token there would open an element."""
+    return written.replace("<", "&lt;").replace(">", "&gt;")
+
+
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
-@pytest.mark.parametrize(("element", "token"), VARIANT_ELEMENTS)
+@pytest.mark.parametrize(("element", "written"), VARIANT_ELEMENTS)
 def test_element_name_case_and_prefix_are_scrubbed(
-    element: str, token: str, encode: Any
+    element: str, written: str, encode: Any
 ) -> None:
-    """Regression #1572: `<serialnumber>` and `<ns-1:SerialNumber>` were exported."""
+    """Regression #1572, #1588: `<serialnumber>` and `<ns-1:SerialNumber>` were exported."""
     tok = export.Tokenizer({}, set())
     body = encode(f'<Root><{element} kb="CUR">SYN-77Q</{element}></Root>')
     scrubbed = tok.tokenize(body)
-    # A body that is XML escapes the token, so it does not open an element.
-    placeholder = f"&lt;{token}&gt;" if encode is str else f"<{token}>"
-    assert scrubbed == body.replace("SYN-77Q", placeholder)
+    assert scrubbed == body.replace(
+        "SYN-77Q", _escaped(written) if encode is str else written
+    )
     assert tok.leaks(scrubbed) == []
 
 
-@pytest.mark.parametrize("gap", [" ", ">", '"'])
+#: What ends a prefix: a space, a tag end, a quote, and in `json.dumps` text a `\"`,
+#: an escaped ASCII character and an escaped non-ASCII space (#1588).
+PREFIX_GAPS = [" ", ">", '"', '\\"', "\\u0020", "\\u003e", "\\u00a0", "\\u3000"]
+
+
+@pytest.mark.parametrize("gap", PREFIX_GAPS)
 def test_namespace_prefix_does_not_span_a_tag(gap: str) -> None:
     """A prefix is name characters only: `x:SerialNumber` in another tag is not one."""
     tok = export.Tokenizer({}, set())
@@ -423,9 +461,9 @@ def test_namespace_prefix_does_not_span_a_tag(gap: str) -> None:
 
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
-@pytest.mark.parametrize(("element", "token"), SCRUBBED_ELEMENTS)
+@pytest.mark.parametrize(("element", "written"), SCRUBBED_ELEMENTS)
 def test_unscrubbed_element_value_is_a_leak(
-    element: str, token: str, encode: Any
+    element: str, written: str, encode: Any
 ) -> None:
     """Regression #1562: only the scrub rule stood between these values and the export."""
     tok = export.Tokenizer({}, set())
@@ -434,14 +472,14 @@ def test_unscrubbed_element_value_is_a_leak(
 
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
-@pytest.mark.parametrize(("element", "token"), SCRUBBED_ELEMENTS)
-@pytest.mark.parametrize("placeholder", ["&lt;{}&gt;", "<{}>"])
+@pytest.mark.parametrize(("element", "written"), SCRUBBED_ELEMENTS)
+@pytest.mark.parametrize("escape", [_escaped, str], ids=["escaped", "bare"])
 def test_scrubbed_element_value_is_not_a_leak(
-    element: str, token: str, encode: Any, placeholder: str
+    element: str, written: str, encode: Any, escape: Any
 ) -> None:
-    """The token, escaped in an XML body or bare elsewhere, is the one allowed value."""
+    """What the rule writes, escaped in an XML body or bare elsewhere, is the one value."""
     tok = export.Tokenizer({}, set())
-    value = placeholder.format(token)
+    value = escape(written)
     assert (
         tok.leaks(encode(f'<Root><{element} kb="CUR">{value}</{element}></Root>')) == []
     )
@@ -477,10 +515,10 @@ def _json_twice(text: str) -> str:
 @pytest.mark.parametrize(
     "encode", [str, json.dumps, _json_twice], ids=["raw", "json", "json-twice"]
 )
-@pytest.mark.parametrize(("element", "token"), SCRUBBED_ELEMENTS)
+@pytest.mark.parametrize(("element", "written"), SCRUBBED_ELEMENTS)
 @pytest.mark.parametrize("gap", [" ", "\n", "\r\n", "\t", " \r\n\t "])
 def test_cdata_before_whitespace_and_closing_tag_is_a_leak(
-    element: str, token: str, encode: Any, gap: str
+    element: str, written: str, encode: Any, gap: str
 ) -> None:
     """#1590: whitespace after `]]>` does not hide the CDATA from the backstop.
 
@@ -506,13 +544,16 @@ MAC_ELEMENTS = [
     # Regression #1589: the rule took only a `\w+:` prefix.
     "ns-1:MACAddress",
     "ns.v1:macaddressprefix",
+    # Regression #1588: a `\u`-escaped prefix in `json.dumps` text, and two prefixes.
+    "ns\u00e9:MACAddress",
+    "ns:v1:MACAddress",
 ]
 
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
-@pytest.mark.parametrize("element", ["ns-1:MACAddress", "ns.v1:macaddressprefix"])
+@pytest.mark.parametrize("element", MAC_ELEMENTS[-4:])
 def test_mac_element_namespace_prefix_is_zeroed(element: str, encode: Any) -> None:
-    """Regression #1589: `<ns-1:MACAddress>` was left whole, and the export stopped."""
+    """Regression #1589, #1588: `<ns-1:MACAddress>` was left whole; the export stopped."""
     tok = export.Tokenizer({}, set())
     body = encode(f'<Root><{element} kb="CUR">{MAC}</{element}></Root>')
     scrubbed = tok.tokenize(body)
@@ -520,7 +561,7 @@ def test_mac_element_namespace_prefix_is_zeroed(element: str, encode: Any) -> No
     assert tok.leaks(scrubbed) == []
 
 
-@pytest.mark.parametrize("gap", [" ", ">", '"'])
+@pytest.mark.parametrize("gap", PREFIX_GAPS)
 def test_mac_namespace_prefix_does_not_span_a_tag(gap: str) -> None:
     """A prefix is name characters only: `x:MACAddress` in another tag is not one."""
     tok = export.Tokenizer({}, set())
@@ -706,7 +747,16 @@ def _cost_ratio(
     return min(timings[rule]) / min(timings[baseline])
 
 
-@pytest.mark.parametrize("element", ["SerialNumber", "ns-1:MACAddress"])
+@pytest.mark.parametrize(
+    "element",
+    [
+        "SerialNumber",
+        "ns-1:MACAddress",
+        "ns:v1:X-API-Session",
+        "ns-1:PublicSSHKeyValue",
+        "ns\u00e9:IPAddress",
+    ],
+)
 def test_many_unclosed_openings_do_not_backtrack(element: str) -> None:
     """Regression #1548: the fallback backtracked over the rest of the body per opening.
 
@@ -718,11 +768,12 @@ def test_many_unclosed_openings_do_not_backtrack(element: str) -> None:
     3.11-3.14, and under 3x on an oversubscribed host; the backtracking one cost 40x+.
     """
     body = f"<{element} " * 5_000
-    for rule, replacement in export.IDENTIFIER_RULES:
+    rules = (*export.SECRET_RULES, *export.IDENTIFIER_RULES)
+    for rule, replacement in rules:
         assert rule.sub(replacement, body) == body
     tail_rules = [
         (rule, replacement)
-        for rule, replacement in export.IDENTIFIER_RULES
+        for rule, replacement in rules
         if export._TAG_TAIL in rule.pattern and rule.search(f"<{element} >x<")
     ]
     assert tail_rules
