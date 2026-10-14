@@ -112,8 +112,8 @@ Three subcommands, all offline:
   relate to (#1498): that catch-all was dropped because literals alone cannot tell a right
   binding from a coincidental one. It cost eighteen bindings that were right, such as
   `CurrentSharingMode` to `LogicalPartitionProcessorSharingMode.Enum` and `PartitionType`
-  to `LogicalPartitionEnvironment.Enum`, so those elements are no longer value-checked
-  until something states their binding. The binding is by local name, so an element two
+  to `LogicalPartitionEnvironment.Enum`; `enums-stated-bindings.json` states them again
+  (#1529). The binding is by local name, so an element two
   objects share, such as `Status`, can still bind to the wrong object's enum; the gate
   below lets a stated binding override it);
   `rest.errors` (path template, status, error form, reason code, message with
@@ -128,6 +128,10 @@ Three subcommands, all offline:
   documents, plus the bare `COMPLETED` that the ListManagementConsoleUpdates and
   ListStorageMediaDevices job pages document (`…/091-…md:39`, `…/092-…md:41`), each
   marked captured or documented-only, binding `Status`. Names only, no prose.
+- `enums-stated-bindings.json`: the eighteen bindings the dropped catch-all inferred,
+  taken from #1516's re-derived-vocabularies table, each naming that source. It holds no
+  enum types; the per-pair lists supply them. No committed vocabulary or enum list binds
+  any of the eighteen to a different enum.
 - `allowlist.json`: gate violations not yet fixed.
 
 The first five come from the 2026-09-30 tokenized corpora. `v10r3-p9` also folds in
@@ -152,7 +156,8 @@ exporter's own test modules, which hold uncaptured values on purpose):
    bound to a schema enum in some vocabulary. Allowed values are the union, over every
    vocabulary and enum list, of that element's enum values and observed literals: a
    value any release answered or enumerates passes. An element an enum list binds itself
-   (a schema-stated binding, or `Status` in the documented job statuses) takes its enums
+   (a schema-stated binding, `Status` in the documented job statuses, or one of the
+   stated bindings) takes its enums
    from those bindings only, never from one a vocabulary inferred: a capture whose only
    `Status` values were VNIC backing-device states infers the VNIC enum, which would
    otherwise admit every member of that enum as a job status (#1498). The observed
