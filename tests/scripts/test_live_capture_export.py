@@ -261,6 +261,7 @@ def test_identifier_rules(raw: str, gone: str, token: str) -> None:
     [
         ("MACAddress", "0A1B2C3D4E5F", "000000000000"),  # pragma: allowlist secret
         ("SerialNumber", "1234ABC", "&lt;REDACTED-SERIAL&gt;"),
+        ("VirtualSerialNumber", "SYN0001", "&lt;REDACTED-SERIAL&gt;"),
         ("WWPN", "c0507609abcd0001", "&lt;REDACTED-DEVID&gt;"),
         ("VolumeUniqueID", "3E213600507680", "&lt;REDACTED-DEVID&gt;"),
         ("MediaUDID", "lab7rh8", "&lt;REDACTED-DEVID&gt;"),
@@ -304,6 +305,39 @@ def test_mac_elements_scrub_only_hex(element: str, value: str, token: str) -> No
     body = f"<{element}>{value}</{element}>"
     corpus = export.tokenize_records(_records(_rest("/ms", body)))
     assert corpus[-1]["body"] == f"<{element}>{token}</{element}>"
+
+
+SERIAL_ELEMENTS = ["SerialNumber", "LogicalSerialNumber", "ns:VirtualSerialNumber"]
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("element", SERIAL_ELEMENTS)
+@pytest.mark.parametrize("keyword", ["none", "auto"])
+def test_serial_keyword_is_kept_as_evidence(
+    element: str, keyword: str, encode: Any
+) -> None:
+    """#1593: `none` and `auto` are what a partition has instead of a virtual serial."""
+    tok = export.Tokenizer({}, set())
+    body = encode(f'<Root><{element} kb="CUD">{keyword}</{element}></Root>')
+    assert tok.tokenize(body) == body
+    assert tok.leaks(body) == []
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("element", SERIAL_ELEMENTS)
+@pytest.mark.parametrize(
+    "value", ["None", "nonesuch", "none ", "autoSYN0001", "SYN0001"]
+)
+def test_serial_near_keyword_is_scrubbed(element: str, value: str, encode: Any) -> None:
+    """Only the exact keyword is kept: anything else in a serial element is a serial."""
+    tok = export.Tokenizer({}, set())
+    body = encode(f"<Root><{element}>{value}</{element}></Root>")
+    scrubbed = tok.tokenize(body)
+    assert scrubbed == body.replace(
+        value, _escaped(SERIAL) if encode is str else SERIAL
+    )
+    assert tok.leaks(scrubbed) == []
+    assert tok.leaks(body) == [value]
 
 
 @pytest.mark.parametrize(
@@ -392,6 +426,7 @@ SCRUBBED_ELEMENTS = [
     ("ns:PrimaryIPAddress", ADDRESS),
     ("SerialNumber", SERIAL),
     ("ns:LogicalSerialNumber", SERIAL),
+    ("VirtualSerialNumber", SERIAL),
     ("UniqueDeviceID", DEVID),
     ("ns:WWPN", DEVID),
 ]
@@ -408,6 +443,7 @@ VARIANT_ELEMENTS = [
     ("serialnumber", SERIAL),
     ("ns-1:SerialNumber", SERIAL),
     ("ns.v1:LOGICALSERIALNUMBER", SERIAL),
+    ("ns-1:virtualserialnumber", SERIAL),
     ("uniquedeviceid", DEVID),
     ("ns-1:UniqueDeviceID", DEVID),
     ("ns.v1:wwpn", DEVID),
