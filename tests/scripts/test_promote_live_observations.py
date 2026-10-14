@@ -496,7 +496,8 @@ def test_accept_actual_producer_recording_label():
         promotion._invocation(observation, run)
 
 
-def test_promote_actual_dedicated_and_bare_producer_outputs(candidate):
+@pytest.fixture
+def producer_candidate(candidate, request):
     root, claims, *_ = candidate
     write_json(
         claims,
@@ -516,25 +517,18 @@ def test_promote_actual_dedicated_and_bare_producer_outputs(candidate):
             ],
         },
     )
-    catalog_path = root / "docs/capabilities/maturity.json"
-    catalog = json.loads(catalog_path.read_text())
-    # This fixture models an explicitly reviewed, still-absent implementation.
-    # Promotion must preserve it instead of inventing catalog implementation data.
-    catalog["operations"].append(
-        {
-            "operation": "command.run",
-            "implementation": {
-                "state": "absent",
-                "implemented_scope": [],
-                "missing_scope": [{"variant": "fixture-only", "parameters": []}],
-            },
-            "evidence": [],
-        }
-    )
-    write_json(catalog_path, catalog)
-    git(root, "add", str(claims), str(catalog_path))
+    if getattr(request, "param", False):
+        document = json.loads(claims.read_text())
+        document["operations"].append(
+            {
+                "operation": "command.run",
+                "arm": "dedicated",
+                "scenario": "st29-dedicated-pcie",
+            }
+        )
+        write_json(claims, document)
+    git(root, "add", str(claims))
     git(root, "commit", "-qm", "Select anonymous fixture arm claims")
-    original = git(root, "rev-parse", "HEAD")
     results = []
     for arm, state in producer_states():
         path = root / f"test-results-{arm}.json"
@@ -550,6 +544,16 @@ def test_promote_actual_dedicated_and_bare_producer_outputs(candidate):
             root,
         )
         results.append(path)
+    return root, claims, results
+
+
+def test_promote_actual_dedicated_and_bare_producer_outputs(producer_candidate, capsys):
+    root, claims, results = producer_candidate
+    original = git(root, "rev-parse", "HEAD")
+    catalog_path = root / "docs/capabilities/maturity.json"
+    assert "command.run" not in {
+        row["operation"] for row in json.loads(catalog_path.read_text())["operations"]
+    }
     promoted = promotion.promote(
         root,
         claims,
@@ -573,3 +577,53 @@ def test_promote_actual_dedicated_and_bare_producer_outputs(candidate):
         if row["operation"] == "pcie.assign_dedicated_slot"
     )
     assert record["evidence"][-1]["scenario"] == "st35-bare-cec"
+
+    assert "command.run" not in {row["operation"] for row in catalog["operations"]}
+    assert capsys.readouterr().err == (
+        "promotion: omitted unclaimed observation for uncatalogued operation command.run\n"
+    )
+
+
+@pytest.mark.parametrize("producer_candidate", [True], indirect=True)
+def test_reject_claimed_uncatalogued_operation(producer_candidate):
+    root, claims, results = producer_candidate
+    with pytest.raises(promotion.PromotionError, match="reviewed implementation"):
+        promotion.promote(
+            root,
+            claims,
+            "promotion/producer",
+            results,
+            window_complete=True,
+            recovery_confirmed=True,
+        )
+    assert git(root, "branch", "--show-current") == "fixture-candidate"
+
+
+@pytest.mark.parametrize("defect", ["unknown", "malformed", "stale", "mismatched"])
+def test_reject_invalid_incidental_observation(producer_candidate, defect, capsys):
+    root, claims, results = producer_candidate
+    sidecar = runner._observations_path(str(results[0]))
+    rows = json.loads(sidecar.read_text())
+    row = next(row for row in rows if row["operation"] == "command.run")
+    if defect == "unknown":
+        row["operation"] = "fixture.unknown"
+    elif defect == "malformed":
+        row["private"] = "DO-NOT-COPY-RAW"
+    elif defect == "stale":
+        row["observation"]["observed_at"] = (
+            datetime.now(UTC) - timedelta(days=91)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    else:
+        row["observation"]["id"] = "st33-mismatched-label"
+    write_json(sidecar, rows)
+    with pytest.raises(promotion.PromotionError):
+        promotion.promote(
+            root,
+            claims,
+            "promotion/producer",
+            results,
+            window_complete=True,
+            recovery_confirmed=True,
+        )
+    assert git(root, "branch", "--show-current") == "fixture-candidate"
+    assert "omitted" not in capsys.readouterr().err

@@ -298,12 +298,19 @@ def _select(options: list[tuple[str, dict]], claim: dict | None) -> dict:
 def _merge(catalog: dict, observations: dict, gaps: list, claims: list) -> None:
     records = {record["operation"]: record for record in catalog["operations"]}
     by_claim = {claim["operation"]: claim for claim in claims}
-    for operation in observations.keys() | by_claim.keys():
-        if operation not in records:
+    for operation in sorted(observations.keys() | by_claim.keys()):
+        if operation not in records and operation in by_claim:
             raise PromotionError(
                 "operation needs a reviewed implementation catalog record"
             )
         observation = _select(observations.get(operation, []), by_claim.get(operation))
+        if operation not in records:
+            print(
+                "promotion: omitted unclaimed observation for uncatalogued operation "
+                + operation,
+                file=sys.stderr,
+            )
+            continue
         record = records[operation]
         record["evidence"] = [
             row for row in record["evidence"] if row["channel"] != "live"

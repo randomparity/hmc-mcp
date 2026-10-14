@@ -33,7 +33,12 @@ stale/future evidence and duplicate ids within a sidecar; validate catalog-wide 
 after selection. Multiple arms can observe the same operation: choose its claimed arm/scenario
 when claimed, otherwise the latest timestamp/id (ties with differing content fail).
 Require each claim's operation/scenario in its named arm's supplied sidecar as passed evidence.
-Replace live evidence only for supplied operations, preserving other evidence and implementation.
+Replace live evidence only for supplied catalogued operations, preserving other evidence and
+implementation. After full validation and selection, omit unclaimed observations whose known
+operation lacks a catalog record, reporting its operation ID without raw data. Preserve that
+catalog absence; a missing claimed record still fails. Unknown operation IDs and malformed,
+stale or mismatched incidental rows fail before omission. This handles the sparse catalog
+without inventing implementation metadata.
 Merge confirmed gaps only into existing matching missing-scope entries; unknown scopes fail
 for manual catalog review. Revalidate the complete candidate catalog before writing.
 Render the existing release snapshot from candidate states, regenerate the projection and

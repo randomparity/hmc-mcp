@@ -18,7 +18,8 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
 
 - Promote completed live-window sidecars with `scripts/promote_live_observations.py`,
   producing a new local branch with validated catalog, release snapshot, packaged
-  projection and generated tool documentation; raw results stay uncommitted (#1512).
+  projection and generated tool documentation; raw results stay uncommitted. Validated,
+  unclaimed observations without existing catalog records are reported and omitted (#1512).
 
 - `scripts/check_capability_inventory.py --require-current FILE` gates a release
   on its validated claimed operations, naming non-current evidence and applying
