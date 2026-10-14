@@ -23,13 +23,15 @@ Read JSON with duplicate-key rejection and bounded files (16 MiB results, 1 MiB 
 Never echo JSON, paths, validator payloads or subprocess output in failure diagnostics.
 Require exact sidecar row keys, known operations, inventory-valid observations or confirmed
 gaps, live channel, canonical timestamp no later than completion, current HEAD and closure.
-Reject stale/future evidence, duplicate operation observations and catalog-wide duplicate ids.
+Reject stale/future evidence and duplicate ids within a sidecar; validate catalog-wide ids
+after selection. Multiple arms can observe the same operation: choose its claimed arm/scenario
+when claimed, otherwise the latest timestamp/id (ties with differing content fail).
 Require each claim's operation/scenario in its named arm's supplied sidecar as passed evidence.
 Replace live evidence only for supplied operations, preserving other evidence and implementation.
 Merge confirmed gaps only into existing matching missing-scope entries; unknown scopes fail
 for manual catalog review. Revalidate the complete candidate catalog before writing.
-Render the existing release snapshot from candidate states; run the existing claimed-set gate,
-projection regeneration, tool-doc regeneration and release-mode inventory check.
+Render the existing release snapshot from candidate states, regenerate the projection and
+tool docs, then run the existing claimed-set gate and release-mode inventory check.
 
 Create the requested previously absent `promotion/` branch before output writes. Validate
 branch with Git; reject main/master, detached HEAD, existing branch and dirty tracked/untracked
