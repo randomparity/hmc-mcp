@@ -1513,6 +1513,8 @@ def test_built_in_accounts_are_not_names() -> None:
         ("SerialNumber", "<REDACTED-SERIAL>"),
         ("LogicalSerialNumber", "<REDACTED-SERIAL>"),
         ("serial_number", "<REDACTED-SERIAL>"),
+        ("VirtualSerialNumber", "<REDACTED-SERIAL>"),
+        ("virtual_serial_num", "<REDACTED-SERIAL>"),
     ],
 )
 def test_tool_output_identifiers_are_redacted(key: str, token: str) -> None:
@@ -1536,6 +1538,31 @@ def test_tool_output_identifiers_are_redacted(key: str, token: str) -> None:
     disk = corpus[-1]["record"]["data"]["disks"][0]
     assert disk[key] == token
     assert disk["nested"][key] == {"@attrs": {"ksv": "V1"}, "#text": token}
+
+
+@pytest.mark.parametrize("key", ["VirtualSerialNumber", "virtual_serial_num"])
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("none", "none"),
+        ("auto", "auto"),
+        ("None", "<REDACTED-SERIAL>"),
+        ("AUTO", "<REDACTED-SERIAL>"),
+        ("auto ", "<REDACTED-SERIAL>"),
+        ("noneSYN0001", "<REDACTED-SERIAL>"),
+        ("SYN0001", "<REDACTED-SERIAL>"),
+    ],
+)
+def test_tool_output_virtual_serial_keeps_only_keywords(
+    key: str, value: str, expected: str
+) -> None:
+    """A virtual serial's `none` and `auto` are evidence; only their exact text is kept."""
+    data = {key: value, "nested": {key: {"@attrs": {"ksv": "V1"}, "#text": value}}}
+    tool = {"kind": "tool", "step": "t", "tool": "x", "ok": True, "data": data}
+    corpus = export.tokenize_records(_records(tool))
+    out = corpus[-1]["record"]["data"]
+    assert out[key] == expected
+    assert out["nested"][key] == {"@attrs": {"ksv": "V1"}, "#text": expected}
 
 
 def test_long_uppercase_hex_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:

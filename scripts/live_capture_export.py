@@ -682,19 +682,29 @@ _DEVICE_ID_KEYS = {_key(n) for n in _DEVICE_ID_ELEMENTS.split("|")} | {
     "luudid",
     "tierudid",
 }
-_SERIAL_KEYS = {"serialnumber", "logicalserialnumber", "serial", "serialnum"}
+_SERIAL_KEYS = {
+    "serialnumber",
+    "logicalserialnumber",
+    "virtualserialnumber",
+    "serial",
+    "serialnum",
+    "virtualserialnum",
+}
+#: The keywords a serial element keeps (#1593), kept here on the same terms: only as the
+#: whole value, in their documented case.
+_SERIAL_KEPT = frozenset({"none", "auto"})
 
 
-def _replace_value(value: Any, token: str) -> Any:
-    """*value* with its text replaced by *token*; an element's `@attrs` are kept."""
+def _replace_value(value: Any, token: str, keep: frozenset[str] = frozenset()) -> Any:
+    """*value* with its text replaced by *token*; `@attrs` and *keep* values are kept."""
     if isinstance(value, dict):
         return {
-            k: v if k == "@attrs" else _replace_value(v, token)
+            k: v if k == "@attrs" else _replace_value(v, token, keep)
             for k, v in value.items()
         }
     if isinstance(value, list):
-        return [_replace_value(v, token) for v in value]
-    return None if value is None else token
+        return [_replace_value(v, token, keep) for v in value]
+    return value if value is None or value in keep else token
 
 
 def redact_identifier_keys(value: Any) -> Any:
@@ -705,7 +715,7 @@ def redact_identifier_keys(value: Any) -> Any:
             if _key(key) in _DEVICE_ID_KEYS:
                 out[key] = _replace_value(item, "<REDACTED-DEVID>")
             elif _key(key) in _SERIAL_KEYS:
-                out[key] = _replace_value(item, "<REDACTED-SERIAL>")
+                out[key] = _replace_value(item, "<REDACTED-SERIAL>", _SERIAL_KEPT)
             else:
                 out[key] = redact_identifier_keys(item)
         return out
