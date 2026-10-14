@@ -157,11 +157,13 @@ _SERIAL_ELEMENT = (
 
 #: `virtual_serial_num=` holds the same serial, or the same keywords, in `lssyscfg -r
 #: lpar` output (#1618). A keyword is kept only as the field's whole value, in its
-#: documented case. An unquoted value ends at a field separator, a quote, a line end or
-#: the end of the text, and in `json.dumps` text at the `\n`, `\r` or `\"` escape; a
-#: quoted one ends only at its closing quote.
+#: documented case: unquoted, it ends at a field separator, a quote, a line end or the
+#: end of the text, and in `json.dumps` text at the `\n`, `\r` or `\"` escape; quoted, only
+#: at its closing quote. The scrub rules themselves read no escape, so in `json.dumps`
+#: text a value runs on over a `\n` and a quoted field loses the `\` of its closing
+#: `\"`, which fails the export as broken JSON: over-scrubbing, never a leak.
 _VIRTUAL_SERIAL_KEPT = "(?-i:none|auto)"
-_FIELD_END = r'(?=[,\n"]|\\[nr"]|$)'
+_FIELD_END = r'(?=[,\r\n"]|\\[nr"]|$)'
 
 
 def _element_rule(
@@ -397,12 +399,12 @@ ALWAYS_LEAKS = (
         )
     ),
     _MAC_LEAK,
-    # A virtual serial the key=value rules missed: no word boundary is needed, and
-    # `json.dumps` text hides one behind a `\n` escape.
+    # A virtual serial the key=value rules missed, quoted too: no word boundary is
+    # needed, and `json.dumps` text hides one behind a `\n` escape.
     re.compile(
         r"(?i)virtual_serial_num="
         rf"(?!(?:<REDACTED-DEVID>|&lt;REDACTED-DEVID&gt;|{_VIRTUAL_SERIAL_KEPT}){_FIELD_END})"
-        r'[^,\n"]+'
+        r'"?[^,\n"]+'
     ),
 )
 #: Elements whose values are fixed HMC vocabulary (task names such as `View HMC Logs`).

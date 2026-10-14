@@ -395,7 +395,14 @@ def test_virtual_serial_field_is_scrubbed(value: str, fields: str, encode: Any) 
 
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
-@pytest.mark.parametrize("fields", [*VIRTUAL_SERIAL_FIELDS, "virtual_serial_num={}"])
+@pytest.mark.parametrize(
+    "fields",
+    [
+        *VIRTUAL_SERIAL_FIELDS,
+        "virtual_serial_num={}",
+        "x=1,virtual_serial_num={}\r\nx=1",
+    ],
+)
 @pytest.mark.parametrize("keyword", ["none", "auto"])
 def test_virtual_serial_keyword_is_kept_as_evidence(
     keyword: str, fields: str, encode: Any
@@ -429,11 +436,12 @@ def test_virtual_serial_keyword_is_kept_only_as_the_whole_value(body: str) -> No
         "ns_virtual_serial_num=SYN0001",
         "virtual_serial_num=none,virtual_serial_num=SYN0001",
         "virtual_serial_num=<REDACTED-DEVID>SYN0001",
+        'virtual_serial_num="SYN0001"',
     ],
 )
 def test_virtual_serial_backstop_reports_a_value_the_rules_missed(text: str) -> None:
     """The backstop needs no word boundary, which `json.dumps` text hides behind `\\n`."""
-    leak = text[text.rindex("virtual_serial_num=") :].rstrip('"')
+    leak = text[text.rindex("virtual_serial_num=") :].removesuffix('"')
     assert export.Tokenizer({}, set()).leaks(text) == [leak]
 
 
@@ -443,6 +451,7 @@ def test_virtual_serial_backstop_reports_a_value_the_rules_missed(text: str) -> 
         "virtual_serial_num=<REDACTED-DEVID>,x=1",
         "virtual_serial_num=&lt;REDACTED-DEVID&gt;",
         "virtual_serial_num=,x=1",
+        'x,"virtual_serial_num=",y',
     ],
 )
 def test_virtual_serial_backstop_passes_the_token(text: str) -> None:
