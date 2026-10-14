@@ -291,8 +291,12 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     ),
     _element_rule(*_SERIAL_ELEMENT),
     (re.compile(r"\b(\d{4}-[0-9A-Z]{3}\*)[0-9A-Z]{7}\b"), r"\g<1><REDACTED-SERIAL>"),
-    # Every element naming a MAC address, `MACAddressPrefix` and `MacAddressValue` too.
-    (re.compile(r"(?i)(<(?:\w+:)?\w*MACAddress\w*[^>]*>)([^<]+)"), _mac_element),
+    # Every element naming a MAC address, `MACAddressPrefix` and `MacAddressValue` too, in
+    # any case and after any namespace prefix.
+    (
+        re.compile(rf"(<{_NS_PREFIX}(?i:\w*MACAddress\w*+){_TAG_TAIL})([^<]+)"),
+        _mac_element,
+    ),
     (re.compile(r"(?i)\b(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\b"), "00:00:00:00:00:00"),
     (re.compile(r"(?i)(mac_addr=)[0-9a-f]{12}"), r"\g<1>000000000000"),
     (re.compile(r"(?i)\b(?:fe80|[0-9a-f]{1,4})(?::[0-9a-f]{0,4}){2,7}\b"), _ipv6),
