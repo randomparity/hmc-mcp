@@ -1377,7 +1377,10 @@ def _process_runtime_projection(
 
 
 def verification_report(
-    states: Mapping[str, OperationState], *, fail_on_stale: bool
+    states: Mapping[str, OperationState],
+    *,
+    fail_on_stale: bool,
+    require_current: bool = False,
 ) -> int:
     """Print every operation's state and the summary; fail only when asked to."""
     in_actions = bool(os.environ.get("GITHUB_ACTIONS"))
@@ -1397,6 +1400,14 @@ def verification_report(
         + f" (of {len(states)})"
     )
     _append_step_summary(states)
+    if require_current:
+        failures = {
+            name: state for name, state in states.items() if state.state != "current"
+        }
+        for name, state in sorted(failures.items()):
+            reason = f" ({state.reason})" if state.reason else ""
+            print(f"ERROR: {name}: {state.state}{reason}", file=sys.stderr)
+        return int(bool(failures))
     return 1 if fail_on_stale and counts.get("stale") else 0
 
 
@@ -1613,6 +1624,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="exit non-zero when any operation's evidence has gone stale",
     )
     parser.add_argument(
+        "--require-current",
+        type=Path,
+        help="report and require current candidate evidence for a release claims JSON file",
+    )
+    parser.add_argument(
         "--write-runtime-projection",
         type=Path,
         help="atomically write the generated runtime projection to PATH",
@@ -1623,6 +1639,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="require the release snapshot to match candidate closures",
     )
     args = parser.parse_args(argv)
+    if args.require_current is not None and args.fail_on_stale:
+        parser.error("cannot combine --require-current with --fail-on-stale")
     if args.fail_on_stale and not args.verification_report:
         parser.error("--fail-on-stale requires --verification-report")
     try:
@@ -1632,6 +1650,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     report = validate_inventory(args.inventory, registry)
     errors = list(report.errors)
+    selected_registry = registry
+    if args.require_current is not None:
+        try:
+            claims = load_release_claims(
+                args.require_current, {tool.operation for tool in registry}
+            )
+            selected = {claim["operation"] for claim in claims}
+            selected_registry = tuple(
+                tool for tool in registry if tool.operation in selected
+            )
+        except InventoryError as error:
+            errors.append(str(error))
     if args.source:
         sources = dict(args.source)
         if len(sources) != len(args.source):
@@ -1655,17 +1685,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"ERROR: {error}", file=sys.stderr)
     if errors:
         return 1
-    if args.verification_report:
+    if args.verification_report or args.require_current is not None:
         # Derived staleness is never a validation error, so the report runs only
         # after validation has passed and reports separately from it.
         states = derive_states(
             maturity_records,
-            registry,
+            selected_registry,
             ROOT,
             datetime.now(UTC),
             _fingerprints=fingerprints,
         )
-        return verification_report(states, fail_on_stale=args.fail_on_stale)
+        return verification_report(
+            states,
+            fail_on_stale=args.fail_on_stale,
+            require_current=args.require_current is not None,
+        )
     print(
         "capability inventory: structurally valid; "
         f"{report.topic_count} topics, {report.source_unit_count} source units, "

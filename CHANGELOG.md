@@ -16,6 +16,10 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
 
 ### Added
 
+- `scripts/check_capability_inventory.py --require-current FILE` gates a release
+  on its validated claimed operations, naming non-current evidence and applying
+  candidate closure and 90-day age checks without blocking on unclaimed states (#1478).
+
 - Retain release claimed operations with their live-test arms and scenarios, beginning
   with v0.1.0; `just capability-inventory` validates every retained set (#1511).
 

@@ -1868,3 +1868,236 @@ def test_release_claims_reject_bare_cec_in_mutually_exclusive_all_arm(tmp_path):
     )
     with pytest.raises(inventory.InventoryError, match="unknown release claim route"):
         inventory.load_release_claims(path, {"job.get"})
+
+
+@pytest.mark.parametrize(
+    "state", ["unrecorded", "unevidenced", "stale", "failed", "current"]
+)
+def test_claimed_report_states(state, capsys):
+    states = {
+        "system.get": inventory.OperationState(
+            state, "closure-changed" if state == "stale" else None
+        )
+    }
+    assert inventory.verification_report(
+        states, fail_on_stale=False, require_current=True
+    ) == int(state != "current")
+    output = capsys.readouterr()
+    assert f"verification: system.get {state}" in output.out
+    if state != "current":
+        assert f"ERROR: system.get: {state}" in output.err
+    if state == "stale":
+        assert "closure-changed" in output.err
+
+
+def test_claimed_report_names_every_failure(capsys):
+    states = {
+        name: inventory.OperationState("unevidenced")
+        for name in ("system.get", "lpar.get")
+    }
+    assert (
+        inventory.verification_report(states, fail_on_stale=False, require_current=True)
+        == 1
+    )
+    assert capsys.readouterr().err.splitlines() == [
+        "ERROR: lpar.get: unevidenced",
+        "ERROR: system.get: unevidenced",
+    ]
+    assert (
+        inventory.verification_report({}, fail_on_stale=False, require_current=True)
+        == 0
+    )
+
+
+@pytest.fixture
+def claimed_gate(tmp_path, monkeypatch):
+    _minimal_inventory(tmp_path)
+    registry = tuple(
+        tool
+        for tool in inventory.discover_registry()
+        if tool.operation in {"system.get", "system.list"}
+    )
+    _write_json(
+        tmp_path / "operations.json",
+        {
+            "format_version": 1,
+            "operations": [
+                {
+                    "tool": tool.tool,
+                    "operation": tool.operation,
+                    "handler": tool.handler,
+                    "signature": tool.signature,
+                    "surfaces": list(tool.surfaces),
+                    "row_ids": [],
+                    "composite_reason": "anonymous fixture operation",
+                    "tests": [],
+                }
+                for tool in registry
+            ],
+        },
+    )
+    modules = {tool.handler.rsplit(".", 1)[0] for tool in registry}
+    _package(
+        tmp_path,
+        {
+            module.removeprefix("hmcpctl.").replace(".", "/") + ".py": "value = 1\n"
+            for module in modules
+        },
+    )
+    records = []
+    for tool in registry:
+        record = _operation(tool.operation)
+        record["evidence"] = [
+            _observation(
+                identity="st1-" + tool.operation.replace(".", "-"),
+                fingerprint=inventory.closure_fingerprint(
+                    tmp_path, tool.handler.rsplit(".", 1)[0]
+                ),
+                observed_at="2026-09-06T12:00:00Z"
+                if tool.operation == "system.get"
+                else "2026-01-01T12:00:00Z",
+            )
+        ]
+        records.append(record)
+    _write_maturity(tmp_path, records)
+    snapshot = tmp_path / "release-verification.json"
+    snapshot.write_text(
+        inventory.render_release_verification(records, registry, tmp_path, _NOW)
+    )
+    projection = tmp_path / "projection.json"
+    projection.write_text(
+        inventory.render_runtime_projection(
+            records, registry, inventory.load_release_verification(snapshot)
+        )
+    )
+    claims = tmp_path / "v0.2.0.json"
+    _write_json(claims, _release_document())
+    monkeypatch.setattr(inventory, "ROOT", tmp_path)
+    monkeypatch.setattr(inventory, "DEFAULT_RUNTIME_PROJECTION", projection)
+    monkeypatch.setattr(inventory, "discover_registry", lambda: registry)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    return ["--inventory", str(tmp_path), "--require-current", str(claims)]
+
+
+@pytest.mark.parametrize(
+    "days,microseconds,expected", [(0, 0, 0), (90, 0, 0), (90, 1, 1), (-1, 0, 0)]
+)
+def test_claimed_gate_age_boundary(
+    claimed_gate, tmp_path, monkeypatch, capsys, days, microseconds, expected
+):
+    from datetime import timedelta
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return _NOW + timedelta(days=days, microseconds=microseconds)
+
+    monkeypatch.setattr(inventory, "datetime", Clock)
+    projection = tmp_path / "projection.json"
+    before = projection.read_bytes()
+    assert inventory.main(claimed_gate) == expected
+    output = capsys.readouterr()
+    assert "system.get" in output.out
+    assert "system.list" not in output.out
+    assert "(of 1)" in output.out
+    if expected:
+        assert "ERROR: system.get: stale (age-exceeded)" in output.err
+    assert projection.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "change,expected",
+    [
+        ("closure", 1),
+        ("failed", 1),
+        ("unevidenced", 1),
+        ("unrecorded", 1),
+        ("empty", 0),
+        ("report", 0),
+        ("release", 0),
+    ],
+)
+def test_claimed_gate_main(
+    claimed_gate, tmp_path, monkeypatch, capsys, change, expected
+):
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return _NOW
+
+    monkeypatch.setattr(inventory, "datetime", Clock)
+    if change == "closure":
+        module = next(
+            tool.handler.rsplit(".", 1)[0]
+            for tool in inventory.discover_registry()
+            if tool.operation == "system.get"
+        )
+        source = tmp_path / "src" / Path(*module.split(".")).with_suffix(".py")
+        source.write_text("value = 2\n")
+    elif change in {"failed", "unevidenced", "unrecorded"}:
+        records = inventory._maturity_records(tmp_path)
+        record = next(
+            record for record in records if record["operation"] == "system.get"
+        )
+        if change == "failed":
+            record["evidence"][0]["result"] = "failed"
+        elif change == "unevidenced":
+            record["evidence"] = []
+        else:
+            records.remove(record)
+        _write_maturity(tmp_path, records)
+        projection = inventory.render_runtime_projection(
+            records,
+            inventory.discover_registry(),
+            inventory.load_release_verification(tmp_path / "release-verification.json"),
+        )
+        (tmp_path / "projection.json").write_text(projection)
+    elif change == "empty":
+        _write_json(tmp_path / "v0.2.0.json", {"format_version": 1, "operations": []})
+    else:
+        claimed_gate.append(
+            "--verification-report" if change == "report" else "--release"
+        )
+    assert inventory.main(claimed_gate) == expected
+    output = capsys.readouterr()
+    if expected:
+        assert "ERROR: system.get:" in output.err
+        assert (
+            "closure-changed" in output.err
+            if change == "closure"
+            else change in output.err
+        )
+    if change == "empty":
+        assert "(of 0)" in output.out
+
+
+@pytest.mark.parametrize("problem", ["missing", "json", "unknown", "duplicate"])
+def test_claimed_gate_input_errors(claimed_gate, tmp_path, capsys, problem):
+    path = tmp_path / "v0.2.0.json"
+    if problem == "missing":
+        path.unlink()
+    elif problem == "json":
+        path.write_text("{broken")
+    else:
+        document = _release_document()
+        if problem == "unknown":
+            document["operations"][0]["operation"] = "unknown.operation"
+        else:
+            document["operations"] *= 2
+        _write_json(path, document)
+    assert inventory.main(claimed_gate) == 1
+    output = capsys.readouterr()
+    assert "ERROR:" in output.err
+    assert "verification coverage:" not in output.out
+
+
+@pytest.mark.parametrize("extra", [[], ["--verification-report"]])
+def test_claimed_gate_usage(extra, capsys):
+    with pytest.raises(SystemExit) as error:
+        inventory.main(["--require-current", "v0.2.0.json", "--fail-on-stale", *extra])
+    assert error.value.code == 2
+    assert (
+        "cannot combine --require-current with --fail-on-stale"
+        in capsys.readouterr().err
+    )
