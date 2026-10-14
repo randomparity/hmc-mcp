@@ -52,8 +52,9 @@ bumped by hand:
 Dependabot alerts and security updates are not enabled for this repository, so nothing reports
 an advisory against these packages automatically. Bump them before cutting a release
 ([releasing](docs/development.md#releasing)), when a change needs a newer release, and when the
-GitHub Advisory Database lists an advisory for one of them. Check it at each release with
-`gh api "advisories?ecosystem=pip&affects=<package>"` for each of the three. To bump:
+GitHub Advisory Database lists an advisory affecting a pinned version. Check it at each release
+with `gh api "advisories?ecosystem=pip&affects=<package>@<pinned version>"` for each of the
+three. To bump:
 
 1. Choose the newest release of each package that is at least 14 days old on PyPI, and check
    that the chosen `fastmcp-slim` accepts the chosen `mcp` and `mcp-types`. A newer release
