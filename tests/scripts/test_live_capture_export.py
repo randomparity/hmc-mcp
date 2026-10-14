@@ -340,6 +340,34 @@ def test_serial_near_keyword_is_scrubbed(element: str, value: str, encode: Any) 
     assert tok.leaks(body) == [value]
 
 
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("attribute", ['kb="a>b"', "kb='a>b'"])
+def test_serial_keyword_after_a_quoted_gt_is_kept(attribute: str, encode: Any) -> None:
+    """A `>` inside an attribute does not end the tag the keyword is checked after."""
+    tok = export.Tokenizer({}, set())
+    body = encode(
+        f"<Root><VirtualSerialNumber {attribute}>none</VirtualSerialNumber></Root>"
+    )
+    assert tok.tokenize(body) == body
+    assert tok.leaks(body) == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "<VirtualSerialNumber>SYN<x>none</VirtualSerialNumber>",
+        "<VirtualSerialNumber>SYN</x>auto</VirtualSerialNumber>",
+        "<Root>SYN0001>none</VirtualSerialNumber></Root>",
+        "<VirtualSerialNumber SYN</VirtualSerialNumber>none</VirtualSerialNumber>",
+        '<VirtualSerialNumber kb="x<SYN>none</VirtualSerialNumber>',
+    ],
+)
+def test_serial_keyword_not_after_its_opening_tag_is_a_leak(body: str) -> None:
+    """A keyword is evidence only as the element's whole text, in the backstop too."""
+    with pytest.raises(export.LeakError):
+        export.tokenize_records(_records(_rest("/e", body)))
+
+
 @pytest.mark.parametrize(
     "element",
     [
