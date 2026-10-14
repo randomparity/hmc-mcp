@@ -26,6 +26,8 @@ import live_capture_sweep as sweep
 from live_test.capture import capture
 
 from hmcpctl.client.core import HMCClient
+from hmcpctl.errors import HMCError
+from hmcpctl.resource_identity import ResourceNotFoundError
 
 # --- guard ---------------------------------------------------------------------
 
@@ -586,3 +588,143 @@ def test_partitions_are_not_resolved_without_the_system_uuid(
 
     assert names == sweep.Names(system_name=DISCONNECTED_NAME)
     assert not unscoped.called
+
+
+# --- partition and VIOS lookups (#1532) -------------------------------------------
+
+LPAR_UUID = "3c1a5b2e-0000-4000-8000-000000001532"
+VIOS_UUID = "4d2b6c3f-0000-4000-8000-000000001532"
+
+
+#: An ``operating`` system in a second captured quick/All answer.
+OPERATING_NAME = "sys-11"
+OPERATING_QUICK_ALL = "rest-ms-quick-all"
+
+
+def _resolve_partitions(
+    mock_hmc: Any, tmp_path: Path, context: sweep.Context, quick_all: str = QUICK_ALL
+) -> tuple[Any, list[dict[str, Any]]]:
+    path, response = live_response(quick_all)
+    mock_hmc.get(path).mock(return_value=response)
+
+    async def run() -> Any:
+        async with HMCClient(make_config()) as hmc:
+            return await sweep.resolve_names(hmc, context, log)
+
+    capture_path = tmp_path / "tools.capture.jsonl"
+    log = sweep.ToolLog(capture_path)
+    try:
+        names = asyncio.run(run())
+    finally:
+        log.close()
+    lines = capture_path.read_text().splitlines()
+    return names, [json.loads(line) for line in lines]
+
+
+def _raw_commands(
+    names: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> list[str]:
+    sent: list[str] = []
+
+    async def run(config: Any, command: str) -> str:
+        sent.append(command)
+        return ""
+
+    monkeypatch.setattr("hmcpctl.ssh.transport.run_hmc_command", run)
+    log = sweep.ToolLog(tmp_path / "raw.capture.jsonl")
+    hmc = SimpleNamespace(config=object(), _request=lambda *a, **k: asyncio.sleep(0))
+    try:
+        asyncio.run(sweep.sweep_raw(hmc, names, log, lambda _: None))
+    finally:
+        log.close()
+    return sent
+
+
+@pytest.mark.parametrize(
+    ("step", "context", "route"),
+    [
+        (
+            "lpar",
+            sweep.Context(system=DISCONNECTED_NAME, lpar="lp-1"),
+            rf"/ManagedSystem/{DISCONNECTED_UUID}/LogicalPartition",
+        ),
+        (
+            "lpar",
+            sweep.Context(system=DISCONNECTED_NAME, lpar=LPAR_UUID),
+            rf"/LogicalPartition/{LPAR_UUID}",
+        ),
+        (
+            "vios",
+            sweep.Context(system=DISCONNECTED_NAME, vios="vio-1"),
+            rf"/ManagedSystem/{DISCONNECTED_UUID}/VirtualIOServer",
+        ),
+        (
+            "vios",
+            sweep.Context(system=DISCONNECTED_NAME, vios=VIOS_UUID),
+            rf"/VirtualIOServer/{VIOS_UUID}",
+        ),
+    ],
+    ids=["lpar-lookup", "lpar-read", "vios-lookup", "vios-read"],
+)
+def test_a_timed_out_partition_lookup_is_recorded_and_the_raw_phase_runs(
+    mock_hmc: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    step: str,
+    context: sweep.Context,
+    route: str,
+) -> None:
+    mock_hmc.get(url__regex=route).mock(side_effect=httpx.ReadTimeout("read timed out"))
+
+    names, records = _resolve_partitions(mock_hmc, tmp_path, context)
+
+    assert names == sweep.Names(
+        sys_uuid=DISCONNECTED_UUID, system_name=DISCONNECTED_NAME
+    )
+    value = context.lpar if step == "lpar" else context.vios
+    assert [(r["kind"], r["step"], r[step]) for r in records] == [
+        ("resolve", step, value)
+    ]
+    assert "timed out" in records[0]["exception"]
+    sent = _raw_commands(names, tmp_path, monkeypatch)
+    assert "lssyscfg -r sys -m sys-R8" in sent
+    assert not any("lp-1" in command or "vio-1" in command for command in sent)
+
+
+@pytest.mark.parametrize(
+    "context",
+    [
+        sweep.Context(system=OPERATING_NAME, lpar="lp-1"),
+        sweep.Context(system=OPERATING_NAME, vios="vio-1"),
+    ],
+    ids=["lpar", "vios"],
+)
+def test_a_partition_name_that_is_not_found_still_fails(
+    mock_hmc: Any, tmp_path: Path, context: sweep.Context
+) -> None:
+    mock_hmc.get(url__regex=r"/(LogicalPartition|VirtualIOServer)$").mock(
+        return_value=httpx.Response(204)
+    )
+
+    with pytest.raises(ResourceNotFoundError, match="No (LPAR|VIOS) named"):
+        _resolve_partitions(mock_hmc, tmp_path, context, OPERATING_QUICK_ALL)
+
+
+@pytest.mark.parametrize(
+    "context",
+    [
+        sweep.Context(system=DISCONNECTED_NAME, lpar=LPAR_UUID),
+        sweep.Context(system=DISCONNECTED_NAME, vios=VIOS_UUID),
+    ],
+    ids=["lpar", "vios"],
+)
+def test_a_partition_uuid_that_is_not_found_still_fails(
+    mock_hmc: Any, tmp_path: Path, context: sweep.Context
+) -> None:
+    mock_hmc.get(url__regex=rf"/({LPAR_UUID}|{VIOS_UUID})$").mock(
+        return_value=httpx.Response(404, text="not found")
+    )
+
+    with pytest.raises(HMCError) as excinfo:
+        _resolve_partitions(mock_hmc, tmp_path, context)
+    assert excinfo.value.status_code == 404

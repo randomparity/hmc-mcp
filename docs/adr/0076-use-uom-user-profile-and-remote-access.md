@@ -47,3 +47,16 @@ to the unsupported web resources remains.
 - **Retain password-policy tools until a replacement appears.** verified:
   issue #399's documented-resource inventory identifies only the read-only
   `IsPasswordPolicyEnabled` profile property and no writable policy resource.
+
+## Amendment (2026-10-13, #1538): a read returns `RemoteUserID` without the HMC's newline
+
+The V10R3 HMC serves a Kerberos profile's `RemoteUserID` with a trailing newline that the create
+did not send (`tests/fixtures/live/rest-user-profile-kerberos.json`). A user read does not
+return it: `element_to_dict` in `src/hmcpctl/xmlutil.py` strips every leaf's text, so
+`hmc_get_user` and `hmc_list_users` return the principal with surrounding whitespace removed.
+That strip is shared behaviour and has been in place since the parser was written; this
+amendment records what it does to `RemoteUserID` and adds no new normalisation. The earlier note
+in `tests/fixtures/live/README.md` that hmcpctl returns the newline was wrong.
+`tests/security/test_users.py` pins the stripped read against the capture.
+
+The value is not normalised further, and a modify that omits `remote_user_id` does not resend it.
