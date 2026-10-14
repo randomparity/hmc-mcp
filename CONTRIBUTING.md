@@ -56,7 +56,9 @@ GitHub Advisory Database lists an advisory for one of them. Check it at each rel
 `gh api "advisories?ecosystem=pip&affects=<package>"` for each of the three. To bump:
 
 1. Choose the newest release of each package that is at least 14 days old on PyPI, and check
-   that the chosen `fastmcp-slim` accepts the chosen `mcp` and `mcp-types`.
+   that the chosen `fastmcp-slim` accepts the chosen `mcp` and `mcp-types`. A newer release
+   that is still too young is picked up by the next bump after it turns 14 days old; nothing
+   tracks it in between.
 2. Edit all four pins in `pyproject.toml`; keep them exact.
 3. Run `uv lock` with the uv version CI pins (`version:` under `setup-uv` in
    `.github/workflows/ci.yml`), for example `uvx uv@<version> lock`, so the lock format does not
