@@ -521,12 +521,6 @@ def test_enum_members_do_not_reopen_name_bearing_or_classed_values() -> None:
     assert values["MultiCoreScalingValue"] == ["<int>"]
 
 
-def test_a_folded_enum_member_is_kept() -> None:
-    derived = {"rest_values": {"State": {PENDING: 1}}, "rest_endpoints": []}
-    vocab = export.build_vocabulary([], STATE_ENUMS, "vX", ["a", "b"], [derived])
-    assert vocab["rest"]["values"]["State"] == [PENDING]
-
-
 def test_committed_enums_keep_both_spellings_of_pending_authentication() -> None:
     enums = json.loads(
         (
@@ -727,35 +721,23 @@ def test_cli_error_streams_are_recorded() -> None:
     assert entry["codes"] == ["HSCL1234"]
 
 
-def test_derived_vocabulary_is_folded_in() -> None:
-    derived = {
-        "rest_values": {
-            "Status": {"COMPLETED_OK": 3, "<text>": 1},
-            "JobName": {"x1": 2},
-        },
-        "rest_endpoints": [["GET", "/rest/api/uom/jobs/{n}", 200, 4]],
-    }
-    vocab = export.build_vocabulary(
-        _corpus(), {"types": {}}, "vX", ["a", "b"], [derived]
-    )
-    assert vocab["sources"] == ["a", "b"]
-    assert vocab["rest"]["values"]["Status"] == ["<text>", "COMPLETED_OK"]
-    assert vocab["rest"]["values"]["JobName"] == ["<text>"]
-    paths = {e["path"] for e in vocab["rest"]["endpoints"]}
-    assert "/rest/api/uom/jobs/{value}" in paths
-
-
-def test_fold_needs_a_source_each(tmp_path: Path, capsys) -> None:
-    derived = tmp_path / "d.json"
-    derived.write_text("{}")
+def test_each_source_is_its_own_entry(tmp_path: Path) -> None:
     corpus = tmp_path / "c.json"
     corpus.write_text("[]")
     enums = tmp_path / "e.json"
     enums.write_text('{"types": {}}')
+    out = tmp_path / "v.json"
     args = ["vocabulary", str(corpus), "--enums", str(enums), "--firmware", "vX"]
-    args += ["--source", "s", "--fold", str(derived), "--out", str(tmp_path / "v.json")]
-    assert export.main(args) == 1
-    assert "--fold-source" in capsys.readouterr().err
+    args += ["--source", "a, b", "--source", "c", "--out", str(out)]
+    assert export.main(args) == 0
+    assert json.loads(out.read_text())["sources"] == ["a, b", "c"]
+
+
+def test_a_source_is_required(tmp_path: Path, capsys) -> None:
+    args = ["vocabulary", "c.json", "--enums", "e.json", "--firmware", "vX"]
+    with pytest.raises(SystemExit):
+        export.main([*args, "--out", str(tmp_path / "v.json")])
+    assert "--source" in capsys.readouterr().err
 
 
 def test_location_suffix_wwn_is_redacted_and_lun_kept() -> None:
