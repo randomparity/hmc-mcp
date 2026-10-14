@@ -153,13 +153,18 @@ Python 3.11–3.14 and existing project dependencies only; no new dependency.
 ## Threat model
 
 - New boundaries: authorization JSON/paths to hardware dispatch; subprocess outcome to
-  later mutation/promotion; private child output to local files and safe phase summary.
-  Existing child transport and remote admission boundaries are unchanged.
+  later mutation/promotion; private child output to local files and safe phase summary;
+  HMC inventory/ownership observations to scratch admission and fixture deletion; saved
+  snapshot scope/identity to independent baseline reads outside the MCP allowlist.
+  Existing underlying child transport implementations remain unchanged.
 - Actors: trusted operator may supply stale or malformed local inputs; repository code,
   hooks, configuration and interpreters are trusted, single-writer inputs.
 - Controls: bounded duplicate-rejecting authorization; exact derived comparison; committed
   validated claims; clean non-default checkout; absent fresh result paths; argv-only
   processes; sequential recovery; private exclusive files and redacted phase diagnostics;
   reuse promotion's provenance and commit allowlist instead of reconstructing them.
+  Producer mutations require fresh absence evidence, exact ownership and complete mapping
+  validation. Recovery validates saved scope and current HMC identity before invoking the
+  installed read-only baseline transport, then compares its complete normalized tables.
 - Out of scope: malicious local writers and credential compromise; hardware truth is
   supplied by existing arms, and crash recovery follows the retained-results runbook.
