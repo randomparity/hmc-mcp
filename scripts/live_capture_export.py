@@ -138,9 +138,10 @@ def _element_leak(element: str, token: str) -> re.Pattern[str]:
 
     The closing tag is found, not the opening one, so a malformed opening tag the
     scrub rule could not end does not hide the value. Unescaped, the token is a tag,
-    and the text between it and the closing tag is empty. A CDATA section the scrub
-    rule cannot reach is a leak whatever it holds; a child element's text is not
-    checked. A run starts only after a `<` or `>` and never backtracks, so the scan
+    and the text between it and the closing tag is empty. Only what ends at the
+    closing tag is checked: a CDATA section there is a leak whatever it holds, but
+    text or CDATA followed by a child element, comment or processing instruction is
+    not seen. A run starts only after a `<` or `>` and never backtracks, so the scan
     stays linear in the corpus.
     """
     return re.compile(
