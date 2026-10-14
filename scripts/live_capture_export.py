@@ -152,6 +152,30 @@ def _element_leak(element: str, token: str) -> re.Pattern[str]:
     )
 
 
+#: A run starts after a JSON escape such as `\\`, `\n` or `\u00e9`, as after a
+#: separator, but never on the escape's own letter or digits.
+_AFTER_ESCAPE = r"(?<=\\\\)|(?<=\\[bfnrt])|(?<=\\u[0-9A-Fa-f]{4})"
+#: A hex run with a non-zero digit: one no ASCII letter or digit adjoins, as the MAC
+#: element rule zeroes a word, or six or more digits joined to a word, as in
+#: `0x0A1B2C3D4E5F` or after a JSON escape, which `\b` reads as part of the value's
+#: word. A shorter run inside a word, such as the `A` of `ALL`, is not one. Both err
+#: towards failing closed: `TYPE_A` and a hex-letter word such as `FEEDBACK` count.
+_LIVE_HEX_RUN = (
+    rf"(?:(?:(?<![0-9A-Za-z\\])|{_AFTER_ESCAPE})0*+[1-9A-Fa-f][0-9A-Fa-f]*+(?![0-9A-Za-z])"
+    rf"|(?:(?<![0-9A-Fa-f\\])(?<!\\u)|{_AFTER_ESCAPE})(?=[0-9A-Fa-f]{{6}})0*+[1-9A-Fa-f])"
+)
+#: Text that ends at a closing MAC element tag and still holds a live hex run, or a CDATA
+#: section there, whitespace aside. Found as `_element_leak` finds a value, so a malformed
+#: opening tag the scrub rule could not match does not hide it, and text followed by a
+#: child element is not seen; zeroed runs and keywords such as `ALL` are what the rule
+#: keeps. The closing tag is checked before the run is searched, and neither check
+#: backtracks out of the text run, so the scan stays linear.
+_MAC_LEAK = re.compile(
+    rf"(?:(?<![^<>])(?=[^<>]*+</{_NS_PREFIX}(?i:\w*MACAddress))(?=[^<>]*?{_LIVE_HEX_RUN})"
+    rf"[^<>]++|\]\]>(?=(?:\s|\\[nrt])*+</{_NS_PREFIX}(?i:\w*MACAddress)))"
+)
+
+
 def _ipv6(match: re.Match[str]) -> str:
     """Redact an IPv6 address, but not a colon-separated HMC record such as `1:0:1:3`.
 
@@ -267,6 +291,7 @@ ALWAYS_LEAKS = (
         _element_leak(*element)
         for element in (_SESSION_ELEMENT, _DEVICE_ID_ELEMENT, _SERIAL_ELEMENT)
     ),
+    _MAC_LEAK,
 )
 #: Elements whose values are fixed HMC vocabulary (task names such as `View HMC Logs`).
 #: A candidate name found inside one is HMC wording, never a private name.
