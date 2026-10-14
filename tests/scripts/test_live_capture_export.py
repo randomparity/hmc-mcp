@@ -444,6 +444,28 @@ def test_virtual_serial_keyword_before_a_quote_in_the_value_fails_closed(
 
 
 @pytest.mark.parametrize(
+    "wrap", [lambda v: {"raw": v}, lambda v: [v]], ids=["{}", "[]"]
+)
+@pytest.mark.parametrize(
+    ("value", "written"),
+    [
+        ("auto", "auto"),
+        ("SYN0001", "<REDACTED-DEVID>"),
+    ],
+)
+def test_virtual_serial_last_in_a_json_object_or_array_exports(
+    value: str, written: str, wrap: Any
+) -> None:
+    """The scanned corpus closes such a string with `"}` or `"]`, not with a separator."""
+    tool = {"kind": "tool", "step": "t", "tool": "t", "ok": True}
+    tool["data"] = wrap(f"name=lpar-A1,virtual_serial_num={value}")
+    corpus = export.tokenize_records(_records(tool))
+    assert corpus[-1]["record"]["data"] == wrap(
+        f"name=lpar-A1,virtual_serial_num={written}"
+    )
+
+
+@pytest.mark.parametrize(
     "text",
     [
         "x virtual_serial_num=SYN0001",
