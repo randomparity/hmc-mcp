@@ -14,6 +14,7 @@ import pytest
 
 ROOT = Path(__file__).parents[2]
 MODULE_PATH = ROOT / "scripts" / "check_capability_inventory.py"
+sys.path.insert(0, str(MODULE_PATH.parent))
 SPEC = importlib.util.spec_from_file_location("check_capability_inventory", MODULE_PATH)
 assert SPEC is not None
 assert SPEC.loader is not None
@@ -32,6 +33,8 @@ def _digest(character: str) -> str:
 
 def _minimal_inventory(root: Path) -> None:
     root.mkdir(exist_ok=True)
+    (root / "releases").mkdir(exist_ok=True)
+    _write_json(root / "releases/v0.0.0.json", {"format_version": 1, "operations": []})
     _write_json(
         root / "release-verification.json", {"format_version": 1, "operations": []}
     )
@@ -1697,3 +1700,171 @@ def test_missing_snapshot_refuses_regeneration(tmp_path, monkeypatch, capsys):
     )
     assert "cannot read release verification snapshot" in capsys.readouterr().err
     assert projection.read_text() == "previous\n"
+
+
+def _release_document():
+    return {
+        "format_version": 1,
+        "operations": [
+            {
+                "operation": "system.get",
+                "arm": "round2",
+                "scenario": "st1-system-inventory",
+            }
+        ],
+    }
+
+
+def test_release_claims_accept_known_relationship_without_observations(tmp_path):
+    path = tmp_path / "v0.2.0.json"
+    document = _release_document()
+    _write_json(path, document)
+    assert inventory.load_release_claims(path, {"system.get"}) == document["operations"]
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("operation", "system.unknown"),
+        ("arm", "unknown"),
+        ("scenario", "st1-unknown"),
+        ("arm", "dedicated"),
+        ("scenario", "st1-lpar-inventory"),
+        ("operation", "lpar.get"),
+        ("arm", []),
+        ("scenario", None),
+        ("operation", ""),
+    ],
+)
+def test_release_claims_reject_unknown_or_crossed_references(tmp_path, field, value):
+    document = _release_document()
+    document["operations"][0][field] = value
+    path = tmp_path / "v0.2.0.json"
+    _write_json(path, document)
+    with pytest.raises(inventory.InventoryError):
+        inventory.load_release_claims(path, {"system.get", "lpar.get"})
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        [],
+        {},
+        {"format_version": True, "operations": []},
+        {"format_version": 2, "operations": []},
+        {"format_version": 1, "operations": None},
+        {"format_version": 1, "operations": [], "extra": 1},
+        {"format_version": 1, "operations": [None]},
+        {"format_version": 1, "operations": [{}]},
+    ],
+)
+def test_release_claims_reject_malformed_shape(tmp_path, document):
+    path = tmp_path / "v0.2.0.json"
+    _write_json(path, document)
+    with pytest.raises(inventory.InventoryError):
+        inventory.load_release_claims(path, {"system.get"})
+
+
+def test_release_claims_reject_duplicate_operations(tmp_path):
+    document = _release_document()
+    document["operations"] *= 2
+    path = tmp_path / "v0.2.0.json"
+    _write_json(path, document)
+    with pytest.raises(inventory.InventoryError, match="duplicate"):
+        inventory.load_release_claims(path, {"system.get"})
+
+
+@pytest.mark.parametrize(
+    "text", ["{", '{"format_version":1,"format_version":1,"operations":[]}']
+)
+def test_release_claims_reject_invalid_json(tmp_path, text):
+    path = tmp_path / "v0.2.0.json"
+    path.write_text(text)
+    with pytest.raises(inventory.InventoryError):
+        inventory.load_release_claims(path, set())
+
+
+def test_inventory_validates_each_retained_release(tmp_path):
+    _minimal_inventory(tmp_path)
+    releases = tmp_path / "releases"
+    releases.mkdir(exist_ok=True)
+    _write_json(releases / "v0.2.0.json", _release_document())
+    report = inventory.validate_inventory(tmp_path, [])
+    assert any("unknown claimed operation" in error for error in report.errors)
+
+
+def test_inventory_requires_retained_release_files(tmp_path):
+    _minimal_inventory(tmp_path)
+    releases = tmp_path / "releases"
+    if releases.exists():
+        for path in releases.iterdir():
+            path.unlink()
+    assert any(
+        "release claims" in error
+        for error in inventory.validate_inventory(tmp_path, []).errors
+    )
+
+
+def test_initial_release_claims_match_v010_scope():
+    expected = {
+        "system.get": ("round2", "st1-system-inventory"),
+        "lpar.get": ("round2", "st1-lpar-inventory"),
+        "lpar.summary": ("round2", "st1-lpar-inventory"),
+        "lpar.get_state": ("bare-cec", "st35-bare-cec"),
+        "job.get": ("bare-cec", "st35-bare-cec"),
+        "job.wait": ("bare-cec", "st35-bare-cec"),
+        "lpar.list_refcodes": ("bare-cec", "st35-bare-cec"),
+        "lpar.create": ("lpar-power", "st41-lpar-power"),
+        "lpar.power_on": ("lpar-power", "st41-lpar-power"),
+        "lpar.power_off": ("lpar-power", "st41-lpar-power"),
+        "lpar.capture_console": ("lpar-power", "st41-lpar-power"),
+        "lpar.delete": ("lpar-power", "st41-lpar-power"),
+        "pcie.list_dedicated_slots": ("dedicated", "st29-pcie-inventory"),
+        "pcie.assign_dedicated_slot": ("dedicated", "st29-dedicated-pcie"),
+        "pcie.unassign_dedicated_slot": ("dedicated", "st36-io-slots"),
+    }
+    claims = inventory.load_release_claims(
+        ROOT / "docs/capabilities/releases/v0.1.0.json", set(expected)
+    )
+    assert {
+        row["operation"]: (row["arm"], row["scenario"]) for row in claims
+    } == expected
+    assert len(claims) == 15
+
+
+@pytest.mark.parametrize("name", ["release.json", "v1_0.json", "v1.0.txt"])
+def test_release_claims_reject_invalid_filename(tmp_path, name):
+    path = tmp_path / name
+    _write_json(path, _release_document())
+    with pytest.raises(inventory.InventoryError, match="filename"):
+        inventory.load_release_claims(path, {"system.get"})
+
+
+def test_release_claims_missing_file_is_inventory_error(tmp_path):
+    with pytest.raises(inventory.InventoryError):
+        inventory.load_release_claims(tmp_path / "v1.0.json", {"system.get"})
+
+
+def test_inventory_requires_release_directory(tmp_path):
+    _minimal_inventory(tmp_path)
+    (tmp_path / "releases/v0.0.0.json").unlink()
+    (tmp_path / "releases").rmdir()
+    assert any(
+        "cannot read release claims" in error
+        for error in inventory.validate_inventory(tmp_path, []).errors
+    )
+
+
+def test_release_claims_reject_bare_cec_in_mutually_exclusive_all_arm(tmp_path):
+    path = tmp_path / "v0.2.0.json"
+    _write_json(
+        path,
+        {
+            "format_version": 1,
+            "operations": [
+                {"operation": "job.get", "arm": "all", "scenario": "st35-bare-cec"}
+            ],
+        },
+    )
+    with pytest.raises(inventory.InventoryError, match="unknown release claim route"):
+        inventory.load_release_claims(path, {"job.get"})
