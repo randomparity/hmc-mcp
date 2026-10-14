@@ -470,6 +470,71 @@ def test_malformed_element_the_rules_miss_fails_closed_in_json(raw: str) -> None
         export.tokenize_records(_records(tool))
 
 
+MAC = "0A1B2C3D4E5F"  # pragma: allowlist secret
+#: Names the MAC element rule scrubs: a prefix, a suffix, any case, a namespace.
+MAC_ELEMENTS = [
+    "MACAddress",
+    "ns:MACAddressPrefix",
+    "macaddress",
+    "ns1:MacAddressValue",
+    "AllowedOperatingSystemMACAddresses",
+]
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("element", MAC_ELEMENTS)
+def test_unscrubbed_mac_element_value_is_a_leak(element: str, encode: Any) -> None:
+    """Regression #1573: only the scrub rule stood between a MAC value and the export."""
+    tok = export.Tokenizer({}, set())
+    body = f'<Root><{element} kb="CUR">{MAC}</{element}></Root>'
+    assert tok.leaks(encode(body)) == [MAC]
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("element", MAC_ELEMENTS)
+@pytest.mark.parametrize(
+    "value",
+    [MAC, f"\n  {MAC}\n", "0A:1B:2C:3D:4E:5F", f"{MAC},1A2B3C", "ALL", "NONE", "true"],
+)
+def test_scrubbed_mac_element_value_is_not_a_leak(
+    element: str, encode: Any, value: str
+) -> None:
+    """A zeroed value and a keyword are the evidence the scrub rule keeps."""
+    tok = export.Tokenizer({}, set())
+    scrubbed = tok.tokenize(
+        encode(f'<Root><{element} kb="CUR">{value}</{element}></Root>')
+    )
+    assert scrubbed is not None
+    assert tok.leaks(scrubbed) == []
+    assert tok.leaks(json.dumps(scrubbed)) == []
+
+
+#: MAC element text the scrub rule leaves: the opening tag is gone or never closes, a
+#: `<` inside the value stops the rule, a CDATA section, and a namespace prefix with a
+#: `-` in it, which the rule's `\w+:` does not match.
+UNSCRUBBED_MAC = [
+    f"<Adapter>{MAC}</MACAddress></Adapter>",
+    f'<Adapter><MACAddress kb="CUR"{MAC}</MACAddress></Adapter>',
+    "<Adapter><MACAddress>0A1B<2C3D4E5F</MACAddress></Adapter>",
+    f"<Adapter><MACAddress><![CDATA[{MAC}]]></MACAddress></Adapter>",
+    f"<Adapter><ns-1:MACAddress>{MAC}</ns-1:MACAddress></Adapter>",
+]
+
+
+@pytest.mark.parametrize("body", UNSCRUBBED_MAC)
+def test_mac_element_the_rule_misses_fails_closed(body: str) -> None:
+    with pytest.raises(export.LeakError):
+        export.tokenize_records(_records(_rest("/e", body)))
+
+
+@pytest.mark.parametrize("raw", [*UNSCRUBBED_MAC, f"<MACAddress>\n{MAC}</MACAddress>"])
+def test_mac_element_the_rule_misses_fails_closed_in_json(raw: str) -> None:
+    """In a tool record's JSON, `\\n` joins `n` to the value and `\\b` never sees it start."""
+    tool = {"kind": "tool", "step": "t", "tool": "t", "ok": True, "data": {"raw": raw}}
+    with pytest.raises(export.LeakError):
+        export.tokenize_records(_records(tool))
+
+
 LIVE_FIXTURES = sorted(
     (Path(__file__).parents[1] / "fixtures" / "live").rglob("*.json")
 )
@@ -850,7 +915,8 @@ def test_broken_xml_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     """A rule that corrupts a body that parsed is caught, and nothing is returned."""
     rules = ((re.compile(r"<MACAddress>"), ""), *export.IDENTIFIER_RULES)
     monkeypatch.setattr(export, "IDENTIFIER_RULES", rules)
-    body = "<Adapter><MACAddress>0A1B2C3D4E5F</MACAddress></Adapter>"  # pragma: allowlist secret
+    # A keyword value: a hex one would now fail as a leak first (#1573).
+    body = "<Adapter><MACAddress>ALL</MACAddress></Adapter>"
     with pytest.raises(export.BrokenBodyError):
         export.tokenize_records(_records(_rest("/m", body)))
 

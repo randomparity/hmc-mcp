@@ -152,6 +152,22 @@ def _element_leak(element: str, token: str) -> re.Pattern[str]:
     )
 
 
+#: A hex run with a non-zero digit: what the MAC element rule zeroes. A JSON `\n`, `\t`
+#: or `\r` escape before it is a separator, though `\b` sees one word in `\n0A1B`.
+_LIVE_HEX_RUN = (
+    r"(?:(?<![0-9A-Za-z])|(?<=\\[nrt]))0*+[1-9A-Fa-f][0-9A-Fa-f]*+(?![0-9A-Za-z])"
+)
+#: Text that ends at a closing MAC element tag and still holds a live hex run, or a CDATA
+#: section there. Found as `_element_leak` finds a value, so a malformed opening tag the
+#: scrub rule could not match does not hide it; zeroed runs and keywords such as `ALL`
+#: are what the rule keeps. The closing tag is checked before the run is searched, and
+#: neither check backtracks out of the text run, so the scan stays linear.
+_MAC_LEAK = re.compile(
+    rf"(?:(?<![^<>])(?=[^<>]*+</{_NS_PREFIX}(?i:\w*MACAddress))(?=[^<>]*?{_LIVE_HEX_RUN})"
+    rf"[^<>]++|\]\]>(?=</{_NS_PREFIX}(?i:\w*MACAddress)))"
+)
+
+
 def _ipv6(match: re.Match[str]) -> str:
     """Redact an IPv6 address, but not a colon-separated HMC record such as `1:0:1:3`.
 
@@ -267,6 +283,7 @@ ALWAYS_LEAKS = (
         _element_leak(*element)
         for element in (_SESSION_ELEMENT, _DEVICE_ID_ELEMENT, _SERIAL_ELEMENT)
     ),
+    _MAC_LEAK,
 )
 #: Elements whose values are fixed HMC vocabulary (task names such as `View HMC Logs`).
 #: A candidate name found inside one is HMC wording, never a private name.
