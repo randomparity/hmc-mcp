@@ -200,7 +200,7 @@ def _ipv6(match: re.Match[str]) -> str:
 #: The escape is matched first, so a run never starts on its letter: the `f` of
 #: `\fA1B2C3D4E5F6` is not zeroed into the invalid escape `\0`. Scanning left to
 #: right, a run follows only an escape the scan itself matched, never the `\u` of a
-#: literal `\\u` before a MAC. A surrogate pair is one escape, so zeroing the digits
+#: literal `\\u` before a MAC. A surrogate pair is one escape, so replacing the digits
 #: of its low half never strands the high one.
 _MAC_ELEMENT_RUN = re.compile(
     r"(?P<escape>\\u[dD][89abAB][0-9A-Fa-f]{2}\\u[dD][c-fC-F][0-9A-Fa-f]{2}"
@@ -213,14 +213,15 @@ def _zero_run(run: re.Match[str]) -> str:
     """Zero *run*'s hex digits, keeping an escape before them.
 
     Raw XML has no escapes, so a `\\u` there is literal and the four digits after it
-    may be the MAC's own: they are zeroed too, and `\\u0000` is still an escape.
+    may be the MAC's own: they become `\\u0030`, an escape for the digit `0`. Not
+    `\\u0000`: the NUL it decodes to is not a legal XML 1.0 character.
     """
     escape, value = run.group("escape", "run")
     if escape is None:
         return "0" * len(run.group(0))
     if value is None:
         return escape
-    return _ESCAPE_DIGITS.sub("0000", escape) + "0" * len(value)
+    return _ESCAPE_DIGITS.sub("0030", escape) + "0" * len(value)
 
 
 def _mac_element(match: re.Match[str]) -> str:

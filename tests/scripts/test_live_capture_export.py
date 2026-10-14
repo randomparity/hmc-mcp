@@ -577,12 +577,12 @@ def test_mac_element_the_rule_misses_fails_closed_in_json(raw: str) -> None:
         ("\r", "\r"),
         ("\t", "\t"),
         ("\\", "\\"),
-        # The rule cannot tell `\u000b` from a literal `\u` before a MAC, so it zeroes
-        # the escape's digits as well; `\u0000` is still an escape.
-        ("\x0b", "\x00"),
-        ("\u00e9", "\x00"),
-        # A surrogate pair is zeroed whole: a lone high half cannot be written as UTF-8.
-        ("\U0001f600", "\x00\x00"),
+        # The rule cannot tell `\u000b` from a literal `\u` before a MAC, so the
+        # escape becomes `\u0030`, the digit `0`, rather than a NUL XML cannot hold.
+        ("\x0b", "0"),
+        ("\u00e9", "0"),
+        # A surrogate pair is replaced whole: a lone high half cannot be written as UTF-8.
+        ("\U0001f600", "00"),
     ],
 )
 @pytest.mark.parametrize("value", [MAC, MAC[:4]])
@@ -595,13 +595,14 @@ def test_mac_after_a_json_escape_in_a_tool_record_is_zeroed(
     corpus = export.tokenize_records(_records(tool))
     zeroed = f"<MACAddress>{kept}{'0' * len(value)}</MACAddress>"
     assert corpus[-1]["record"]["data"]["raw"] == zeroed
+    assert "\x00" not in corpus[-1]["record"]["data"]["raw"]
 
 
 def test_mac_after_a_literal_backslash_u_is_zeroed_whole() -> None:
     """Raw XML has no escapes: keeping `\\uA1B2` as one would export four MAC digits."""
     body = f"<Adapter><MACAddress>\\u{MAC}</MACAddress></Adapter>"
     corpus = export.tokenize_records(_records(_rest("/e", body)))
-    assert corpus[-1]["body"] == body.replace(MAC, "000000000000")
+    assert corpus[-1]["body"] == body.replace(MAC, "003000000000")
 
 
 def test_mac_after_an_escape_that_follows_a_backslash_stays_valid_json() -> None:
