@@ -1221,6 +1221,18 @@ def _load_known_gaps(
     return known
 
 
+# Release-selectable scenarios; numbers are dispatcher subtasks, not result row IDs.
+RELEASE_SCENARIO_SUBTASKS = {
+    "st1-system-inventory": 1,
+    "st1-lpar-inventory": 1,
+    "st29-dedicated-pcie": 24,
+    "st29-pcie-inventory": 24,
+    "st35-bare-cec": 25,
+    "st36-io-slots": 24,
+    "st41-lpar-power": 41,
+}
+
+
 SUBTASK_GROUPS: dict[str, list[int]] = {
     # ST11 creates an HMC user, so only its own arm dispatches it (#632).
     "round2": [n for n in range(16) if n != 11],

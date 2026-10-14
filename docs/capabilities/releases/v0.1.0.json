@@ -1,0 +1,80 @@
+{
+  "format_version": 1,
+  "operations": [
+    {
+      "operation": "job.get",
+      "arm": "bare-cec",
+      "scenario": "st35-bare-cec"
+    },
+    {
+      "operation": "job.wait",
+      "arm": "bare-cec",
+      "scenario": "st35-bare-cec"
+    },
+    {
+      "operation": "lpar.capture_console",
+      "arm": "lpar-power",
+      "scenario": "st41-lpar-power"
+    },
+    {
+      "operation": "lpar.create",
+      "arm": "lpar-power",
+      "scenario": "st41-lpar-power"
+    },
+    {
+      "operation": "lpar.delete",
+      "arm": "lpar-power",
+      "scenario": "st41-lpar-power"
+    },
+    {
+      "operation": "lpar.get",
+      "arm": "round2",
+      "scenario": "st1-lpar-inventory"
+    },
+    {
+      "operation": "lpar.get_state",
+      "arm": "bare-cec",
+      "scenario": "st35-bare-cec"
+    },
+    {
+      "operation": "lpar.list_refcodes",
+      "arm": "bare-cec",
+      "scenario": "st35-bare-cec"
+    },
+    {
+      "operation": "lpar.power_off",
+      "arm": "lpar-power",
+      "scenario": "st41-lpar-power"
+    },
+    {
+      "operation": "lpar.power_on",
+      "arm": "lpar-power",
+      "scenario": "st41-lpar-power"
+    },
+    {
+      "operation": "lpar.summary",
+      "arm": "round2",
+      "scenario": "st1-lpar-inventory"
+    },
+    {
+      "operation": "pcie.assign_dedicated_slot",
+      "arm": "dedicated",
+      "scenario": "st29-dedicated-pcie"
+    },
+    {
+      "operation": "pcie.list_dedicated_slots",
+      "arm": "dedicated",
+      "scenario": "st29-pcie-inventory"
+    },
+    {
+      "operation": "pcie.unassign_dedicated_slot",
+      "arm": "dedicated",
+      "scenario": "st36-io-slots"
+    },
+    {
+      "operation": "system.get",
+      "arm": "round2",
+      "scenario": "st1-system-inventory"
+    }
+  ]
+}
