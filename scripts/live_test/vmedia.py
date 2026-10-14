@@ -1162,7 +1162,12 @@ class _RoundTrip:
             [_DELETE_REFUSED_WHILE_MOUNTED],
         )
         _, _, still = await self.media("after the guarded delete")
-        refused = st_d == "FAIL" and still is not None and self.name in still
+        refused = (
+            isinstance(data_d, CallFailure)
+            and _DELETE_REFUSED_WHILE_MOUNTED.matches(data_d)
+            and still is not None
+            and self.name in still
+        )
 
         st_u, data_u = self.note(
             "hmc_unmount_optical_media",
