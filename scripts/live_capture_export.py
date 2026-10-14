@@ -134,10 +134,11 @@ _NAME_ESCAPE = r"\\++u(?!00[0-7]|(?i:{}))[0-9A-Fa-f]{{4}}".format(
 #: tail after the name ends at the same `>` whichever prefix matched, and retrying each
 #: one would scan the tail again per segment of `<SerialNumber:SerialNumber:...`.
 _NS_PREFIX = rf"(?:(?:[\w.-]|[^\x00-\x7f\s]|{_NAME_ESCAPE})++:)*"
-#: Elements whose whole text a rule replaces: the element name pattern and the text the
-#: rule writes. The same entry builds the scrub rule and its `leaks()` backstop. Names
-#: match in any case, after any namespace prefix: neither is significant to whoever
-#: reads the value, so neither may hide it.
+#: Elements whose whole text a rule replaces: the element name pattern, the text the
+#: rule writes and, optionally, the keywords it keeps as evidence. The same entry builds
+#: the scrub rule and its `leaks()` backstop. Names match in any case, after any
+#: namespace prefix: neither is significant to whoever reads the value, so neither may
+#: hide it. A keyword is kept only as the element's whole text, in its documented case.
 _SESSION_ELEMENT = (rf"{_NS_PREFIX}(?i:X-API-Session)", "<REDACTED-SESSION>")
 _SSH_KEY_ELEMENT = (
     rf"{_NS_PREFIX}(?i:PublicSSHKeyValue|AuthorizedKeysValue)",
@@ -145,15 +146,46 @@ _SSH_KEY_ELEMENT = (
 )
 _ADDRESS_ELEMENT = (rf"{_NS_PREFIX}(?i:{_ADDRESS_ELEMENTS})", PLACEHOLDER_IP)
 _DEVICE_ID_ELEMENT = (rf"{_NS_PREFIX}(?i:{_DEVICE_ID_ELEMENTS})", "<REDACTED-DEVID>")
-_SERIAL_ELEMENT = (rf"{_NS_PREFIX}(?i:(?:Logical)?SerialNumber)", "<REDACTED-SERIAL>")
+#: A virtual serial number is assigned to a partition, which otherwise holds `none`, or
+#: `auto` while the HMC assigns one (#1593). Neither keyword is any serial, so the other
+#: serial elements keep them too.
+_SERIAL_ELEMENT = (
+    rf"{_NS_PREFIX}(?i:(?:Logical|Virtual)?SerialNumber)",
+    "<REDACTED-SERIAL>",
+    "none|auto",
+)
+
+#: `virtual_serial_num=` holds the same serial, or the same keywords, in `lssyscfg -r
+#: lpar` output (#1618). A keyword is kept only as the field's whole value, in its
+#: documented case. A value ends at a field separator, a line end or the end of the
+#: text, `json.dumps`'s `\n` and `\r` escapes included, or at a quote, raw or escaped,
+#: that one of those follows; a raw quote also before a JSON `}` or `]`, and `\"` before
+#: the quote that closes a JSON string. A quote with anything else after it is in the
+#: value, and the unquoted rule and the backstop read it so even where the quoted rule
+#: kept the keyword before it. The scrub rules themselves read no escape, so in
+#: `json.dumps` text a value runs on over a `\n` and a quoted field loses the `\` of its
+#: closing `\"`, which fails the export as broken JSON: over-scrubbing, never a leak.
+_VIRTUAL_SERIAL_KEPT = "(?-i:none|auto)"
+_VALUE_END = r"(?:[,\r\n]|\\[nr]|$)"
+_FIELD_END = rf'(?={_VALUE_END}|"(?:{_VALUE_END}|[}}\]])|\\"(?:{_VALUE_END}|"))'
 
 
-def _element_rule(element: str, value: str) -> tuple[re.Pattern[str], str]:
-    """Replace the text of each *element* with *value*."""
-    return re.compile(rf"(<(?>{element}\b){_TAG_TAIL})[^<]+"), rf"\g<1>{value}"
+def _element_rule(
+    element: str, value: str, keep: str | None = None
+) -> tuple[re.Pattern[str], str]:
+    """Replace the text of each *element* with *value*, unless it is a *keep* keyword.
+
+    The tag tail is atomic: once it has ended the tag, a kept keyword after it cannot
+    send the match back to end the tag at a `>` inside a quoted attribute instead.
+    """
+    kept = rf"(?!(?:{keep})<)" if keep else ""
+    return (
+        re.compile(rf"(<(?>{element}\b)(?>{_TAG_TAIL})){kept}[^<]+"),
+        rf"\g<1>{value}",
+    )
 
 
-def _element_leak(element: str, value: str) -> re.Pattern[str]:
+def _element_leak(element: str, value: str, keep: str | None = None) -> re.Pattern[str]:
     """Any text that ends at a closing *element* tag and is not *value* as written.
 
     An XML body escapes a `<REDACTED-...>` token, so the text allowed is *value* with
@@ -165,9 +197,22 @@ def _element_leak(element: str, value: str) -> re.Pattern[str]:
     text or CDATA followed by a child element, comment or processing instruction is
     not seen. A run starts only after a `<` or `>` and never backtracks, so the scan
     stays linear in the corpus.
+
+    A *keep* keyword is matched as the `kept` group, which `leaks()` does not report,
+    only right after a well-formed opening tag: its quoted runs closed and no `<` in
+    it. Anywhere else, after a child element or a malformed tag the scrub rule ended
+    at a later `>`, it is element text like any other. Matching an opening tag scans
+    it to its end, as the scrub rule does.
     """
     written = re.escape(value.replace("<", "&lt;").replace(">", "&gt;"))
-    return re.compile(rf"(?:(?<![^<>])(?!{written}<)[^<>]++|\]\]>)(?=</{element}\b)")
+    kept = (
+        rf"(?P<kept><(?>{element}\b){_ATTRS}(?<!/)>(?:{keep})(?=</{element}\b))|"
+        if keep
+        else ""
+    )
+    return re.compile(
+        rf"{kept}(?:(?<![^<>])(?!{written}<)[^<>]++|\]\]>)(?=</{element}\b)"
+    )
 
 
 #: The JSON escapes a value can follow: `\\`, `\n` or `\u00e9`. A lookbehind must be
@@ -212,6 +257,15 @@ def _ipv6(match: re.Match[str]) -> str:
     ):
         return "2001:db8::1"
     return text
+
+
+def _email(match: re.Match[str]) -> str:
+    """Redact an e-mail address; a run of local-part characters with no `@` stays.
+
+    The rule takes the whole run, so a run with no address is scanned once rather than
+    again from each of its positions, which were bound to fail the same way.
+    """
+    return "user@example.test" if match.group(1) else match.group(0)
 
 
 #: A JSON escape and the hex run it directly precedes, or a hex run at a word boundary.
@@ -271,8 +325,8 @@ SECRET_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
 )
 IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     (
-        re.compile(r"(?i)\b[\w.+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+\b"),
-        "user@example.test",
+        re.compile(r"(?i)\b[\w.+-]++(@[a-z0-9-]+(?:\.[a-z0-9-]+)+\b)?"),
+        _email,
     ),
     (
         re.compile(
@@ -292,11 +346,17 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     _element_rule(*_DEVICE_ID_ELEMENT),
     # A quoted CSV field holds every value up to its closing quote: "wwpns=a,b".
     (
-        re.compile(r'(?i)"(unique_id|udid|wwpns?|wwnn|serial_num)=[^"\n]*"'),
+        re.compile(
+            r'(?i)"(unique_id|udid|wwpns?|wwnn|serial_num|virtual_serial_num'
+            rf'(?!={_VIRTUAL_SERIAL_KEPT}\\?"))=[^"\n]*"'
+        ),
         r'"\g<1>=<REDACTED-DEVID>"',
     ),
     (
-        re.compile(r"(?i)\b(unique_id|udid|wwpns?|wwnn|serial_num)=[^,\n\"]+"),
+        re.compile(
+            r"(?i)\b(unique_id|udid|wwpns?|wwnn|serial_num|virtual_serial_num"
+            rf"(?!={_VIRTUAL_SERIAL_KEPT}{_FIELD_END}))=[^,\n\"]+"
+        ),
         r"\g<1>=<REDACTED-DEVID>",
     ),
     _element_rule(*_SERIAL_ELEMENT),
@@ -343,6 +403,13 @@ ALWAYS_LEAKS = (
         )
     ),
     _MAC_LEAK,
+    # A virtual serial the key=value rules missed, quoted too: no word boundary is
+    # needed, and `json.dumps` text hides one behind a `\n` escape.
+    re.compile(
+        r"(?i)virtual_serial_num="
+        rf"(?!(?:<REDACTED-DEVID>|&lt;REDACTED-DEVID&gt;|{_VIRTUAL_SERIAL_KEPT}){_FIELD_END})"
+        r'"?[^,\n"]+'
+    ),
 )
 #: Elements whose values are fixed HMC vocabulary (task names such as `View HMC Logs`).
 #: A candidate name found inside one is HMC wording, never a private name.
@@ -590,7 +657,13 @@ class Tokenizer:
             and (name in words if WORD.fullmatch(name) else name in text)
         ]
         found += [host for host in self.hosts if host in text]
-        for pattern in (*ALWAYS_LEAKS, *self.private):
+        for pattern in ALWAYS_LEAKS:
+            found += [
+                m.group(0)
+                for m in pattern.finditer(text)
+                if not m.groupdict().get("kept")
+            ]
+        for pattern in self.private:
             found += [m.group(0) for m in pattern.finditer(text)]
         return found
 

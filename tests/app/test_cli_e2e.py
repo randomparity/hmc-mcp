@@ -12,9 +12,11 @@ the mock spoke plain HTTP, so every invocation failed with an SSL error.
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import secrets
 import ssl
+import struct
 import threading
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -326,6 +328,9 @@ def test_verify_ssl_without_trusted_ca_fails_e2e(mock_hmc, monkeypatch):
     monkeypatch.delenv("SSL_CERT_DIR", raising=False)
     env = _env(server.server_address[1], certificate_path)
     del env["SSL_CERT_FILE"]
+    # Disable the system store so the test cert (self-signed, not in OS store)
+    # is not trusted.  ADR 0222: trust_system_store=false falls back to certifi.
+    env["HMC_TRUST_SYSTEM_STORE"] = "false"
 
     result = RUNNER.invoke(cli.app, ["systems", "list"], env=env)
 
@@ -340,6 +345,9 @@ def test_requests_ca_bundle_alone_does_not_trust_e2e(mock_hmc, monkeypatch):
     env = _env(server.server_address[1], certificate_path)
     del env["SSL_CERT_FILE"]
     env["REQUESTS_CA_BUNDLE"] = certificate_path
+    # Disable the system store so REQUESTS_CA_BUNDLE alone is provably ignored.
+    # ADR 0222: trust_system_store=false falls back to certifi only.
+    env["HMC_TRUST_SYSTEM_STORE"] = "false"
 
     result = RUNNER.invoke(cli.app, ["systems", "list"], env=env)
 
@@ -361,3 +369,97 @@ def test_unterminated_pem_bundle_fails_to_load_e2e(mock_hmc, tmp_path):
     assert good.exit_code == 0
     assert bad.exit_code != 0
     assert "PEM lib" in bad.output
+
+
+# SSL_CERT_DIR (#1607): httpx passes capath=SSL_CERT_DIR to ssl.create_default_context,
+# which uses OpenSSL's hash-directory format.  Each cert must be accessible under the
+# name "<subject-hash>.0" where the hash is the first four bytes of SHA-1(subject DER)
+# interpreted as a little-endian uint32 and formatted as 8 lowercase hex digits.
+
+
+def _ssl_cert_dir_hash(cert_path: str) -> str:
+    """Return the OpenSSL subject-hash filename stem for a PEM certificate.
+
+    Algorithm: SHA-1 of the *inner* content of the DER-encoded subject Name
+    (i.e. the SEQUENCE content bytes, with the outer tag and length stripped);
+    first four bytes reinterpreted as a little-endian uint32; formatted as 8
+    lowercase hex digits.  This matches ``openssl x509 -subject_hash -noout``
+    and what ``ssl.create_default_context(capath=…)`` expects.
+    """
+    from cryptography.x509 import load_pem_x509_certificate
+
+    cert = load_pem_x509_certificate(Path(cert_path).read_bytes())
+    full_der = cert.subject.public_bytes()
+    # Strip the outer SEQUENCE tag (0x30) and its length to get the inner bytes.
+    # The length field is one byte when < 0x80 (short form), otherwise the first
+    # byte encodes how many subsequent bytes hold the actual length.
+    length_byte = full_der[1]
+    inner = full_der[2:] if length_byte < 0x80 else full_der[2 + (length_byte & 0x7F) :]
+    digest = hashlib.sha1(inner).digest()
+    return f"{struct.unpack_from('<I', digest[:4])[0]:08x}"
+
+
+def test_ssl_cert_dir_hashed_trusts_hmc_e2e(mock_hmc, tmp_path):
+    """A hash-named cert in SSL_CERT_DIR lets the client verify the mock HMC."""
+    server, certificate_path = mock_hmc
+    ssl_dir = tmp_path / "ssl_dir"
+    ssl_dir.mkdir()
+    hash_name = _ssl_cert_dir_hash(certificate_path)
+    (ssl_dir / f"{hash_name}.0").write_bytes(Path(certificate_path).read_bytes())
+
+    # Pass None to remove SSL_CERT_FILE so httpx falls through to SSL_CERT_DIR.
+    result = _systems_list(
+        server,
+        certificate_path,
+        SSL_CERT_FILE=None,
+        SSL_CERT_DIR=str(ssl_dir),
+    )
+
+    assert result.exit_code == 0
+    assert "server1" in result.output
+
+
+def test_ssl_cert_dir_unhashed_trusts_nothing_e2e(mock_hmc, tmp_path):
+    """A directory with a bare .pem file (not hash-named) trusts nothing."""
+    server, certificate_path = mock_hmc
+    ssl_dir = tmp_path / "ssl_dir"
+    ssl_dir.mkdir()
+    (ssl_dir / "mock_hmc_cert.pem").write_bytes(Path(certificate_path).read_bytes())
+
+    # Pass None to remove SSL_CERT_FILE so httpx falls through to SSL_CERT_DIR.
+    result = _systems_list(
+        server,
+        certificate_path,
+        SSL_CERT_FILE=None,
+        SSL_CERT_DIR=str(ssl_dir),
+    )
+
+    assert result.exit_code != 0
+    assert "CERTIFICATE_VERIFY_FAILED" in result.output
+
+
+def test_ssl_cert_file_wins_over_ssl_cert_dir_e2e(mock_hmc, tmp_path):
+    """When both SSL_CERT_FILE and SSL_CERT_DIR are set, SSL_CERT_FILE is used.
+
+    Proof: SSL_CERT_DIR points to an unhashed directory that would fail on its
+    own — if SSL_CERT_DIR were consulted the connection would fail.  SSL_CERT_FILE
+    points to the valid cert: success proves SSL_CERT_FILE was used, not
+    SSL_CERT_DIR.
+    """
+    server, certificate_path = mock_hmc
+    # Unhashed dir: present but not consulted when SSL_CERT_FILE is also set.
+    unhashed_dir = tmp_path / "unhashed"
+    unhashed_dir.mkdir()
+    (unhashed_dir / "mock_hmc_cert.pem").write_bytes(
+        Path(certificate_path).read_bytes()
+    )
+
+    result = _systems_list(
+        server,
+        certificate_path,
+        SSL_CERT_FILE=certificate_path,
+        SSL_CERT_DIR=str(unhashed_dir),
+    )
+
+    assert result.exit_code == 0
+    assert "server1" in result.output

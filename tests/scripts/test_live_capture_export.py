@@ -261,6 +261,7 @@ def test_identifier_rules(raw: str, gone: str, token: str) -> None:
     [
         ("MACAddress", "0A1B2C3D4E5F", "000000000000"),  # pragma: allowlist secret
         ("SerialNumber", "1234ABC", "&lt;REDACTED-SERIAL&gt;"),
+        ("VirtualSerialNumber", "SYN0001", "&lt;REDACTED-SERIAL&gt;"),
         ("WWPN", "c0507609abcd0001", "&lt;REDACTED-DEVID&gt;"),
         ("VolumeUniqueID", "3E213600507680", "&lt;REDACTED-DEVID&gt;"),
         ("MediaUDID", "lab7rh8", "&lt;REDACTED-DEVID&gt;"),
@@ -304,6 +305,195 @@ def test_mac_elements_scrub_only_hex(element: str, value: str, token: str) -> No
     body = f"<{element}>{value}</{element}>"
     corpus = export.tokenize_records(_records(_rest("/ms", body)))
     assert corpus[-1]["body"] == f"<{element}>{token}</{element}>"
+
+
+SERIAL_ELEMENTS = ["SerialNumber", "LogicalSerialNumber", "ns:VirtualSerialNumber"]
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("element", SERIAL_ELEMENTS)
+@pytest.mark.parametrize("keyword", ["none", "auto"])
+def test_serial_keyword_is_kept_as_evidence(
+    element: str, keyword: str, encode: Any
+) -> None:
+    """#1593: `none` and `auto` are what a partition has instead of a virtual serial."""
+    tok = export.Tokenizer({}, set())
+    body = encode(f'<Root><{element} kb="CUD">{keyword}</{element}></Root>')
+    assert tok.tokenize(body) == body
+    assert tok.leaks(body) == []
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("element", SERIAL_ELEMENTS)
+@pytest.mark.parametrize(
+    "value", ["None", "nonesuch", "none ", "autoSYN0001", "SYN0001"]
+)
+def test_serial_near_keyword_is_scrubbed(element: str, value: str, encode: Any) -> None:
+    """Only the exact keyword is kept: anything else in a serial element is a serial."""
+    tok = export.Tokenizer({}, set())
+    body = encode(f"<Root><{element}>{value}</{element}></Root>")
+    scrubbed = tok.tokenize(body)
+    assert scrubbed == body.replace(
+        value, _escaped(SERIAL) if encode is str else SERIAL
+    )
+    assert tok.leaks(scrubbed) == []
+    assert tok.leaks(body) == [value]
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("attribute", ['kb="a>b"', "kb='a>b'"])
+def test_serial_keyword_after_a_quoted_gt_is_kept(attribute: str, encode: Any) -> None:
+    """A `>` inside an attribute does not end the tag the keyword is checked after."""
+    tok = export.Tokenizer({}, set())
+    body = encode(
+        f"<Root><VirtualSerialNumber {attribute}>none</VirtualSerialNumber></Root>"
+    )
+    assert tok.tokenize(body) == body
+    assert tok.leaks(body) == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "<VirtualSerialNumber>SYN<x>none</VirtualSerialNumber>",
+        "<VirtualSerialNumber>SYN</x>auto</VirtualSerialNumber>",
+        "<Root>SYN0001>none</VirtualSerialNumber></Root>",
+        "<VirtualSerialNumber SYN</VirtualSerialNumber>none</VirtualSerialNumber>",
+        '<VirtualSerialNumber kb="x<SYN>none</VirtualSerialNumber>',
+        "<VirtualSerialNumber SYN0001/>none</VirtualSerialNumber>",
+        '<VirtualSerialNumber kb="SYN0001>none</VirtualSerialNumber>',
+    ],
+)
+def test_serial_keyword_not_after_its_opening_tag_is_a_leak(body: str) -> None:
+    """A keyword is evidence only as the element's whole text, in the backstop too."""
+    with pytest.raises(export.LeakError):
+        export.tokenize_records(_records(_rest("/e", body)))
+
+
+#: `lssyscfg -r lpar` fields around a virtual serial, unquoted and as a quoted CSV field.
+VIRTUAL_SERIAL_FIELDS = [
+    "name=lpar-A1,virtual_serial_num={},serial_num=<REDACTED-DEVID>",
+    'name=lpar-A1,"virtual_serial_num={}",state=Running',
+    "name=lpar-A1,virtual_serial_num={}\nname=lpar-A2",
+    "name=lpar-A1,VIRTUAL_SERIAL_NUM={}",
+]
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("fields", VIRTUAL_SERIAL_FIELDS)
+@pytest.mark.parametrize("value", ["SYN0001", "None", "nonesuch", "autoSYN0001"])
+def test_virtual_serial_field_is_scrubbed(value: str, fields: str, encode: Any) -> None:
+    """#1618: `\\bserial_num` has no boundary inside `virtual_serial_num` to match at."""
+    tok = export.Tokenizer({}, set())
+    body = encode(fields.format(value))
+    scrubbed = tok.tokenize(body)
+    if encode is str:
+        assert scrubbed == body.replace(value, DEVID)
+    assert value not in scrubbed
+    assert tok.leaks(scrubbed) == []
+    assert tok.leaks(body)
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize(
+    "fields",
+    [
+        *VIRTUAL_SERIAL_FIELDS,
+        "virtual_serial_num={}",
+        "x=1,virtual_serial_num={}\r\nx=1",
+    ],
+)
+@pytest.mark.parametrize("keyword", ["none", "auto"])
+def test_virtual_serial_keyword_is_kept_as_evidence(
+    keyword: str, fields: str, encode: Any
+) -> None:
+    """`none` and `auto` stand in for a virtual serial, as in `VirtualSerialNumber`."""
+    tok = export.Tokenizer({}, set())
+    body = encode(fields.format(keyword))
+    assert tok.tokenize(body) == body
+    assert tok.leaks(body) == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        '"virtual_serial_num=none,SYN0001"',
+        "virtual_serial_num=none SYN0001",
+        "virtual_serial_num=auto\\SYN0001",
+    ],
+)
+def test_virtual_serial_keyword_is_kept_only_as_the_whole_value(body: str) -> None:
+    """A quoted field runs to its closing quote; anything after a keyword is a serial."""
+    corpus = export.tokenize_records(_records(_ssh("lssyscfg -r lpar", body)))
+    assert "SYN0001" not in corpus[-1]["stdout"]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        'name=lpar-A1,virtual_serial_num=none"SYN0001",state=Running',
+        '"virtual_serial_num=auto"SYN0001"',
+    ],
+)
+def test_virtual_serial_keyword_before_a_quote_in_the_value_fails_closed(
+    body: str,
+) -> None:
+    """A quote ends a value only where a field ends; the backstop sees what follows."""
+    with pytest.raises(export.LeakError):
+        export.tokenize_records(_records(_ssh("lssyscfg -r lpar", body)))
+
+
+@pytest.mark.parametrize(
+    "wrap", [lambda v: {"raw": v}, lambda v: [v]], ids=["{}", "[]"]
+)
+@pytest.mark.parametrize(
+    ("value", "written"),
+    [
+        ("auto", "auto"),
+        ("SYN0001", "<REDACTED-DEVID>"),
+    ],
+)
+def test_virtual_serial_last_in_a_json_object_or_array_exports(
+    value: str, written: str, wrap: Any
+) -> None:
+    """The scanned corpus closes such a string with `"}` or `"]`, not with a separator."""
+    tool = {"kind": "tool", "step": "t", "tool": "t", "ok": True}
+    tool["data"] = wrap(f"name=lpar-A1,virtual_serial_num={value}")
+    corpus = export.tokenize_records(_records(tool))
+    assert corpus[-1]["record"]["data"] == wrap(
+        f"name=lpar-A1,virtual_serial_num={written}"
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "x virtual_serial_num=SYN0001",
+        json.dumps("x\nvirtual_serial_num=SYN0001"),
+        "ns_virtual_serial_num=SYN0001",
+        "virtual_serial_num=none,virtual_serial_num=SYN0001",
+        "virtual_serial_num=<REDACTED-DEVID>SYN0001",
+        'virtual_serial_num="SYN0001"',
+    ],
+)
+def test_virtual_serial_backstop_reports_a_value_the_rules_missed(text: str) -> None:
+    """The backstop needs no word boundary, which `json.dumps` text hides behind `\\n`."""
+    leak = text[text.rindex("virtual_serial_num=") :].removesuffix('"')
+    assert export.Tokenizer({}, set()).leaks(text) == [leak]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "virtual_serial_num=<REDACTED-DEVID>,x=1",
+        "virtual_serial_num=&lt;REDACTED-DEVID&gt;",
+        "virtual_serial_num=,x=1",
+        'x,"virtual_serial_num=",y',
+    ],
+)
+def test_virtual_serial_backstop_passes_the_token(text: str) -> None:
+    """What the rules write, in a body or an XML body, and an empty value, are no leak."""
+    assert export.Tokenizer({}, set()).leaks(text) == []
 
 
 @pytest.mark.parametrize(
@@ -392,6 +582,7 @@ SCRUBBED_ELEMENTS = [
     ("ns:PrimaryIPAddress", ADDRESS),
     ("SerialNumber", SERIAL),
     ("ns:LogicalSerialNumber", SERIAL),
+    ("VirtualSerialNumber", SERIAL),
     ("UniqueDeviceID", DEVID),
     ("ns:WWPN", DEVID),
 ]
@@ -408,6 +599,7 @@ VARIANT_ELEMENTS = [
     ("serialnumber", SERIAL),
     ("ns-1:SerialNumber", SERIAL),
     ("ns.v1:LOGICALSERIALNUMBER", SERIAL),
+    ("ns-1:virtualserialnumber", SERIAL),
     ("uniquedeviceid", DEVID),
     ("ns-1:UniqueDeviceID", DEVID),
     ("ns.v1:wwpn", DEVID),
@@ -800,6 +992,33 @@ def test_many_unclosed_openings_do_not_backtrack(element: str) -> None:
         assert _cost_ratio(rule, scan, replacement, body) < 10
 
 
+@pytest.mark.parametrize(
+    ("raw", "scrubbed"),
+    [
+        ("--.ops@example.org", "--.user@example.test"),
+        ("a@example.org+b@example.com", "user@example.testuser@example.test"),
+        ("x@y@example.com", "x@user@example.test"),
+        ("a.b-c@example no-at-sign", "a.b-c@example no-at-sign"),
+    ],
+)
+def test_email_rule_starts_where_it_always_did(raw: str, scrubbed: str) -> None:
+    """#1592 takes a whole run at once; an address inside or after one is still found."""
+    rule, replacement = next(r for r in export.IDENTIFIER_RULES if "@" in r[0].pattern)
+    assert rule.sub(replacement, raw) == scrubbed
+
+
+def test_a_long_run_without_an_at_sign_is_scanned_once() -> None:
+    """Regression #1592: the e-mail rule rescanned the rest of the run from each position.
+
+    Timed against a rule that scans each run once, on the same body in the same run.
+    The fixed rule costs under that baseline; the rescanning one cost 1000x+.
+    """
+    body = "<" + "a-" * 5_000
+    rule, replacement = next(r for r in export.IDENTIFIER_RULES if "@" in r[0].pattern)
+    once = re.compile(r"(?<![\w.+-])[\w.+-]++@")
+    assert _cost_ratio(rule, once, replacement, body) < 10
+
+
 def _cpu_time(rule: re.Pattern[str], replacement: Any, body: str) -> float:
     """The fastest of three CPU times of *rule* over *body*, which it leaves unchanged."""
     runs = []
@@ -836,6 +1055,12 @@ def test_uuid_tokens_keep_case_and_are_consistent() -> None:
     upper = corpus[1]["path"].rsplit("/", 1)[1]
     assert upper == "00000001-ABCD-4EF0-8ABC-000000000001"
     assert corpus[-1]["stdout"] == upper.lower()
+
+
+def test_private_pattern_with_a_kept_group_is_still_a_leak() -> None:
+    """Only the serial backstop's own `kept` group is exempt, never an operator's."""
+    tok = export.Tokenizer({}, set(), [r"(?P<kept>ROOM-\d)"])
+    assert tok.leaks("lab ROOM-7 rack") == ["ROOM-7"]
 
 
 def test_private_pattern_is_replaced() -> None:
