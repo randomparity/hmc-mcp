@@ -63,7 +63,7 @@ def candidate(tmp_path):
     observed = (now - timedelta(seconds=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
     tool = next(x for x in inventory.discover_registry() if x.operation == "system.get")
     observation = {
-        "id": "st1-hmc-get-managed-system",
+        "id": "st1-hmc-get-system",
         "channel": "live",
         "result": "passed",
         "scenario": "st1-system-inventory",
@@ -89,7 +89,22 @@ def candidate(tmp_path):
         "partial": False,
     }
     write_json(
-        results, {"run": run, "config": {"private": "DO-NOT-COPY-RAW"}, "results": []}
+        results,
+        {
+            "run": run,
+            "config": {"private": "DO-NOT-COPY-RAW"},
+            "results": [
+                {
+                    "subtask": 1,
+                    "tool": "hmc_get_system",
+                    "status": "PASS",
+                    "result": "passed",
+                    "timestamp": observed,
+                    "note": "",
+                    "data": {},
+                }
+            ],
+        },
     )
     sidecar = results.with_name("test-results-offline-observations.json")
     write_json(sidecar, [{"operation": "system.get", "observation": observation}])
@@ -346,3 +361,71 @@ def test_reject_missing_and_duplicate_arms(candidate):
                 window_complete=True,
                 recovery_confirmed=True,
             )
+
+
+def test_reject_leftover_sidecar_after_failed_rerun(candidate):
+    root, _, results, sidecar, _, observation = candidate
+    document = json.loads(results.read_text())
+    document["results"][0].update(status="FAIL", result="failed")
+    write_json(results, document)
+    observation["observed_at"] = (datetime.now(UTC) - timedelta(days=1)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    write_json(sidecar, [{"operation": "system.get", "observation": observation}])
+    with pytest.raises(promotion.PromotionError, match="invocation"):
+        promote(candidate)
+    assert git(root, "branch", "--show-current") == "fixture-candidate"
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"result": "failed", "status": "FAIL"},
+        {"tool": "hmc_list_managed_systems"},
+        {"subtask": True},
+        {"timestamp": "invalid"},
+        {"timestamp": "2026-01-01T00:00:00"},
+    ],
+)
+def test_reject_mismatched_result(candidate, change):
+    root, _, results, *_ = candidate
+    document = json.loads(results.read_text())
+    document["results"][0].update(change)
+    write_json(results, document)
+    with pytest.raises(promotion.PromotionError, match="invocation"):
+        promote(candidate)
+    assert git(root, "branch", "--show-current") == "fixture-candidate"
+
+
+def test_confirmed_gap_matches_fresh_producer_result():
+    outcome = next(
+        value
+        for module in runner._SCENARIO_MODULES
+        for value in vars(module).values()
+        if isinstance(value, runner.ExpectedOutcome) and not value.transient
+    )
+    tool = next(
+        name
+        for name, security in runner.TOOL_SECURITY.items()
+        if security.operation == outcome.operation
+    )
+    state = runner.RunState()
+    failure = runner.CallFailure(
+        "FixtureFailure", next(iter(outcome.error_codes), ""), "", None, outcome.denial
+    )
+    state.record_with_expected(1, tool, "FAIL", failure, [outcome])
+    run = {
+        "results": state.results,
+        "subtasks": [1],
+        "finished_time": datetime.now(UTC),
+    }
+    promotion._invocation(state.gaps[0], run)
+    state.results[0]["note"] = "known gap: " + outcome.reason
+    with pytest.raises(promotion.PromotionError, match="invocation"):
+        promotion._invocation(state.gaps[0], run)
+    state.results[0]["note"] = outcome.reason
+    state.gaps[0]["missing_scope"]["confirmation"]["observed_at"] = (
+        datetime.now(UTC) - timedelta(days=1)
+    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with pytest.raises(promotion.PromotionError, match="invocation"):
+        promotion._invocation(state.gaps[0], run)

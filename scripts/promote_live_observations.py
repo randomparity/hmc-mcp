@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import check_capability_inventory as inventory
+import live_test_runner as runner
 from live_test_runner import SUBTASK_GROUPS
 
 ARTIFACTS = frozenset(
@@ -142,7 +143,7 @@ def _read_run(path: Path, head: str, now: datetime) -> tuple[dict[str, Any], lis
     rows = _json(sidecar, 1024 * 1024)
     if not isinstance(rows, list) or not rows:
         raise PromotionError("sidecar must be a nonempty observation array")
-    return {**run, "finished_time": finished}, rows
+    return {**run, "finished_time": finished, "results": document.get("results")}, rows
 
 
 def _evidence(value: dict, run: dict, fingerprint: str, now: datetime) -> None:
@@ -190,7 +191,72 @@ def _rows(
                 raise PromotionError("sidecar gap lacks a valid confirmation")
             value = scope["confirmation"]
         _evidence(value, run, fingerprints[operation], now)
+        _invocation(row, run)
     return rows
+
+
+def _invocation(sidecar: dict, run: dict) -> None:
+    results = run["results"]
+    if not isinstance(results, list) or not results:
+        raise PromotionError("results invocation lacks recorded outcomes")
+    timestamps = []
+    for result in results:
+        try:
+            timestamp = datetime.fromisoformat(result["timestamp"])
+            if (
+                timestamp.utcoffset() != timedelta(0)
+                or timestamp > run["finished_time"]
+                or (timestamps and timestamp < timestamps[-1])
+                or type(result["subtask"]) is not int
+                or result["subtask"] not in run["subtasks"]
+                or not isinstance(result["tool"], str)
+            ):
+                raise ValueError
+        except (KeyError, TypeError, ValueError) as error:
+            raise PromotionError(
+                "results invocation has invalid recording provenance"
+            ) from error
+        timestamps.append(timestamp)
+    observation = sidecar.get("observation")
+    value = observation or sidecar["missing_scope"]["confirmation"]
+    observed = datetime.fromisoformat(value["observed_at"])
+    for index, result in enumerate(results):
+        # The producer records the result before its second-resolution sidecar
+        # entry, then proceeds to the next result. Keep that exact time interval.
+        if (
+            not timestamps[index].replace(microsecond=0)
+            <= observed
+            <= (
+                timestamps[index + 1]
+                if index + 1 < len(results)
+                else run["finished_time"]
+            )
+        ):
+            continue
+        tool = result["tool"].split(" (")[0]
+        security = runner.TOOL_SECURITY.get(tool)
+        if security is None or security.operation != sidecar["operation"]:
+            continue
+        if observation:
+            if (
+                runner._observation_id(result["subtask"], result["tool"]) == value["id"]
+                and result.get("result") == value["result"]
+                and result.get("status")
+                == ("PASS" if value["result"] == "passed" else "FAIL")
+            ):
+                return
+        elif result.get("status") == "SKIP" and result.get("result") == "skipped":
+            for module in runner._SCENARIO_MODULES:
+                for outcome in vars(module).values():
+                    if (
+                        isinstance(outcome, runner.ExpectedOutcome)
+                        and not outcome.transient
+                        and outcome.operation == sidecar["operation"]
+                        and outcome.variant == sidecar["missing_scope"]["variant"]
+                        and outcome.reason == result.get("note")
+                    ):
+                        return
+    raise PromotionError("sidecar does not match its results invocation")
 
 
 def _select(options: list[tuple[str, dict]], claim: dict | None) -> dict:
