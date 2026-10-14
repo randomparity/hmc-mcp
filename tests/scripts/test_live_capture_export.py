@@ -478,7 +478,36 @@ MAC_ELEMENTS = [
     "macaddress",
     "ns1:MacAddressValue",
     "AllowedOperatingSystemMACAddresses",
+    # Regression #1589: the rule took only a `\w+:` prefix.
+    "ns-1:MACAddress",
+    "ns.v1:macaddressprefix",
 ]
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("element", ["ns-1:MACAddress", "ns.v1:macaddressprefix"])
+def test_mac_element_namespace_prefix_is_zeroed(element: str, encode: Any) -> None:
+    """Regression #1589: `<ns-1:MACAddress>` was left whole, and the export stopped."""
+    tok = export.Tokenizer({}, set())
+    body = encode(f'<Root><{element} kb="CUR">{MAC}</{element}></Root>')
+    scrubbed = tok.tokenize(body)
+    assert scrubbed == body.replace(MAC, "000000000000")
+    assert tok.leaks(scrubbed) == []
+
+
+@pytest.mark.parametrize("gap", [" ", ">", '"'])
+def test_mac_namespace_prefix_does_not_span_a_tag(gap: str) -> None:
+    """A prefix is name characters only: `x:MACAddress` in another tag is not one."""
+    tok = export.Tokenizer({}, set())
+    body = f"<Note{gap}x:MACAddress>FEED</Note>"
+    assert tok.tokenize(body) == body
+
+
+def test_mac_element_opening_tag_skips_a_quoted_value() -> None:
+    """A `>` inside a quoted attribute value does not end the opening tag (#1589)."""
+    body = f'<Adapter><MACAddress kb="a/>b">{MAC}</MACAddress></Adapter>'
+    corpus = export.tokenize_records(_records(_rest("/e", body)))
+    assert corpus[-1]["body"] == body.replace(MAC, "000000000000")
 
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
@@ -510,17 +539,17 @@ def test_scrubbed_mac_element_value_is_not_a_leak(
 
 
 #: MAC element text the scrub rule leaves: the opening tag is gone (before a value and
-#: before a backslash, which the JSON scan sees doubled) or never closes, a
-#: `<` inside the value stops the rule, a CDATA section, and a namespace prefix with a
-#: `-` in it, which the rule's `\w+:` does not match.
+#: before a backslash, which the JSON scan sees doubled), never closes, or closes
+#: itself as `/>`, as in the other element rules, a `<` inside the value stops the
+#: rule, and a CDATA section.
 UNSCRUBBED_MAC = [
     f"<Adapter>{MAC}</MACAddress></Adapter>",
     f"<Adapter>\\{MAC}</MACAddress></Adapter>",
     f'<Adapter><MACAddress kb="CUR"{MAC}</MACAddress></Adapter>',
+    f'<Adapter><MACAddress kb="x"/>{MAC}</MACAddress></Adapter>',
     "<Adapter><MACAddress>0A1B<2C3D4E5F</MACAddress></Adapter>",
     f"<Adapter><MACAddress><![CDATA[{MAC}]]></MACAddress></Adapter>",
     f"<Adapter><MACAddress><![CDATA[{MAC}]]>\n  </MACAddress></Adapter>",
-    f"<Adapter><ns-1:MACAddress>{MAC}</ns-1:MACAddress></Adapter>",
 ]
 
 
@@ -652,7 +681,8 @@ def _cost_ratio(
     return min(timings[rule]) / min(timings[baseline])
 
 
-def test_many_unclosed_openings_do_not_backtrack() -> None:
+@pytest.mark.parametrize("element", ["SerialNumber", "ns-1:MACAddress"])
+def test_many_unclosed_openings_do_not_backtrack(element: str) -> None:
     """Regression #1548: the fallback backtracked over the rest of the body per opening.
 
     Each opening still scans to the end of the body, so the fixed tail is quadratic too:
@@ -662,13 +692,13 @@ def test_many_unclosed_openings_do_not_backtrack() -> None:
     which cancels host speed. The fixed tail costs about 2x that baseline on Python
     3.11-3.14, and under 3x on an oversubscribed host; the backtracking one cost 40x+.
     """
-    body = "<SerialNumber " * 5_000
+    body = f"<{element} " * 5_000
     for rule, replacement in export.IDENTIFIER_RULES:
         assert rule.sub(replacement, body) == body
     tail_rules = [
         (rule, replacement)
         for rule, replacement in export.IDENTIFIER_RULES
-        if export._TAG_TAIL in rule.pattern and rule.search("<SerialNumber >x<")
+        if export._TAG_TAIL in rule.pattern and rule.search(f"<{element} >x<")
     ]
     assert tail_rules
     for rule, replacement in tail_rules:
