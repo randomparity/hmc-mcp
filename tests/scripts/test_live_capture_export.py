@@ -800,6 +800,33 @@ def test_many_unclosed_openings_do_not_backtrack(element: str) -> None:
         assert _cost_ratio(rule, scan, replacement, body) < 10
 
 
+@pytest.mark.parametrize(
+    ("raw", "scrubbed"),
+    [
+        ("--.ops@example.org", "--.user@example.test"),
+        ("a@example.org+b@example.com", "user@example.testuser@example.test"),
+        ("x@y@example.com", "x@user@example.test"),
+        ("a.b-c@example no-at-sign", "a.b-c@example no-at-sign"),
+    ],
+)
+def test_email_rule_starts_where_it_always_did(raw: str, scrubbed: str) -> None:
+    """#1592 takes a whole run at once; an address inside or after one is still found."""
+    rule, replacement = next(r for r in export.IDENTIFIER_RULES if "@" in r[0].pattern)
+    assert rule.sub(replacement, raw) == scrubbed
+
+
+def test_a_long_run_without_an_at_sign_is_scanned_once() -> None:
+    """Regression #1592: the e-mail rule rescanned the rest of the run from each position.
+
+    Timed against a rule that scans each run once, on the same body in the same run.
+    The fixed rule costs under that baseline; the rescanning one cost 1000x+.
+    """
+    body = "<" + "a-" * 5_000
+    rule, replacement = next(r for r in export.IDENTIFIER_RULES if "@" in r[0].pattern)
+    once = re.compile(r"(?<![\w.+-])[\w.+-]++@")
+    assert _cost_ratio(rule, once, replacement, body) < 10
+
+
 def _cpu_time(rule: re.Pattern[str], replacement: Any, body: str) -> float:
     """The fastest of three CPU times of *rule* over *body*, which it leaves unchanged."""
     runs = []

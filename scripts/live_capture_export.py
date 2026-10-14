@@ -214,6 +214,15 @@ def _ipv6(match: re.Match[str]) -> str:
     return text
 
 
+def _email(match: re.Match[str]) -> str:
+    """Redact an e-mail address; a run of local-part characters with no `@` stays.
+
+    The rule takes the whole run, so a run with no address is scanned once rather than
+    again from each of its positions, which were bound to fail the same way.
+    """
+    return "user@example.test" if match.group(1) else match.group(0)
+
+
 #: A JSON escape and the hex run it directly precedes, or a hex run at a word boundary.
 #: The escape is matched first, so a run never starts on its letter: the `f` of
 #: `\fA1B2C3D4E5F6` is not zeroed into the invalid escape `\0`. Scanning left to
@@ -271,8 +280,8 @@ SECRET_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
 )
 IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     (
-        re.compile(r"(?i)\b[\w.+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+\b"),
-        "user@example.test",
+        re.compile(r"(?i)\b[\w.+-]++(@[a-z0-9-]+(?:\.[a-z0-9-]+)+\b)?"),
+        _email,
     ),
     (
         re.compile(
