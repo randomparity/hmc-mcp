@@ -399,6 +399,10 @@ def test_issue_listed_sites_print_hmc_and_argument_text_verbatim(
     monkeypatch, module, value, runners, argv
 ):
     _stub(monkeypatch, module, value, *runners)
+    # Each command prints through the console its module imported by name. Rich fixes
+    # its width from COLUMNS at import (or reads the terminal), so monkeypatch.setenv
+    # cannot widen it and a narrow width wraps the marker; pin it there (#1570).
+    monkeypatch.setattr(module, "console", Console(width=200, emoji=False))
 
     result = RUNNER.invoke(cli.app, argv)
 
