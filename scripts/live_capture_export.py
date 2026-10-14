@@ -117,8 +117,8 @@ _ADDRESS_ELEMENTS = "NetworkAddress|IPAddress|PrimaryIPAddress|IPv6Address"
 #: even after a `/`, so its value is still scrubbed rather than exported — unless the
 #: quote-aware run does end in `/>`. Then the first `>` closes the tag only when no `/`
 #: precedes it; one inside a quoted value (`kb=">"/>`) breaks the body, and the export
-#: stops. The quote-aware branch must come first, and the possessive `[^>]*+` keeps the
-#: fallback from backtracking over a body full of unclosed openings.
+#: stops. The quote-aware branch must come first. The possessive `[^>]*+` stops the
+#: fallback backtracking; each unclosed opening still scans to the next `>`.
 _ATTRS = r"""(?:[^>"'<]|"[^"<]*"|'[^'<]*')*"""
 _TAG_TAIL = rf"(?:{_ATTRS}(?<!/)>|(?!{_ATTRS}/>)[^>]*+>|[^>]*+(?<!/)>)"
 
