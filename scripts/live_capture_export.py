@@ -123,9 +123,12 @@ _ATTRS = r"""(?:[^>"'<]|"[^"<]*"|'[^'<]*')*"""
 _TAG_TAIL = rf"(?:{_ATTRS}(?<!/)>|(?!{_ATTRS}/>)[^>]*+>|[^>]*+(?<!/)>)"
 #: Elements whose whole text a rule replaces with a placeholder token: the element name
 #: pattern and the token. The same entry builds the scrub rule and its `leaks()` backstop.
+#: Names match in any case, and after any namespace prefix of name characters: neither
+#: is significant to whoever reads the value, so neither may hide it.
+_NS_PREFIX = r"(?:[\w.-]+:)?"
 _SESSION_ELEMENT = ("(?i:X-API-Session)", "REDACTED-SESSION")
-_DEVICE_ID_ELEMENT = (rf"(?:\w+:)?(?:{_DEVICE_ID_ELEMENTS})", "REDACTED-DEVID")
-_SERIAL_ELEMENT = (r"(?:\w+:)?(?:Logical)?SerialNumber", "REDACTED-SERIAL")
+_DEVICE_ID_ELEMENT = (rf"{_NS_PREFIX}(?i:{_DEVICE_ID_ELEMENTS})", "REDACTED-DEVID")
+_SERIAL_ELEMENT = (rf"{_NS_PREFIX}(?i:(?:Logical)?SerialNumber)", "REDACTED-SERIAL")
 
 
 def _element_rule(element: str, token: str) -> tuple[re.Pattern[str], str]:
