@@ -592,17 +592,44 @@ def test_committed_fixture_tokenizes_without_leaks(path: Path) -> None:
     assert tok.leaks(text) == []
 
 
+def _cost_ratio(
+    rule: re.Pattern[str], baseline: re.Pattern[str], replacement: Any, body: str
+) -> float:
+    """The fastest CPU time of *rule* over *body*, as a multiple of *baseline*'s.
+
+    The two alternate so load hits both alike, and CPU time leaves out preemption.
+    """
+    timings: dict[re.Pattern[str], list[float]] = {rule: [], baseline: []}
+    for _ in range(3):
+        for pattern, runs in timings.items():
+            started = time.process_time()
+            assert pattern.sub(replacement, body) == body
+            runs.append(time.process_time() - started)
+    return min(timings[rule]) / min(timings[baseline])
+
+
 def test_many_unclosed_openings_do_not_backtrack() -> None:
     """Regression #1548: the fallback backtracked over the rest of the body per opening.
 
-    Each opening still scans to the end of the body, so this stays quadratic, but fast:
-    under a second here, against about 14 s before the fix.
+    Each opening still scans to the end of the body, so the fixed tail is quadratic too:
+    input size cannot tell the two apart, only the cost per scanned character can. So
+    each `_TAG_TAIL` rule this body reaches is timed against itself with the tail
+    swapped for one possessive scan to the next `>`, on the same body in the same run,
+    which cancels host speed. The fixed tail costs about 2x that baseline on Python
+    3.11-3.14, and under 3x on an oversubscribed host; the backtracking one cost 40x+.
     """
-    body = "<SerialNumber " * 20_000
-    started = time.perf_counter()
+    body = "<SerialNumber " * 5_000
     for rule, replacement in export.IDENTIFIER_RULES:
         assert rule.sub(replacement, body) == body
-    assert time.perf_counter() - started < 10
+    tail_rules = [
+        (rule, replacement)
+        for rule, replacement in export.IDENTIFIER_RULES
+        if export._TAG_TAIL in rule.pattern and rule.search("<SerialNumber >x<")
+    ]
+    assert tail_rules
+    for rule, replacement in tail_rules:
+        scan = re.compile(rule.pattern.replace(export._TAG_TAIL, "[^>]*+>"), rule.flags)
+        assert _cost_ratio(rule, scan, replacement, body) < 10
 
 
 def test_uuid_tokens_keep_case_and_are_consistent() -> None:
