@@ -410,8 +410,8 @@ def test_systems_list_table_prints_bracketed_system_name_verbatim(monkeypatch):
     system = {"UUID": "u1", "Resource": {"SystemName": MARKED, "State": "operating"}}
     _stub(monkeypatch, cli_systems, [system], "with_client")
     # A narrow terminal truncates the name cell. Click's terminal_width= never reaches
-    # Rich, which sizes from COLUMNS once at import, so pin the table console's width
-    # (#1560).
+    # Rich, which sizes from COLUMNS or the real terminal, so pin the table console's
+    # width (#1560).
     monkeypatch.setattr(cli_output, "console", Console(width=200, emoji=False))
 
     result = RUNNER.invoke(cli.app, ["systems", "list"])
