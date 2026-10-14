@@ -530,13 +530,15 @@ def test_mac_element_the_rule_misses_fails_closed(body: str) -> None:
         export.tokenize_records(_records(_rest("/e", body)))
 
 
-#: Values joined to a word the rule does not zero: a `0x`, a suffix, and a suffix after
-#: a JSON escape.
+#: Values joined to a word the rule does not zero: a `0x`, a suffix, a suffix after a
+#: JSON escape, and a literal `\\u`, which JSON writes as `\\\\u`.
 JOINED_MAC = [
     f"0x{MAC}",
     f"{MAC}h",
     f"\f{MAC}h",
     f"\u00e9{MAC}h",
+    f"\\u{MAC}",
+    f"\\\\u{MAC}",
 ]
 
 
@@ -567,17 +569,37 @@ def test_mac_element_the_rule_misses_fails_closed_in_json(raw: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "before", ["\b", "\f", "\n", "\r", "\t", "\x0b", "\u00e9", "\\"]
+    ("before", "kept"),
+    [
+        ("\b", "\b"),
+        ("\f", "\f"),
+        ("\n", "\n"),
+        ("\r", "\r"),
+        ("\t", "\t"),
+        ("\\", "\\"),
+        # The rule cannot tell `\u000b` from a literal `\u` before a MAC, so it zeroes
+        # the escape's digits as well; `\u0000` is still an escape.
+        ("\x0b", "\x00"),
+        ("\u00e9", "\x00"),
+    ],
 )
 @pytest.mark.parametrize("value", [MAC, MAC[:4]])
 def test_mac_after_a_json_escape_in_a_tool_record_is_zeroed(
-    before: str, value: str
+    before: str, kept: str, value: str
 ) -> None:
     """Regression #1591: the `f` of `\\f` was zeroed with the value, into `\\0`."""
     raw = f"<MACAddress>{before}{value}</MACAddress>"
     tool = {"kind": "tool", "step": "t", "tool": "t", "ok": True, "data": {"raw": raw}}
     corpus = export.tokenize_records(_records(tool))
-    assert corpus[-1]["record"]["data"]["raw"] == raw.replace(value, "0" * len(value))
+    zeroed = f"<MACAddress>{kept}{'0' * len(value)}</MACAddress>"
+    assert corpus[-1]["record"]["data"]["raw"] == zeroed
+
+
+def test_mac_after_a_literal_backslash_u_is_zeroed_whole() -> None:
+    """Raw XML has no escapes: keeping `\\uA1B2` as one would export four MAC digits."""
+    body = f"<Adapter><MACAddress>\\u{MAC}</MACAddress></Adapter>"
+    corpus = export.tokenize_records(_records(_rest("/e", body)))
+    assert corpus[-1]["body"] == body.replace(MAC, "000000000000")
 
 
 def test_mac_after_an_escape_that_follows_a_backslash_stays_valid_json() -> None:

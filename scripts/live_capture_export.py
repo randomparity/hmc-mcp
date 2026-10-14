@@ -196,19 +196,34 @@ def _ipv6(match: re.Match[str]) -> str:
     return text
 
 
-#: A JSON escape, kept whole, or a hex run that starts at a word boundary or after an
-#: escape. Matching the escape first means a run never starts on its letter: the `f`
-#: of `\fA1B2C3D4E5F6` is not zeroed into the invalid escape `\0`.
+#: A JSON escape and the hex run it directly precedes, or a hex run at a word boundary.
+#: The escape is matched first, so a run never starts on its letter: the `f` of
+#: `\fA1B2C3D4E5F6` is not zeroed into the invalid escape `\0`. Scanning left to
+#: right, a run follows only an escape the scan itself matched, never the `\u` of a
+#: literal `\\u` before a MAC.
 _MAC_ELEMENT_RUN = re.compile(
-    rf"(?P<escape>{'|'.join(_JSON_ESCAPES)})|(?:\b|{_AFTER_ESCAPE})[0-9A-Fa-f]+\b"
+    rf"(?P<escape>{'|'.join(_JSON_ESCAPES)})(?P<run>[0-9A-Fa-f]+\b)?|\b[0-9A-Fa-f]+\b"
 )
+
+
+def _zero_run(run: re.Match[str]) -> str:
+    """Zero *run*'s hex digits, keeping an escape before them.
+
+    Raw XML has no escapes, so a `\\u` there is literal and the four digits after it
+    may be the MAC's own: they are zeroed too, and `\\u0000` is still an escape.
+    """
+    escape = run.group("escape")
+    if escape is None:
+        return "0" * len(run.group(0))
+    if run.group("run") is None:
+        return escape
+    keep = 2 if escape.startswith("\\u") else len(escape)
+    return escape[:keep] + "0" * (len(run.group(0)) - keep)
 
 
 def _mac_element(match: re.Match[str]) -> str:
     """Zero each hex run in a MAC element's text; keywords such as `ALL` stay as evidence."""
-    text = _MAC_ELEMENT_RUN.sub(
-        lambda run: run.group("escape") or "0" * len(run.group(0)), match.group(2)
-    )
+    text = _MAC_ELEMENT_RUN.sub(_zero_run, match.group(2))
     return match.group(1) + text
 
 
