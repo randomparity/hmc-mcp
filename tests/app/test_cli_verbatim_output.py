@@ -21,6 +21,7 @@ from typer.testing import CliRunner
 import hmcpctl.cli_commands
 from hmcpctl import cli
 from hmcpctl.cli_commands import console as cli_console
+from hmcpctl.cli_commands import output as cli_output
 from hmcpctl.cli_commands import raw as cli_raw
 from hmcpctl.cli_commands.lpar import config as cli_lpars
 from hmcpctl.cli_commands.lpar import inventory as cli_lpar_inventory
@@ -408,8 +409,12 @@ def test_issue_listed_sites_print_hmc_and_argument_text_verbatim(
 def test_systems_list_table_prints_bracketed_system_name_verbatim(monkeypatch):
     system = {"UUID": "u1", "Resource": {"SystemName": MARKED, "State": "operating"}}
     _stub(monkeypatch, cli_systems, [system], "with_client")
+    # A narrow terminal truncates the name cell. Click's terminal_width= never reaches
+    # Rich, which sizes from COLUMNS once at import, so pin the table console's width
+    # (#1560).
+    monkeypatch.setattr(cli_output, "console", Console(width=200, emoji=False))
 
-    result = RUNNER.invoke(cli.app, ["systems", "list"], terminal_width=200)
+    result = RUNNER.invoke(cli.app, ["systems", "list"])
 
     assert result.exit_code == 0, result.output
     assert PRINTED_VERBATIM.search(result.stdout), result.stdout
