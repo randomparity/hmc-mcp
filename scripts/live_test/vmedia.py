@@ -60,6 +60,13 @@ _REPOSITORY_ALREADY_GONE = ExpectedOutcome(
     reason="repository already gone (expected on re-run)",
     error_codes=frozenset({"not found", "does not exist", "no repository", "no media"}),
 )
+_DELETE_REFUSED_WHILE_MOUNTED = ExpectedOutcome(
+    operation="media.delete",
+    variant="delete-while-mounted",
+    transient=True,
+    reason="delete refused while mounted (expected)",
+    error_codes=frozenset({"is mounted on"}),
+)
 
 if TYPE_CHECKING:
     from live_test_runner import LiveTestConfig, RunState
@@ -1138,17 +1145,21 @@ class _RoundTrip:
                 raise _Stop("mount state unknown")
             return False, False
 
-        st_d, _ = self.note(
+        st_d, data_d = await self.state.call(
+            self.client,
             "hmc_delete_optical_media",
-            "while mounted",
-            await self.state.call(
-                self.client,
-                "hmc_delete_optical_media",
-                vios_name_or_uuid=self.vios,
-                vg_uuid=self.vg,
-                media_name=self.name,
-                system_name_or_uuid=self.config.system_name,
-            ),
+            vios_name_or_uuid=self.vios,
+            vg_uuid=self.vg,
+            media_name=self.name,
+            system_name_or_uuid=self.config.system_name,
+            expected=[_DELETE_REFUSED_WHILE_MOUNTED],
+        )
+        self.state.record_with_expected(
+            19,
+            "hmc_delete_optical_media (while mounted)",
+            st_d,
+            data_d,
+            [_DELETE_REFUSED_WHILE_MOUNTED],
         )
         _, _, still = await self.media("after the guarded delete")
         refused = st_d == "FAIL" and still is not None and self.name in still
