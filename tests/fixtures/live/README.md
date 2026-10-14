@@ -152,16 +152,17 @@ lists them. The raw captures, the corpus and the `export.sh` that re-runs the
 derivation are private, on the live-test host under
 `~/hmc-live-evidence/2026-10-13-q1310/`.
 
-`v11r2-p10-9043-mrx.json` holds one HMC's capture: the second of the two HMCs
-that manage that system. It was derived on 2026-10-01 from that HMC's corpus with
-`--fold` naming the first HMC's vocabulary, and `sources` gained an entry for the
-fold. The fold read only the prototype's top-level `rest_values` and
-`rest_endpoints` keys, which the exporter's own `rest.values` and
-`rest.endpoints` output never carries, and it added every endpoint it read with a
-null `accept` and `content_type`; none of the file's 51 endpoints has a null
-`accept`. The fold added nothing, so on 2026-10-14 (#1561) its `sources` entry was
-removed by hand. No row changed. Re-deriving the pair from both HMCs' raw
-captures, with one `--source` each, would add the first HMC's rows.
+`v11r2-p10-9043-mrx.json` holds one HMC's capture: the second of the two HMCs that
+manage that system. It was derived on 2026-10-01 from that HMC's corpus with
+`--fold` naming the first HMC's vocabulary, which the tracked exporter derived in
+the same run, and `sources` gained an entry for the fold. The fold read only the
+prototype's top-level `rest_values` and `rest_endpoints` keys, which the exporter's
+own `rest.values` and `rest.endpoints` output never carries, and it added every
+endpoint it read with a null `accept` and `content_type`; none of the file's 51
+endpoints has a null `accept`. The fold added nothing, so on 2026-10-14 (#1561) its
+`sources` entry was removed by hand. No row changed. Re-deriving the pair from both
+HMCs' raw captures, with one `--source` each, would add any rows only the first
+HMC's capture holds.
 
 Regenerate them with `scripts/live_capture_export.py`, as
 `docs/live-testing.md` ("Capturing an HMC's vocabulary") describes; do not edit
