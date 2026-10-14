@@ -9,6 +9,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -429,3 +430,146 @@ def test_confirmed_gap_matches_fresh_producer_result():
     ).strftime("%Y-%m-%dT%H:%M:%SZ")
     with pytest.raises(promotion.PromotionError, match="invocation"):
         promotion._invocation(state.gaps[0], run)
+
+
+def producer_states():
+    from live_test import bare_cec, pcie
+
+    dedicated = runner.RunState()
+    pcie.record_dedicated_listing(
+        dedicated,
+        "PASS",
+        {
+            "capability": "available",
+            "items": [{"drc_index": "1", "owner_lpar": None}],
+        },
+    )
+    pcie._record_dedicated_additions(
+        dedicated,
+        SimpleNamespace(
+            evidence={"assign": (True, True), "reassign": (True, True)},
+            drc_index="1",
+        ),
+        True,
+    )
+    bare = runner.RunState()
+    bare_cec._record_create_and_assign(
+        bare,
+        SimpleNamespace(
+            fixture=SimpleNamespace(drc_index="1", applied_io_slots="1/none/0"),
+            create_attempted=False,
+            assign_holds=(True, True),
+        ),
+        True,
+    )
+    return [("dedicated", dedicated), ("bare-cec", bare)]
+
+
+@pytest.mark.parametrize("arm", ["dedicated", "bare-cec"])
+def test_accept_actual_producer_row_numbers(arm):
+    state = dict(producer_states())[arm]
+    run = {
+        "group": arm,
+        "subtasks": runner.SUBTASK_GROUPS[arm],
+        "results": state.results,
+        "finished_time": datetime.now(UTC),
+    }
+    for observation in state.observations:
+        promotion._invocation(observation, run)
+
+
+def test_accept_actual_producer_recording_label():
+    state = dict(producer_states())["dedicated"]
+    observation = state.observations[-1]
+    assert observation["operation"] == "command.run"
+    assert state.results[-1]["tool"] == "chsyscfg-io-slots-add"
+    # Isolate the label reader from the separate dispatcher/row-ID regression.
+    run = {
+        "group": "dedicated",
+        "subtasks": [29, 31, 33],
+        "results": state.results,
+        "finished_time": datetime.now(UTC),
+    }
+    promotion._invocation(observation, run)
+    observation["observation"]["scenario"] = "st1-system-inventory"
+    with pytest.raises(promotion.PromotionError, match="invocation"):
+        promotion._invocation(observation, run)
+
+
+def test_promote_actual_dedicated_and_bare_producer_outputs(candidate):
+    root, claims, *_ = candidate
+    write_json(
+        claims,
+        {
+            "format_version": 1,
+            "operations": [
+                {
+                    "operation": "pcie.list_dedicated_slots",
+                    "arm": "dedicated",
+                    "scenario": "st29-pcie-inventory",
+                },
+                {
+                    "operation": "pcie.assign_dedicated_slot",
+                    "arm": "bare-cec",
+                    "scenario": "st35-bare-cec",
+                },
+            ],
+        },
+    )
+    catalog_path = root / "docs/capabilities/maturity.json"
+    catalog = json.loads(catalog_path.read_text())
+    # This fixture models an explicitly reviewed, still-absent implementation.
+    # Promotion must preserve it instead of inventing catalog implementation data.
+    catalog["operations"].append(
+        {
+            "operation": "command.run",
+            "implementation": {
+                "state": "absent",
+                "implemented_scope": [],
+                "missing_scope": [{"variant": "fixture-only", "parameters": []}],
+            },
+            "evidence": [],
+        }
+    )
+    write_json(catalog_path, catalog)
+    git(root, "add", str(claims), str(catalog_path))
+    git(root, "commit", "-qm", "Select anonymous fixture arm claims")
+    original = git(root, "rev-parse", "HEAD")
+    results = []
+    for arm, state in producer_states():
+        path = root / f"test-results-{arm}.json"
+        run = runner._run_provenance(
+            runner.SUBTASK_GROUPS[arm], arm, root, "V1_0", False
+        )
+        write_json(path, {"run": run, "results": state.results})
+        assert runner._emit_observations(
+            state,
+            runner._observations_path(str(path)),
+            ("V10R3M1060", "POWER10"),
+            "V1_0",
+            root,
+        )
+        results.append(path)
+    promoted = promotion.promote(
+        root,
+        claims,
+        "promotion/producer",
+        results,
+        window_complete=True,
+        recovery_confirmed=True,
+    )
+    assert promoted != original
+    assert git(root, "rev-parse", "fixture-candidate") == original
+    assert git(root, "status", "--porcelain") == ""
+    snapshot = inventory.load_release_verification(
+        root / "docs/capabilities/release-verification.json"
+    )
+    assert snapshot["pcie.list_dedicated_slots"]["verification"] == "current"
+    assert snapshot["pcie.assign_dedicated_slot"]["verification"] == "current"
+    catalog = json.loads(catalog_path.read_text())
+    record = next(
+        row
+        for row in catalog["operations"]
+        if row["operation"] == "pcie.assign_dedicated_slot"
+    )
+    assert record["evidence"][-1]["scenario"] == "st35-bare-cec"

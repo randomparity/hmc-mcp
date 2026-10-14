@@ -208,7 +208,7 @@ def _invocation(sidecar: dict, run: dict) -> None:
                 or timestamp > run["finished_time"]
                 or (timestamps and timestamp < timestamps[-1])
                 or type(result["subtask"]) is not int
-                or result["subtask"] not in run["subtasks"]
+                or result["subtask"] < 0
                 or not isinstance(result["tool"], str)
             ):
                 raise ValueError
@@ -235,9 +235,17 @@ def _invocation(sidecar: dict, run: dict) -> None:
             continue
         tool = result["tool"].split(" (")[0]
         security = runner.TOOL_SECURITY.get(tool)
-        if security is None or security.operation != sidecar["operation"]:
+        if security is not None and security.operation != sidecar["operation"]:
             continue
         if observation:
+            # Some producer labels describe direct commands, not registry tools.
+            # Reuse the source-declared release routes for those observations.
+            if (
+                security is None
+                and (sidecar["operation"], run["group"], value["scenario"])
+                not in inventory._release_routes()
+            ):
+                continue
             if (
                 runner._observation_id(result["subtask"], result["tool"]) == value["id"]
                 and result.get("result") == value["result"]
@@ -245,7 +253,11 @@ def _invocation(sidecar: dict, run: dict) -> None:
                 == ("PASS" if value["result"] == "passed" else "FAIL")
             ):
                 return
-        elif result.get("status") == "SKIP" and result.get("result") == "skipped":
+        elif (
+            security is not None
+            and result.get("status") == "SKIP"
+            and result.get("result") == "skipped"
+        ):
             for module in runner._SCENARIO_MODULES:
                 for outcome in vars(module).values():
                     if (

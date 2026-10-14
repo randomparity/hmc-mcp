@@ -25,9 +25,11 @@ Require exact sidecar row keys, known operations, inventory-valid observations o
 gaps, live channel, canonical timestamp no later than completion, current HEAD and closure.
 Join each sidecar entry to a matching recorded result from this invocation by registered
 operation, producer-derived identity/outcome (or declared gap reason) and recording interval.
-Use the producer's second-resolution timestamp floor; reject missing, stale or mismatched
-results without copying their raw payloads. Reject stale/future evidence and duplicate ids
-within a sidecar; validate catalog-wide ids
+Dispatcher completion comes from run/group metadata; result-row numbers are a separate
+producer identity. For non-registry recording labels, reuse source-declared release routes
+to validate operation/arm/scenario. Use the producer's second-resolution timestamp floor;
+reject missing, stale or mismatched results without copying their raw payloads. Reject
+stale/future evidence and duplicate ids within a sidecar; validate catalog-wide ids
 after selection. Multiple arms can observe the same operation: choose its claimed arm/scenario
 when claimed, otherwise the latest timestamp/id (ties with differing content fail).
 Require each claim's operation/scenario in its named arm's supplied sidecar as passed evidence.
