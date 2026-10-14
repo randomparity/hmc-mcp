@@ -1,0 +1,47 @@
+{
+ "firmware": "stated",
+ "sources": [
+  "PR #1516 'Re-derived vocabularies' table: bindings the dropped catch-all rule inferred, recorded there as right (#1529)"
+ ],
+ "types": {},
+ "elements": {
+  "AIXCapable": "AIXCapability.Enum",
+  "ConfiguredOptions": "SRIOVPhysicalPortOptions.Enum",
+  "CurrentManufacturingDefaulConfigurationtBootMode": "PartitionBootMode.Enum",
+  "CurrentManufacturingDefaultConfigurationSource": "IPLSource.Enum",
+  "CurrentOptions": "SRIOVPhysicalPortOptions.Enum",
+  "CurrentPowerOnSide": "ServiceProcessorSide.Enum",
+  "CurrentPowerSavingMode": "EnergyManagementModeType.Enum",
+  "CurrentSharingMode": "LogicalPartitionProcessorSharingMode.Enum",
+  "PartitionType": "LogicalPartitionEnvironment.Enum",
+  "PendingManufacturingDefaulConfigurationtBootMode": "PartitionBootMode.Enum",
+  "PendingManufacturingDefaultConfigurationSource": "IPLSource.Enum",
+  "PendingPowerOnLogicalPartitionStartPolicy": "PowerOnStartPolicy.Enum",
+  "PendingPowerOnSide": "ServiceProcessorSide.Enum",
+  "PortCapabilities": "SRIOVPortCapability.Enum",
+  "PowerOnLogicalPartitionStartPolicy": "PowerOnStartPolicy.Enum",
+  "RequiredPowerSavingMode": "EnergyManagementModeType.Enum",
+  "SupportedOptions": "SRIOVPhysicalPortOptions.Enum",
+  "SupportedPowerSavingModeTypes": "EnergyManagementModeType.Enum"
+ },
+ "evidence": {
+  "AIXCapable": "#1516 table",
+  "ConfiguredOptions": "#1516 table",
+  "CurrentManufacturingDefaulConfigurationtBootMode": "#1516 table",
+  "CurrentManufacturingDefaultConfigurationSource": "#1516 table",
+  "CurrentOptions": "#1516 table",
+  "CurrentPowerOnSide": "#1516 table",
+  "CurrentPowerSavingMode": "#1516 table",
+  "CurrentSharingMode": "#1516 table",
+  "PartitionType": "#1516 table",
+  "PendingManufacturingDefaulConfigurationtBootMode": "#1516 table",
+  "PendingManufacturingDefaultConfigurationSource": "#1516 table",
+  "PendingPowerOnLogicalPartitionStartPolicy": "#1516 table",
+  "PendingPowerOnSide": "#1516 table",
+  "PortCapabilities": "#1516 table",
+  "PowerOnLogicalPartitionStartPolicy": "#1516 table",
+  "RequiredPowerSavingMode": "#1516 table",
+  "SupportedOptions": "#1516 table",
+  "SupportedPowerSavingModeTypes": "#1516 table"
+ }
+}
