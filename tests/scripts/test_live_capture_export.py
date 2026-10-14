@@ -429,6 +429,21 @@ def test_virtual_serial_keyword_is_kept_only_as_the_whole_value(body: str) -> No
 
 
 @pytest.mark.parametrize(
+    "body",
+    [
+        'name=lpar-A1,virtual_serial_num=none"SYN0001",state=Running',
+        '"virtual_serial_num=auto"SYN0001"',
+    ],
+)
+def test_virtual_serial_keyword_before_a_quote_in_the_value_fails_closed(
+    body: str,
+) -> None:
+    """A quote ends a value only where a field ends; the backstop sees what follows."""
+    with pytest.raises(export.LeakError):
+        export.tokenize_records(_records(_ssh("lssyscfg -r lpar", body)))
+
+
+@pytest.mark.parametrize(
     "text",
     [
         "x virtual_serial_num=SYN0001",

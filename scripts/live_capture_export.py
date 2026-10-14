@@ -157,13 +157,16 @@ _SERIAL_ELEMENT = (
 
 #: `virtual_serial_num=` holds the same serial, or the same keywords, in `lssyscfg -r
 #: lpar` output (#1618). A keyword is kept only as the field's whole value, in its
-#: documented case: unquoted, it ends at a field separator, a quote, a line end or the
-#: end of the text, and in `json.dumps` text at the `\n`, `\r` or `\"` escape; quoted, only
-#: at its closing quote. The scrub rules themselves read no escape, so in `json.dumps`
+#: documented case. A value ends at a field separator, a line end or the end of the
+#: text, `json.dumps`'s `\n` and `\r` escapes included, or at a quote, raw or escaped,
+#: that one of those follows; a quote with anything else after it is in the value, and
+#: the unquoted rule and the backstop read it so even where the quoted rule kept the
+#: keyword before it. The scrub rules themselves read no escape, so in `json.dumps`
 #: text a value runs on over a `\n` and a quoted field loses the `\` of its closing
 #: `\"`, which fails the export as broken JSON: over-scrubbing, never a leak.
 _VIRTUAL_SERIAL_KEPT = "(?-i:none|auto)"
-_FIELD_END = r'(?=[,\r\n"]|\\[nr"]|$)'
+_VALUE_END = r"(?:[,\r\n]|\\[nr]|$)"
+_FIELD_END = rf'(?={_VALUE_END}|"{_VALUE_END}|\\"(?:{_VALUE_END}|"))'
 
 
 def _element_rule(
