@@ -13,6 +13,7 @@ the mock spoke plain HTTP, so every invocation failed with an SSL error.
 from __future__ import annotations
 
 import ipaddress
+import secrets
 import ssl
 import threading
 from datetime import UTC, datetime, timedelta
@@ -224,7 +225,7 @@ def _env(port: int, certificate_path: str) -> dict[str, str]:
         "HMC_HOST": "127.0.0.1",
         "HMC_PORT": str(port),
         "HMC_USER": "hscroot",
-        "HMC_PASSWORD": "abc123",  # fake credential for the mock HMC
+        "HMC_PASSWORD": secrets.token_hex(8),  # the mock HMC accepts any logon
         "HMC_VERIFY_SSL": "true",
         "SSL_CERT_FILE": certificate_path,
     }
