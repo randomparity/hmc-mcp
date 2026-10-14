@@ -502,7 +502,11 @@ async def test_tls_warning_key_retains_the_construction_time_source(monkeypatch)
     monkeypatch.setattr(client_core, "_reported_tls_warning_keys", set())
     monkeypatch.setenv("HMC_VERIFY_SSL", "false")
     environment_client = HMCClient(
-        HMCConfig(host="hmc.test", user="hscroot", password="abc123")
+        HMCConfig(
+            host="hmc.test",
+            user="hscroot",
+            password="abc123",  # pragma: allowlist secret
+        )
     )
 
     monkeypatch.setenv("HMC_VERIFY_SSL", "true")
@@ -687,7 +691,7 @@ def test_tls_audit_record_names_where_the_setting_came_from(
         # default to flow through unset.
         "host": "hmc.test",
         "user": "hscroot",
-        "password": "abc123",
+        "password": "abc123",  # pragma: allowlist secret
         "_env_file": None,
     }
     config_kwargs.update(kwargs)
@@ -748,7 +752,12 @@ def test_tls_audit_record_ignores_the_environment_for_an_isolated_config(
 
     HMCClient(
         HMCConfig.from_mapping(
-            {"host": "hmc.test", "user": "hscroot", "password": "abc123", **kwargs}
+            {
+                "host": "hmc.test",
+                "user": "hscroot",
+                "password": "abc123",  # pragma: allowlist secret
+                **kwargs,
+            }
         )
     )
 
