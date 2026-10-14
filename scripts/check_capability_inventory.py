@@ -1263,6 +1263,10 @@ def _release_routes() -> set[tuple[str, str, str]]:
                 )
             seen.add(scenario)
             for arm, tasks in SUBTASK_GROUPS.items():
+                # The dedicated arm precedes bare-CEC in all; its row 29 makes
+                # exercise_bare_cec skip to preserve the first fixture's recovery data.
+                if arm == "all" and scenario == "st35-bare-cec":
+                    continue
                 if subtask in tasks:
                     routes.add((operation.value, arm, scenario))
     if seen != set(RELEASE_SCENARIO_SUBTASKS):

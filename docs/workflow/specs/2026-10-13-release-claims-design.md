@@ -34,9 +34,11 @@ literal operation IDs and literal or module-constant scenario IDs through AST.
 This registers release routes without inventing a second arm list or requiring
 prior successful evidence before a future release window. Further scenarios
 can be registered beside the existing metadata when a claimed set needs them.
-Collection alias `all` is accepted only where it actually contains the registered
-subtask. The lpar-power guard requires its own arm; subtask 41 belongs only
-to that arm, so its registration cannot admit another group.
+Collection alias `all` is accepted only where it contains the registered subtask
+and no existing group incompatibility prevents that scenario. In particular,
+`st35-bare-cec` rejects `all`: the earlier dedicated arm produces row 29, which
+causes bare-CEC to skip to preserve the first fixture’s recovery data.
+The lpar-power guard requires its own arm; subtask 41 belongs only to that arm, so its registration cannot admit another group.
 No runner dispatch, assertions, authorization, catalog evidence, or runtime
 projection behavior changes. This is an extension; no ownership migration or
 compatibility path is needed.

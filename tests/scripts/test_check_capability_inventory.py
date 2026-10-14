@@ -1853,3 +1853,18 @@ def test_inventory_requires_release_directory(tmp_path):
         "cannot read release claims" in error
         for error in inventory.validate_inventory(tmp_path, []).errors
     )
+
+
+def test_release_claims_reject_bare_cec_in_mutually_exclusive_all_arm(tmp_path):
+    path = tmp_path / "v0.2.0.json"
+    _write_json(
+        path,
+        {
+            "format_version": 1,
+            "operations": [
+                {"operation": "job.get", "arm": "all", "scenario": "st35-bare-cec"}
+            ],
+        },
+    )
+    with pytest.raises(inventory.InventoryError, match="unknown release claim route"):
+        inventory.load_release_claims(path, {"job.get"})
