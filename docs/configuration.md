@@ -197,8 +197,9 @@ man-in-the-middle interception.
 
 ## TLS trust
 
-With `HMC_VERIFY_SSL=true` the client trusts the CA roots bundled with its HTTP library
-plus whatever `SSL_CERT_FILE` or `SSL_CERT_DIR` names. Nothing else is consulted:
+With `HMC_VERIFY_SSL=true` the client trusts whatever `SSL_CERT_FILE` or `SSL_CERT_DIR`
+names; when neither is set, it trusts the CA roots bundled with its HTTP library. Nothing
+else is consulted:
 
 - The operating-system trust store is not read. Installing a CA with
   `security add-trusted-cert` (macOS) or `update-ca-certificates` (Linux) does not make
