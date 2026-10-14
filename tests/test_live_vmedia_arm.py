@@ -87,6 +87,7 @@ class FakeHMC:
     unmount_leaves_adapter: bool = False
     guarded_delete_allowed: bool = False
     guarded_delete_error: str | None = None
+    # A concurrent actor removes the medium; its mapping row is left as it was.
     guarded_refusal_drops_media: bool = False
     optical_id_missing: bool = False
     boot_order: dict[str, Any] = field(
