@@ -5,7 +5,7 @@ Three subcommands, all offline:
     python scripts/live_capture_export.py tokenize RAW.jsonl... --out corpus.json \\
         [--private REGEX]...
     python scripts/live_capture_export.py vocabulary corpus.json --enums enums.json \\
-        --firmware v10r3-p9 --source TEXT --out vocabulary.json
+        --firmware v10r3-p9 --source TEXT [--source TEXT]... --out vocabulary.json
     python scripts/live_capture_export.py enums corpus.json --firmware v10r3 --out enums.json
 
 `tokenize` reads the records `scripts/live_capture_sweep.py` writes (the capture
@@ -833,37 +833,15 @@ def _is_schema(record: dict[str, Any]) -> bool:
     return path.endswith(".xsd") or "/schema" in path
 
 
-def _fold_derived(
-    derived: dict[str, Any],
-    values: dict[str, set[str]],
-    endpoints: set[tuple[Any, ...]],
-    shape_value: Callable[[str, str], str],
-) -> None:
-    """Fold a vocabulary the prototype derived (`rest_values`, `rest_endpoints`) in.
-
-    Its CLI keys are cut differently from `command_key`, so only REST is folded.
-    """
-    for element, seen in derived.get("rest_values", {}).items():
-        if not element.startswith("<"):
-            values[element].update(
-                v if v[:1] == "<" else shape_value(element, v) for v in seen
-            )
-    for method, path, status, _count in derived.get("rest_endpoints", []):
-        template = re.sub(r"\{(?:n|name)\}", "{value}", path)
-        endpoints.add((method, template, None, status, None))
-
-
 def build_vocabulary(
     corpus: Sequence[dict[str, Any]],
     enums: dict[str, Any],
     firmware: str,
     sources: Sequence[str],
-    folded: Sequence[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     """The committed vocabulary of one firmware and hardware pair.
 
-    *folded* are earlier derived vocabularies from the same pair; *sources* names the
-    corpus first and then each of them.
+    *sources* names each raw capture the corpus was tokenized from.
     """
     endpoints: set[tuple[Any, ...]] = set()
     errors: list[dict[str, Any]] = []
@@ -924,8 +902,6 @@ def build_vocabulary(
                 for row in cli_rows(command, record.get("stdout") or ""):
                     for field, value in row.items():
                         cli_values[f"{key} :: {field}"].add(observed(field, value))
-    for derived in folded:
-        _fold_derived(derived, values, endpoints, rest_value)
     types = enums.get("types", {})
     bindings = dict(enums.get("elements", {}))
     for element, seen in values.items():
@@ -1037,21 +1013,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     vocab.add_argument("corpus", type=Path)
     vocab.add_argument("--enums", type=Path, required=True)
     vocab.add_argument("--firmware", required=True)
-    vocab.add_argument("--source", required=True, help="where the corpus came from")
     vocab.add_argument(
-        "--fold",
-        type=Path,
+        "--source",
         action="append",
-        default=[],
-        metavar="DERIVED.json",
-        help="an earlier derived vocabulary of the same pair to fold in (repeatable)",
-    )
-    vocab.add_argument(
-        "--fold-source",
-        action="append",
-        default=[],
+        required=True,
         metavar="TEXT",
-        help="where each --fold came from, in order",
+        help="where one raw capture in the corpus came from (repeatable)",
     )
     enum = sub.add_parser("enums", help="derive the committed schema enum lists")
     enum.add_argument("corpus", type=Path)
@@ -1081,11 +1048,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             data = derive_enums(corpus, args.firmware)
         else:
             enums = json.loads(args.enums.read_text(encoding="utf-8"))
-            if len(args.fold) != len(args.fold_source):
-                raise ValueError("give one --fold-source for each --fold")
-            folded = [json.loads(p.read_text(encoding="utf-8")) for p in args.fold]
-            sources = [args.source, *args.fold_source]
-            data = build_vocabulary(corpus, enums, args.firmware, sources, folded)
+            data = build_vocabulary(corpus, enums, args.firmware, args.source)
         _write_scanned(data, args.out, args.private)
         print(f"wrote {args.out}")
         return 0

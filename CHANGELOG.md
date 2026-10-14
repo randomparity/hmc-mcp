@@ -16,6 +16,10 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
 
 ### Added
 
+- `scripts/check_capability_inventory.py --require-current FILE` gates a release
+  on its validated claimed operations, naming non-current evidence and applying
+  candidate closure and 90-day age checks without blocking on unclaimed states (#1478).
+
 - Retain release claimed operations with their live-test arms and scenarios, beginning
   with v0.1.0; `just capability-inventory` validates every retained set (#1511).
 
@@ -58,6 +62,10 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
 
 ### Fixed
 
+- A failed vSCSI or virtual-optical mapping create no longer says that `list-mappings` does not
+  show a leftover VIOS server adapter. A partition-scoped listing omits it, an unscoped one
+  shows it with no identity, and `hmc_list_optical_mappings` never shows it. The note still
+  points at the `lshwres` server-adapter listing (#1537).
 - `hmc_create_lpar` and `hmc_provision_lpar` refuse promptly when the target managed system is not
   operating. Their name check, and every listing or lookup that finds a system's partition or VIOS
   feed empty, now reads the system's `State` from `ManagedSystem/quick/All` instead of
