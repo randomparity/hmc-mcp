@@ -197,19 +197,21 @@ man-in-the-middle interception.
 
 ## TLS trust
 
-With `HMC_VERIFY_SSL=true` the client trusts whatever `SSL_CERT_FILE` or `SSL_CERT_DIR`
-names; when neither is set, it trusts the CA roots bundled with its HTTP library. Nothing
-else is consulted:
+With `HMC_VERIFY_SSL=true` the client determines what to trust from two sources, in this order:
 
-- The operating-system trust store is not read. Installing a CA with
-  `security add-trusted-cert` (macOS) or `update-ca-certificates` (Linux) does not make
-  verification succeed for `hmcpctl`.
-- `REQUESTS_CA_BUNDLE` and `CURL_CA_BUNDLE` are ignored.
+1. **`SSL_CERT_FILE`** (or `SSL_CERT_DIR`): when set, the named bundle is used exclusively.
+   `REQUESTS_CA_BUNDLE` and `CURL_CA_BUNDLE` are ignored.
+2. **`HMC_TRUST_SYSTEM_STORE=true`** (the default): when no explicit bundle is set,
+   the operating-system trust store (macOS Keychain, Windows Credential Store, the Linux
+   CA bundle rebuilt by `update-ca-certificates` / `update-ca-trust`) is consulted via
+   the `truststore` library (ADR 0222).
+3. **Bundled `certifi` roots**: when `HMC_TRUST_SYSTEM_STORE=false` and no `SSL_CERT_FILE`
+   is set, only the CA roots bundled with the HTTP library are trusted.
 
-Set the variable in the environment of the process that runs `hmcpctl`, including the
-launcher of an MCP server. It needs no root access and applies to every HMC that process
-connects to. An unreadable or malformed file is an error; it does not fall back to the
-bundled roots.
+Set these variables in the environment of the process that runs `hmcpctl`, including the
+launcher of an MCP server. They need no root access and apply to every HMC that process
+connects to. An unreadable or malformed bundle file is an error; it does not fall back to
+other sources.
 
 ### Choose what to trust
 
@@ -259,7 +261,17 @@ CA as well, include it in the file.
 
 ### Reuse the system trust store
 
-To trust what the operating system already trusts, export it to a file once and point
+The easiest way to trust what the operating system already trusts is to leave
+`HMC_TRUST_SYSTEM_STORE` at its default (`true`) and set `HMC_VERIFY_SSL=true`:
+
+```bash
+export HMC_VERIFY_SSL=true
+# HMC_TRUST_SYSTEM_STORE defaults to true — the OS store is consulted automatically
+hmcpctl console info
+```
+
+If you need to export a static bundle — for example when `HMC_TRUST_SYSTEM_STORE=false`,
+or when you want a snapshot that is immune to OS store changes — export it once and point
 `SSL_CERT_FILE` at the copy. Re-export it when the system store changes.
 
 ```bash
