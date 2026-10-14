@@ -123,8 +123,9 @@ pairs `v11r2-p9-9009-42a`, `v11r2-p10-9028-21b`, `v11r2-p11-9824-42a` and
 `v11r2-p11-9242-21b`. From the first run of the tracked sweep and exporter on
 2026-10-01: `v10r3-p8-8247-22l`, `v11r2-p10-9080-hex` and `v11r2-p10-9043-mrx`
 (two HMCs, combined with the since-removed `--fold`). From a 2026-10-13 sweep run
-while the 9043-MRU was `No Connection` for the whole capture: `v11r2-p11-9043-mru`, whose HMC-wide reads
-also hold the HMC's other managed systems. From the same session's sweep of a second
+while the 9043-MRU was `No Connection` for the whole capture:
+`v11r2-p11-9043-mru`, whose HMC-wide reads also hold the HMC's other managed
+systems. From the same session's sweep of a second
 V11R2 HMC, with a 9105-42A `No Connection` throughout: `v11r2-p10-9105-42a`, derived
 for #1498 once the exporter stopped binding an element to an enum its name does not
 relate to. It still infers `Status` → `VirtualNICBackingDeviceStatus.Enum` from
