@@ -47,7 +47,7 @@ exclusions are follow-up issues filed at the end of the quest.
 - Mechanism claims. focused-test: `test_ssl_cert_file_trust_verifies_hmc_e2e` (red:
   exit 1 without the variable), `test_verify_ssl_without_trusted_ca_fails_e2e`,
   `test_requests_ca_bundle_alone_does_not_trust_e2e`,
-  `test_unterminated_pem_bundle_fails_to_load_e2e`; green: `pytest tests/app/test_cli_e2e.py -k trust`.
+  `test_unterminated_pem_bundle_fails_to_load_e2e`; green: `pytest tests/app/test_cli_e2e.py -k "trust or verify_ssl or unterminated"`.
 - Docs prose and links. task-test-not-applicable: prose is not machine-checkable; checked
   by manual run of each documented command and by `just doc-freshness`.
 - Public safety. task-test-not-applicable: verified by scanning the diff for internal
