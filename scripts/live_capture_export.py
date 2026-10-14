@@ -127,9 +127,11 @@ _TAG_TAIL = rf"(?:{_ATTRS}(?<!/)>|(?!{_ATTRS}/>)[^>]*+>|[^>]*+(?<!/)>)"
 _NAME_ESCAPE = r"\\++u(?!00[0-7]|(?i:{}))[0-9A-Fa-f]{{4}}".format(
     "|".join(f"{c:04x}" for c in range(0x80, 0x10000) if chr(c).isspace())
 )
-#: Any number of namespace prefixes, `a:b:` too, of name characters or their escapes. A
-#: local name has no colon, so the possessive scan never needs to give a prefix back.
-_NS_PREFIX = rf"(?:(?:[\w.-]|{_NAME_ESCAPE})++:)*+"
+#: Any number of namespace prefixes, `a:b:` too. A prefix character is an ASCII word
+#: character, `.` or `-`, or any non-ASCII character but a space, raw or escaped. A prefix
+#: is given back when the element name does not follow it: `<SerialNumber:x>` is still a
+#: `SerialNumber`.
+_NS_PREFIX = rf"(?:(?:[\w.-]|[^\x00-\x7f\s]|{_NAME_ESCAPE})++:)*"
 #: Elements whose whole text a rule replaces: the element name pattern and the text the
 #: rule writes. The same entry builds the scrub rule and its `leaks()` backstop. Names
 #: match in any case, after any namespace prefix: neither is significant to whoever

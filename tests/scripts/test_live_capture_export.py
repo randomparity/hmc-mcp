@@ -411,10 +411,11 @@ VARIANT_ELEMENTS = [
     ("uniquedeviceid", DEVID),
     ("ns-1:UniqueDeviceID", DEVID),
     ("ns.v1:wwpn", DEVID),
-    # #1588: a prefix `json.dumps` writes with a `\u` escape, and more than one prefix.
+    # #1588: a prefix `json.dumps` writes with a `\u` escape, a non-ASCII name character
+    # that is not a word character, and more than one prefix.
     *(
         (f"{prefix}{element}", written)
-        for prefix in ("ns\u00e9:", "ns:v1:")
+        for prefix in ("ns\u00e9:", "a\u00b7b:", "ns:v1:")
         for element, written in [
             ("X-API-Session", SESSION),
             ("PublicSSHKeyValue", SSH_KEY),
@@ -458,6 +459,22 @@ def test_namespace_prefix_does_not_span_a_tag(gap: str) -> None:
     tok = export.Tokenizer({}, set())
     body = f"<Note{gap}x:SerialNumber>SYN-77Q</Note>"
     assert tok.tokenize(body) == body
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize(
+    "element",
+    ["SerialNumber:x", "a:IPv6Address:x", "X-API-Session:x", "WWPN:x", "MACAddress:x"],
+)
+def test_element_name_before_a_colon_is_still_scrubbed(
+    element: str, encode: Any
+) -> None:
+    """A prefix is given back when the element name does not follow it (#1588)."""
+    tok = export.Tokenizer({}, set())
+    scrubbed = tok.tokenize(encode(f"<Root><{element}>{MAC}</{element}></Root>"))
+    assert scrubbed is not None
+    assert MAC not in scrubbed
+    assert tok.leaks(scrubbed) == []
 
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
@@ -546,12 +563,13 @@ MAC_ELEMENTS = [
     "ns.v1:macaddressprefix",
     # Regression #1588: a `\u`-escaped prefix in `json.dumps` text, and two prefixes.
     "ns\u00e9:MACAddress",
+    "a\u00b7b:MACAddress",
     "ns:v1:MACAddress",
 ]
 
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
-@pytest.mark.parametrize("element", MAC_ELEMENTS[-4:])
+@pytest.mark.parametrize("element", MAC_ELEMENTS[-5:])
 def test_mac_element_namespace_prefix_is_zeroed(element: str, encode: Any) -> None:
     """Regression #1589, #1588: `<ns-1:MACAddress>` was left whole; the export stopped."""
     tok = export.Tokenizer({}, set())
@@ -754,7 +772,7 @@ def _cost_ratio(
         "ns-1:MACAddress",
         "ns:v1:X-API-Session",
         "ns-1:PublicSSHKeyValue",
-        "ns\u00e9:IPAddress",
+        r"ns\u00e9:IPAddress",
     ],
 )
 def test_many_unclosed_openings_do_not_backtrack(element: str) -> None:
