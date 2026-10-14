@@ -121,35 +121,53 @@ _ADDRESS_ELEMENTS = "NetworkAddress|IPAddress|PrimaryIPAddress|IPv6Address"
 #: fallback backtracking; each unclosed opening still scans to the next `>`.
 _ATTRS = r"""(?:[^>"'<]|"[^"<]*"|'[^'<]*')*"""
 _TAG_TAIL = rf"(?:{_ATTRS}(?<!/)>|(?!{_ATTRS}/>)[^>]*+>|[^>]*+(?<!/)>)"
-#: Elements whose whole text a rule replaces with a placeholder token: the element name
-#: pattern and the token. The same entry builds the scrub rule and its `leaks()` backstop.
-#: Serial and device-ID names match in any case, and after any namespace prefix of name
-#: characters: neither is significant to whoever reads the value, so neither may hide it.
-_NS_PREFIX = r"(?:[\w.-]+:)?"
-_SESSION_ELEMENT = ("(?i:X-API-Session)", "REDACTED-SESSION")
-_DEVICE_ID_ELEMENT = (rf"{_NS_PREFIX}(?i:{_DEVICE_ID_ELEMENTS})", "REDACTED-DEVID")
-_SERIAL_ELEMENT = (rf"{_NS_PREFIX}(?i:(?:Logical)?SerialNumber)", "REDACTED-SERIAL")
+#: The `\u` escape `json.dumps` writes for a non-ASCII name character, as in `ns\u00e9:`;
+#: each further `json.dumps` doubles its backslash. An ASCII or whitespace escape
+#: (`\u0022`, `\u00a0`) never extends a prefix.
+_NAME_ESCAPE = r"\\++u(?!00[0-7]|(?i:{}))[0-9A-Fa-f]{{4}}".format(
+    "|".join(f"{c:04x}" for c in range(0x80, 0x10000) if chr(c).isspace())
+)
+#: Any number of namespace prefixes, `a:b:` too. A prefix character is an ASCII word
+#: character, `.` or `-`, or any non-ASCII character but a space, raw or escaped. A prefix
+#: is given back when the element name does not follow it: `<SerialNumber:x>` is still a
+#: `SerialNumber`. A scrub rule takes the prefix and name as one atomic group: the tag
+#: tail after the name ends at the same `>` whichever prefix matched, and retrying each
+#: one would scan the tail again per segment of `<SerialNumber:SerialNumber:...`.
+_NS_PREFIX = rf"(?:(?:[\w.-]|[^\x00-\x7f\s]|{_NAME_ESCAPE})++:)*"
+#: Elements whose whole text a rule replaces: the element name pattern and the text the
+#: rule writes. The same entry builds the scrub rule and its `leaks()` backstop. Names
+#: match in any case, after any namespace prefix: neither is significant to whoever
+#: reads the value, so neither may hide it.
+_SESSION_ELEMENT = (rf"{_NS_PREFIX}(?i:X-API-Session)", "<REDACTED-SESSION>")
+_SSH_KEY_ELEMENT = (
+    rf"{_NS_PREFIX}(?i:PublicSSHKeyValue|AuthorizedKeysValue)",
+    "<REDACTED-SSHKEY>",
+)
+_ADDRESS_ELEMENT = (rf"{_NS_PREFIX}(?i:{_ADDRESS_ELEMENTS})", PLACEHOLDER_IP)
+_DEVICE_ID_ELEMENT = (rf"{_NS_PREFIX}(?i:{_DEVICE_ID_ELEMENTS})", "<REDACTED-DEVID>")
+_SERIAL_ELEMENT = (rf"{_NS_PREFIX}(?i:(?:Logical)?SerialNumber)", "<REDACTED-SERIAL>")
 
 
-def _element_rule(element: str, token: str) -> tuple[re.Pattern[str], str]:
-    """Replace the text of each *element* with *token*."""
-    return re.compile(rf"(<{element}\b{_TAG_TAIL})[^<]+"), rf"\g<1><{token}>"
+def _element_rule(element: str, value: str) -> tuple[re.Pattern[str], str]:
+    """Replace the text of each *element* with *value*."""
+    return re.compile(rf"(<(?>{element}\b){_TAG_TAIL})[^<]+"), rf"\g<1>{value}"
 
 
-def _element_leak(element: str, token: str) -> re.Pattern[str]:
-    """Any text that ends at a closing *element* tag and is not the escaped *token*.
+def _element_leak(element: str, value: str) -> re.Pattern[str]:
+    """Any text that ends at a closing *element* tag and is not *value* as written.
 
+    An XML body escapes a `<REDACTED-...>` token, so the text allowed is *value* with
+    `<` and `>` escaped. Unescaped, the token is a tag, and the text between it and
+    the closing tag is empty; an address placeholder is the same text either way.
     The closing tag is found, not the opening one, so a malformed opening tag the
-    scrub rule could not end does not hide the value. Unescaped, the token is a tag,
-    and the text between it and the closing tag is empty. Only what ends at the
+    scrub rule could not end does not hide the value. Only what ends at the
     closing tag is checked: a CDATA section there is a leak whatever it holds, but
     text or CDATA followed by a child element, comment or processing instruction is
     not seen. A run starts only after a `<` or `>` and never backtracks, so the scan
     stays linear in the corpus.
     """
-    return re.compile(
-        rf"(?:(?<![^<>])(?!&lt;{token}&gt;<)[^<>]++|\]\]>)(?=</{element}\b)"
-    )
+    written = re.escape(value.replace("<", "&lt;").replace(">", "&gt;"))
+    return re.compile(rf"(?:(?<![^<>])(?!{written}<)[^<>]++|\]\]>)(?=</{element}\b)")
 
 
 #: The JSON escapes a value can follow: `\\`, `\n` or `\u00e9`. A lookbehind must be
@@ -235,12 +253,7 @@ def _mac_element(match: re.Match[str]) -> str:
 SECRET_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     # Both key elements are redacted whole; an SSH key in free text loses its body
     # and its comment, which is conventionally user@host, up to the next `<`.
-    (
-        re.compile(
-            rf"(<(?:\w+:)?(?:PublicSSHKeyValue|AuthorizedKeysValue)\b{_TAG_TAIL})[^<]+"
-        ),
-        r"\g<1><REDACTED-SSHKEY>",
-    ),
+    _element_rule(*_SSH_KEY_ELEMENT),
     (
         re.compile(
             r"\b(ssh-(?:rsa|ed25519|dss)|ecdsa-sha2-[\w-]+|sk-[\w@.-]+)"
@@ -268,10 +281,7 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
         ),
         HMC_HOST,
     ),
-    (
-        re.compile(rf"(<(?:\w+:)?(?:{_ADDRESS_ELEMENTS})\b{_TAG_TAIL})[^<]+"),
-        rf"\g<1>{PLACEHOLDER_IP}",
-    ),
+    _element_rule(*_ADDRESS_ELEMENT),
     (re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"), PLACEHOLDER_IP),
     # Anywhere, even inside `1eU8375.42A.XXXXXXX-V100-C3`; the slot suffix after the
     # prefix is generic and code joins on it, so it stays.
@@ -296,7 +306,7 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     # value: text after it belongs to its parent. This rule leaves it, and `_MAC_LEAK`
     # reports it only when it ends at a closing MAC tag.
     (
-        re.compile(rf"(<{_NS_PREFIX}(?i:\w*MACAddress\w*+){_TAG_TAIL})([^<]+)"),
+        re.compile(rf"(<(?>{_NS_PREFIX}(?i:\w*MACAddress\w*+)){_TAG_TAIL})([^<]+)"),
         _mac_element,
     ),
     (re.compile(r"(?i)\b(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\b"), "00:00:00:00:00:00"),
@@ -324,7 +334,13 @@ ALWAYS_LEAKS = (
     # Element text a scrub rule missed: a malformed opening tag, a `<` in the value.
     *(
         _element_leak(*element)
-        for element in (_SESSION_ELEMENT, _DEVICE_ID_ELEMENT, _SERIAL_ELEMENT)
+        for element in (
+            _SESSION_ELEMENT,
+            _SSH_KEY_ELEMENT,
+            _ADDRESS_ELEMENT,
+            _DEVICE_ID_ELEMENT,
+            _SERIAL_ELEMENT,
+        )
     ),
     _MAC_LEAK,
 )
