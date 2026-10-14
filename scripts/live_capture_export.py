@@ -121,6 +121,32 @@ _ADDRESS_ELEMENTS = "NetworkAddress|IPAddress|PrimaryIPAddress|IPv6Address"
 #: fallback backtracking; each unclosed opening still scans to the next `>`.
 _ATTRS = r"""(?:[^>"'<]|"[^"<]*"|'[^'<]*')*"""
 _TAG_TAIL = rf"(?:{_ATTRS}(?<!/)>|(?!{_ATTRS}/>)[^>]*+>|[^>]*+(?<!/)>)"
+#: Elements whose whole text a rule replaces with a placeholder token: the element name
+#: pattern and the token. The same entry builds the scrub rule and its `leaks()` backstop.
+_SESSION_ELEMENT = ("(?i:X-API-Session)", "REDACTED-SESSION")
+_DEVICE_ID_ELEMENT = (rf"(?:\w+:)?(?:{_DEVICE_ID_ELEMENTS})", "REDACTED-DEVID")
+_SERIAL_ELEMENT = (r"(?:\w+:)?(?:Logical)?SerialNumber", "REDACTED-SERIAL")
+
+
+def _element_rule(element: str, token: str) -> tuple[re.Pattern[str], str]:
+    """Replace the text of each *element* with *token*."""
+    return re.compile(rf"(<{element}\b{_TAG_TAIL})[^<]+"), rf"\g<1><{token}>"
+
+
+def _element_leak(element: str, token: str) -> re.Pattern[str]:
+    """Any text that ends at a closing *element* tag and is not the escaped *token*.
+
+    The closing tag is found, not the opening one, so a malformed opening tag the
+    scrub rule could not end does not hide the value. Unescaped, the token is a tag,
+    and the text between it and the closing tag is empty. Only what ends at the
+    closing tag is checked: a CDATA section there is a leak whatever it holds, but
+    text or CDATA followed by a child element, comment or processing instruction is
+    not seen. A run starts only after a `<` or `>` and never backtracks, so the scan
+    stays linear in the corpus.
+    """
+    return re.compile(
+        rf"(?:(?<![^<>])(?!&lt;{token}&gt;<)[^<>]++|\]\]>)(?=</{element}\b)"
+    )
 
 
 def _ipv6(match: re.Match[str]) -> str:
@@ -167,10 +193,7 @@ SECRET_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
         r"\g<1> <REDACTED-SSHKEY>",
     ),
     (re.compile(r"(?i)\b(x-api-session=)[^,}\s]+"), r"\g<1><REDACTED-SESSION>"),
-    (
-        re.compile(rf"(?i)(<X-API-Session\b{_TAG_TAIL})[^<]+"),
-        r"\g<1><REDACTED-SESSION>",
-    ),
+    _element_rule(*_SESSION_ELEMENT),
     (
         re.compile(r"(?i)\b(JSESSIONID|CCFWSESSION|LtpaToken2)=[^;,}\s]+"),
         r"\g<1>=<REDACTED-COOKIE>",
@@ -200,10 +223,7 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     # A `-L<hex>` segment of a location suffix is a disk WWN or RAID array id; `-L0`
     # and other short logical-unit segments stay.
     (re.compile(r"(?<=-)L[0-9A-F]{8,}(?=-L|\b)"), "L<REDACTED-DEVID>"),
-    (
-        re.compile(rf"(<(?:\w+:)?(?:{_DEVICE_ID_ELEMENTS})\b{_TAG_TAIL})[^<]+"),
-        r"\g<1><REDACTED-DEVID>",
-    ),
+    _element_rule(*_DEVICE_ID_ELEMENT),
     # A quoted CSV field holds every value up to its closing quote: "wwpns=a,b".
     (
         re.compile(r'(?i)"(unique_id|udid|wwpns?|wwnn|serial_num)=[^"\n]*"'),
@@ -213,10 +233,7 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
         re.compile(r"(?i)\b(unique_id|udid|wwpns?|wwnn|serial_num)=[^,\n\"]+"),
         r"\g<1>=<REDACTED-DEVID>",
     ),
-    (
-        re.compile(rf"(<(?:\w+:)?(?:Logical)?SerialNumber\b{_TAG_TAIL})[^<]+"),
-        r"\g<1><REDACTED-SERIAL>",
-    ),
+    _element_rule(*_SERIAL_ELEMENT),
     (re.compile(r"\b(\d{4}-[0-9A-Z]{3}\*)[0-9A-Z]{7}\b"), r"\g<1><REDACTED-SERIAL>"),
     # Every element naming a MAC address, `MACAddressPrefix` and `MacAddressValue` too.
     (re.compile(r"(?i)(<(?:\w+:)?\w*MACAddress\w*[^>]*>)([^<]+)"), _mac_element),
@@ -242,6 +259,11 @@ ALWAYS_LEAKS = (
     ),
     # A long upper-case hex run is a volume id or WWN; no UUID, etag or count is one.
     re.compile(r"(?<![0-9A-Za-z])[0-9A-F]{20,}"),
+    # Element text a scrub rule missed: a malformed opening tag, a `<` in the value.
+    *(
+        _element_leak(*element)
+        for element in (_SESSION_ELEMENT, _DEVICE_ID_ELEMENT, _SERIAL_ELEMENT)
+    ),
 )
 #: Elements whose values are fixed HMC vocabulary (task names such as `View HMC Logs`).
 #: A candidate name found inside one is HMC wording, never a private name.
