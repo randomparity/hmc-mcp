@@ -68,6 +68,15 @@ def _write_toml(path: Path, content: str) -> Path:
     return path
 
 
+def _unwrapped(output: str) -> str:
+    """Join Rich's line wraps so a phrase matches wherever the temp path ends (#1536).
+
+    The error line carries ``tmp_path``, whose length varies by host, ``TMPDIR``
+    and xdist worker, so Rich's 80-column wrap can land inside any phrase after it.
+    """
+    return " ".join(output.split())
+
+
 # ---------------------------------------------------------------------------
 # config init
 # ---------------------------------------------------------------------------
@@ -276,7 +285,7 @@ def test_show_unreadable_config_file_error(tmp_path, monkeypatch):
         cfg.chmod(0o600)
     assert result.exit_code == 1
     assert result.exception is None or isinstance(result.exception, SystemExit)
-    assert "cannot be read" in result.output
+    assert "cannot be read" in _unwrapped(result.output)
 
 
 def test_show_non_table_profiles_key_error(tmp_path, monkeypatch):
@@ -288,8 +297,7 @@ def test_show_non_table_profiles_key_error(tmp_path, monkeypatch):
         result = RUNNER.invoke(cli.app, ["--profile", "prod", "config", "show"])
     assert result.exit_code == 1
     assert result.exception is None or isinstance(result.exception, SystemExit)
-    # Substring stops short of the table/of wrap: rich hard-folds at 80 columns.
-    assert "'profiles' must be a" in result.output
+    assert "'profiles' must be a" in _unwrapped(result.output)
 
 
 def test_list_unreadable_config_file_error(tmp_path, monkeypatch):
@@ -304,7 +312,7 @@ def test_list_unreadable_config_file_error(tmp_path, monkeypatch):
         cfg.chmod(0o600)
     assert result.exit_code == 1
     assert result.exception is None or isinstance(result.exception, SystemExit)
-    assert "cannot be read" in result.output
+    assert "cannot be read" in _unwrapped(result.output)
 
 
 def test_list_non_table_profiles_key_error(tmp_path, monkeypatch):
@@ -320,7 +328,7 @@ def test_list_non_table_profiles_key_error(tmp_path, monkeypatch):
         result = RUNNER.invoke(cli.app, ["config", "list"])
     assert result.exit_code == 1
     assert result.exception is None or isinstance(result.exception, SystemExit)
-    assert "'profiles' must be a" in result.output
+    assert "'profiles' must be a" in _unwrapped(result.output)
 
 
 def test_list_non_table_nicknames_key_error(tmp_path, monkeypatch):
@@ -340,7 +348,7 @@ def test_list_non_table_nicknames_key_error(tmp_path, monkeypatch):
         result = RUNNER.invoke(cli.app, ["config", "list"])
     assert result.exit_code == 1
     assert result.exception is None or isinstance(result.exception, SystemExit)
-    assert "'nicknames' must be a" in result.output
+    assert "'nicknames' must be a" in _unwrapped(result.output)
 
 
 def test_show_no_profile_no_default_error(tmp_path, monkeypatch):

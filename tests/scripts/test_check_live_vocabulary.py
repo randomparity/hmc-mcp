@@ -163,6 +163,71 @@ def test_documented_job_statuses_mark_what_was_captured() -> None:
     assert all(source.startswith("docs/refs/") for source in jobs["sources"])
 
 
+#: #1516's re-derived-vocabularies table: each element and its enum. A stated binding outside it
+#: needs a source of its own, cited in the stated list (#1529).
+STATED_BY_1516 = {
+    "AIXCapable": "AIXCapability.Enum",
+    "ConfiguredOptions": "SRIOVPhysicalPortOptions.Enum",
+    "CurrentManufacturingDefaulConfigurationtBootMode": "PartitionBootMode.Enum",
+    "CurrentManufacturingDefaultConfigurationSource": "IPLSource.Enum",
+    "CurrentOptions": "SRIOVPhysicalPortOptions.Enum",
+    "CurrentPowerOnSide": "ServiceProcessorSide.Enum",
+    "CurrentPowerSavingMode": "EnergyManagementModeType.Enum",
+    "CurrentSharingMode": "LogicalPartitionProcessorSharingMode.Enum",
+    "PartitionType": "LogicalPartitionEnvironment.Enum",
+    "PendingManufacturingDefaulConfigurationtBootMode": "PartitionBootMode.Enum",
+    "PendingManufacturingDefaultConfigurationSource": "IPLSource.Enum",
+    "PendingPowerOnLogicalPartitionStartPolicy": "PowerOnStartPolicy.Enum",
+    "PendingPowerOnSide": "ServiceProcessorSide.Enum",
+    "PortCapabilities": "SRIOVPortCapability.Enum",
+    "PowerOnLogicalPartitionStartPolicy": "PowerOnStartPolicy.Enum",
+    "RequiredPowerSavingMode": "EnergyManagementModeType.Enum",
+    "SupportedOptions": "SRIOVPhysicalPortOptions.Enum",
+    "SupportedPowerSavingModeTypes": "EnergyManagementModeType.Enum",
+}
+
+
+def test_stated_bindings_hold_every_captured_value() -> None:
+    """Each stated binding is the only one for its element, and admits every capture (#1529).
+
+    A stated binding replaces every inferred one for its local name in every vocabulary,
+    so one bound to the wrong object's enum would reject values a firmware answered.
+    """
+    directory = Path(__file__).parents[2] / guard.VOCABULARY_DIR
+    stated = json.loads((directory / "enums-stated-bindings.json").read_text())
+    assert stated["elements"] == STATED_BY_1516
+    assert set(stated["evidence"]) == set(STATED_BY_1516)
+    types: dict[str, set[str]] = {}
+    for path in directory.glob("enums-*.json"):
+        if path.name == "enums-stated-bindings.json":
+            continue
+        enum_list = json.loads(path.read_text())
+        for name, values in enum_list["types"].items():
+            types.setdefault(name, set()).update(values)
+        assert not STATED_BY_1516.keys() & enum_list.get("elements", {}), path.name
+    for path in directory.glob("v*.json"):
+        rest = json.loads(path.read_text())["rest"]
+        for element, enum in stated["elements"].items():
+            inferred = rest["element_enums"].get(element, enum)
+            assert inferred == enum, (path.name, element)
+            seen = {v for v in rest["values"].get(element, []) if v[:1] != "<"}
+            assert seen <= types[enum], (path.name, element, seen - types[enum])
+
+
+def test_partition_type_is_checked_by_its_stated_binding() -> None:
+    """No vocabulary infers `PartitionType`'s enum; the stated list binds it (#1529)."""
+    evidence = guard.load_evidence(Path(__file__).parents[2])
+    text = (
+        'A = "<PartitionType>AIX/Linux</PartitionType>"\n'
+        'B = "<PartitionType>NotAnEnvironment</PartitionType>"\n'
+    )
+    found = guard.literal_violations("t.py", text, evidence)
+    assert [(v.subject, v.value) for v in found] == [
+        ("PartitionType", "NotAnEnvironment")
+    ]
+    assert evidence.bindings["PartitionType"] == "LogicalPartitionEnvironment.Enum"
+
+
 def test_load_evidence_refuses_an_empty_directory(tmp_path: Path) -> None:
     (tmp_path / guard.VOCABULARY_DIR).mkdir(parents=True)
     with pytest.raises(FileNotFoundError):
