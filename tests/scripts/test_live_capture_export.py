@@ -800,6 +800,37 @@ def test_many_unclosed_openings_do_not_backtrack(element: str) -> None:
         assert _cost_ratio(rule, scan, replacement, body) < 10
 
 
+def _cpu_time(rule: re.Pattern[str], replacement: Any, body: str) -> float:
+    """The fastest of three CPU times of *rule* over *body*, which it leaves unchanged."""
+    runs = []
+    for _ in range(3):
+        started = time.process_time()
+        assert rule.sub(replacement, body) == body
+        runs.append(time.process_time() - started)
+    return min(runs)
+
+
+@pytest.mark.parametrize("element", ["SerialNumber", "IPAddress", "MACAddress"])
+def test_one_opening_with_many_prefixes_does_not_backtrack(element: str) -> None:
+    """Regression #1588: giving back each prefix re-ran the tag tail once per segment.
+
+    A body of one unclosed opening whose prefixes all spell the element costs about
+    what one unclosed opening of the same length does; retrying each split cost 100x+.
+    """
+    body = "<" + f"{element}:" * 3_000
+    flat = f"<{element} " + "x" * (len(body) - len(element) - 2)
+    tail_rules = [
+        (rule, replacement)
+        for rule, replacement in (*export.SECRET_RULES, *export.IDENTIFIER_RULES)
+        if export._TAG_TAIL in rule.pattern and rule.search(f"<{element}>x<")
+    ]
+    assert tail_rules
+    for rule, replacement in tail_rules:
+        assert _cpu_time(rule, replacement, body) < 10 * max(
+            _cpu_time(rule, replacement, flat), 1e-4
+        )
+
+
 def test_uuid_tokens_keep_case_and_are_consistent() -> None:
     corpus = export.tokenize_records(_records(_ssh("lssyscfg", LPAR_UUID.lower())))
     upper = corpus[1]["path"].rsplit("/", 1)[1]

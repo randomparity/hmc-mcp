@@ -123,14 +123,16 @@ _ATTRS = r"""(?:[^>"'<]|"[^"<]*"|'[^'<]*')*"""
 _TAG_TAIL = rf"(?:{_ATTRS}(?<!/)>|(?!{_ATTRS}/>)[^>]*+>|[^>]*+(?<!/)>)"
 #: The `\u` escape `json.dumps` writes for a non-ASCII name character, as in `ns\u00e9:`;
 #: each further `json.dumps` doubles its backslash. An ASCII or whitespace escape
-#: (`\u0022`, `\u00a0`) is never part of a name.
+#: (`\u0022`, `\u00a0`) never extends a prefix.
 _NAME_ESCAPE = r"\\++u(?!00[0-7]|(?i:{}))[0-9A-Fa-f]{{4}}".format(
     "|".join(f"{c:04x}" for c in range(0x80, 0x10000) if chr(c).isspace())
 )
 #: Any number of namespace prefixes, `a:b:` too. A prefix character is an ASCII word
 #: character, `.` or `-`, or any non-ASCII character but a space, raw or escaped. A prefix
 #: is given back when the element name does not follow it: `<SerialNumber:x>` is still a
-#: `SerialNumber`.
+#: `SerialNumber`. A scrub rule takes the prefix and name as one atomic group: the tag
+#: tail after the name ends at the same `>` whichever prefix matched, and retrying each
+#: one would scan the tail again per segment of `<SerialNumber:SerialNumber:...`.
 _NS_PREFIX = rf"(?:(?:[\w.-]|[^\x00-\x7f\s]|{_NAME_ESCAPE})++:)*"
 #: Elements whose whole text a rule replaces: the element name pattern and the text the
 #: rule writes. The same entry builds the scrub rule and its `leaks()` backstop. Names
@@ -148,7 +150,7 @@ _SERIAL_ELEMENT = (rf"{_NS_PREFIX}(?i:(?:Logical)?SerialNumber)", "<REDACTED-SER
 
 def _element_rule(element: str, value: str) -> tuple[re.Pattern[str], str]:
     """Replace the text of each *element* with *value*."""
-    return re.compile(rf"(<{element}\b{_TAG_TAIL})[^<]+"), rf"\g<1>{value}"
+    return re.compile(rf"(<(?>{element}\b){_TAG_TAIL})[^<]+"), rf"\g<1>{value}"
 
 
 def _element_leak(element: str, value: str) -> re.Pattern[str]:
@@ -304,7 +306,7 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     # value: text after it belongs to its parent. This rule leaves it, and `_MAC_LEAK`
     # reports it only when it ends at a closing MAC tag.
     (
-        re.compile(rf"(<{_NS_PREFIX}(?i:\w*MACAddress\w*+){_TAG_TAIL})([^<]+)"),
+        re.compile(rf"(<(?>{_NS_PREFIX}(?i:\w*MACAddress\w*+)){_TAG_TAIL})([^<]+)"),
         _mac_element,
     ),
     (re.compile(r"(?i)\b(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\b"), "00:00:00:00:00:00"),
