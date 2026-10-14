@@ -386,6 +386,40 @@ SCRUBBED_ELEMENTS = [
     ("UniqueDeviceID", "REDACTED-DEVID"),
     ("ns:WWPN", "REDACTED-DEVID"),
 ]
+#: Names the scrub rules matched only in their declared case and after a `\w+:` prefix
+#: (#1572): neither the case nor the prefix may hide the value.
+VARIANT_ELEMENTS = [
+    ("serialnumber", "REDACTED-SERIAL"),
+    ("ns-1:SerialNumber", "REDACTED-SERIAL"),
+    ("ns.v1:LOGICALSERIALNUMBER", "REDACTED-SERIAL"),
+    ("uniquedeviceid", "REDACTED-DEVID"),
+    ("ns-1:UniqueDeviceID", "REDACTED-DEVID"),
+    ("ns.v1:wwpn", "REDACTED-DEVID"),
+]
+SCRUBBED_ELEMENTS += VARIANT_ELEMENTS
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize(("element", "token"), VARIANT_ELEMENTS)
+def test_element_name_case_and_prefix_are_scrubbed(
+    element: str, token: str, encode: Any
+) -> None:
+    """Regression #1572: `<serialnumber>` and `<ns-1:SerialNumber>` were exported."""
+    tok = export.Tokenizer({}, set())
+    body = encode(f'<Root><{element} kb="CUR">SYN-77Q</{element}></Root>')
+    scrubbed = tok.tokenize(body)
+    # A body that is XML escapes the token, so it does not open an element.
+    placeholder = f"&lt;{token}&gt;" if encode is str else f"<{token}>"
+    assert scrubbed == body.replace("SYN-77Q", placeholder)
+    assert tok.leaks(scrubbed) == []
+
+
+@pytest.mark.parametrize("gap", [" ", ">", '"'])
+def test_namespace_prefix_does_not_span_a_tag(gap: str) -> None:
+    """A prefix is name characters only: `x:SerialNumber` in another tag is not one."""
+    tok = export.Tokenizer({}, set())
+    body = f"<Note{gap}x:SerialNumber>SYN-77Q</Note>"
+    assert tok.tokenize(body) == body
 
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
