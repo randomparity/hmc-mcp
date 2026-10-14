@@ -509,11 +509,13 @@ def test_scrubbed_mac_element_value_is_not_a_leak(
     assert tok.leaks(json.dumps(scrubbed)) == []
 
 
-#: MAC element text the scrub rule leaves: the opening tag is gone or never closes, a
+#: MAC element text the scrub rule leaves: the opening tag is gone (before a value and
+#: before a backslash, which the JSON scan sees doubled) or never closes, a
 #: `<` inside the value stops the rule, a CDATA section, and a namespace prefix with a
 #: `-` in it, which the rule's `\w+:` does not match.
 UNSCRUBBED_MAC = [
     f"<Adapter>{MAC}</MACAddress></Adapter>",
+    f"<Adapter>\\{MAC}</MACAddress></Adapter>",
     f'<Adapter><MACAddress kb="CUR"{MAC}</MACAddress></Adapter>',
     "<Adapter><MACAddress>0A1B<2C3D4E5F</MACAddress></Adapter>",
     f"<Adapter><MACAddress><![CDATA[{MAC}]]></MACAddress></Adapter>",
@@ -527,7 +529,36 @@ def test_mac_element_the_rule_misses_fails_closed(body: str) -> None:
         export.tokenize_records(_records(_rest("/e", body)))
 
 
-@pytest.mark.parametrize("raw", [*UNSCRUBBED_MAC, f"<MACAddress>\n{MAC}</MACAddress>"])
+#: Values joined to a word the rule does not zero: a `0x`, a JSON escape, a suffix.
+JOINED_MAC = [
+    f"0x{MAC}",
+    f"\n{MAC}",
+    f"\n{MAC[:4]}",
+    f"\x0b{MAC}",
+    f"\u00e9{MAC}",
+    f"{MAC}h",
+]
+
+
+@pytest.mark.parametrize("value", [f"0x{MAC}", f"{MAC}h", f"\u00e9{MAC}"])
+def test_mac_joined_to_a_word_fails_closed(value: str) -> None:
+    body = f"<Adapter><MACAddress>{value}</MACAddress></Adapter>"
+    with pytest.raises(export.LeakError):
+        export.tokenize_records(_records(_rest("/e", body)))
+
+
+@pytest.mark.parametrize("before", ["\x0b", "\b", "\f", "\\"])
+def test_zeroed_mac_after_a_json_escape_is_not_a_leak(before: str) -> None:
+    """The corpus is scanned as JSON, where these become `\\u000b`, `\\b` or `\\\\`."""
+    body = f"<Adapter><MACAddress>{before}{MAC}</MACAddress></Adapter>"
+    corpus = export.tokenize_records(_records(_rest("/e", body)))
+    assert corpus[-1]["body"] == body.replace(MAC, "000000000000")
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [*UNSCRUBBED_MAC, *(f"<MACAddress>{value}</MACAddress>" for value in JOINED_MAC)],
+)
 def test_mac_element_the_rule_misses_fails_closed_in_json(raw: str) -> None:
     """In a tool record's JSON, `\\n` joins `n` to the value and `\\b` never sees it start."""
     tool = {"kind": "tool", "step": "t", "tool": "t", "ok": True, "data": {"raw": raw}}
