@@ -596,6 +596,8 @@ async def test_a_delete_that_fails_for_another_reason_while_mounted_fails(arm):
     await _run(state, 16, 19)
 
     assert _while_mounted(state)["status"] == "FAIL"
+    delete = _observations(state)["media.delete"][0]
+    assert "refused-while-mounted" not in delete["assertions"]
 
 
 # ---------------------------------------------------------------------------
