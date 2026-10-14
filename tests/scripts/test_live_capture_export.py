@@ -470,6 +470,31 @@ def test_malformed_element_the_rules_miss_fails_closed_in_json(raw: str) -> None
         export.tokenize_records(_records(tool))
 
 
+def _json_twice(text: str) -> str:
+    return json.dumps(json.dumps(text))
+
+
+@pytest.mark.parametrize(
+    "encode", [str, json.dumps, _json_twice], ids=["raw", "json", "json-twice"]
+)
+@pytest.mark.parametrize(("element", "token"), SCRUBBED_ELEMENTS)
+@pytest.mark.parametrize("gap", [" ", "\n", "\r\n", "\t", " \r\n\t "])
+def test_cdata_before_whitespace_and_closing_tag_is_a_leak(
+    element: str, token: str, encode: Any, gap: str
+) -> None:
+    """#1590: whitespace after `]]>` does not hide the CDATA from the backstop.
+
+    The text run between `]]>` and the closing tag is what reports it; which
+    substring is reported is not pinned.
+    """
+    tok = export.Tokenizer({}, set())
+    scrubbed = tok.tokenize(
+        encode(f"<Root><{element}><![CDATA[SYN77Q]]>{gap}</{element}></Root>")
+    )
+    assert scrubbed is not None
+    assert tok.leaks(scrubbed) != []
+
+
 MAC = "0A1B2C3D4E5F"  # pragma: allowlist secret
 #: Names the MAC element rule scrubs: a prefix, a suffix, any case, a namespace.
 MAC_ELEMENTS = [
