@@ -237,15 +237,16 @@ def _reject_dot_segments(method: str, path: str) -> None:
                 )
 
 
-# The one job path the HMC documents and every captured SELF link uses:
-# `/rest/api/uom/jobs/{JobID}` (docs/refs/hmc-rest-api-p10/017-jobs.md). A read-side
+# The job paths the HMC documents and every captured SELF link uses:
+# `/rest/api/uom/jobs/{JobID}` (docs/refs/hmc-rest-api-p10/017-jobs.md) and
+# `/rest/api/templates/jobs/{JobID}` for template deployment jobs. A read-side
 # `jobs/{JobID}/{uuid}` link is reduced to it before this check. The per-operation
 # `.../do/{Op}/Job/{id}` form issue #95 accepted was never observed and is refused
 # (#1202).
 #
 # Both raw and decoded forms use this grammar. A decoded query or fragment
 # delimiter is unsafe in a prefix too, not just in the identifier (ADR 0152).
-_JOB_PATH = re.compile(r"/rest/api/uom/jobs/[^/?#]+")
+_JOB_PATH = re.compile(r"/rest/api/(?:uom|templates)/jobs/[^/?#]+")
 
 
 def _reject_non_job_path(path: str, argument: str) -> None:
@@ -1513,7 +1514,10 @@ class HMCClient(
         applies (ADR 0152).
         """
         path = _job_request_path(job_id, job_href)
-        xml = await self._web_get(path)
+        if "/templates/jobs/" in path:
+            xml = await self._templates_get(path)
+        else:
+            xml = await self._web_get(path)
         if not xml:
             return None
         entries = _parse_feed(xml, path)
