@@ -679,7 +679,7 @@ def _validate_observation(
 ) -> None:
     """Validate one format 4 observation against its single closed shape.
 
-    `maturity.json` is hand-copied from the runner's output and hand-editable, so
+    `maturity.json` can be promoted from runner output or hand-edited, so
     every bound the runner applies on the way out is applied again here: the
     validator is the only check a hand-authored record ever meets.
     """
