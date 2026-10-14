@@ -966,8 +966,11 @@ class RunState:
         assertions: Sequence[Assertion],
         cleanup: str,
         data: Any,
+        surface: str = "mcp",
     ) -> None:
         """Record one scenario's asserted postconditions — the only promoting path."""
+        if surface not in {"mcp", "cli"}:
+            raise ValueError("verification surface must be mcp or cli")
         if not assertions:
             raise ValueError(
                 "a verified observation must assert at least one condition"
@@ -990,23 +993,28 @@ class RunState:
             note,
             result="passed" if passed else "failed",
         )
-        self.observations.append(
-            {
-                "operation": operation,
-                # ``tested_commit``, ``closure_fingerprint``, ``hmc_release``,
-                # ``hardware_family`` and ``schema_version`` are filled at emission;
-                # ``channel`` is not derivable there, so it is written here.
-                "observation": {
-                    "id": _observation_id(subtask, tool),
-                    "channel": "live",
-                    "result": "passed" if passed else "failed",
-                    "scenario": scenario,
-                    "observed_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "cleanup": cleanup,
-                    "assertions": [item.id for item in assertions if item.holds],
-                },
-            }
-        )
+        recorded = {
+            "operation": operation,
+            # ``tested_commit``, ``closure_fingerprint``, ``hmc_release``,
+            # ``hardware_family`` and ``schema_version`` are filled at emission;
+            # ``channel`` is not derivable there, so it is written here.
+            "observation": {
+                "id": _observation_id(
+                    subtask,
+                    tool.lower().replace(" ", "-") if surface == "cli" else tool,
+                ),
+                "channel": "live",
+                "result": "passed" if passed else "failed",
+                "scenario": scenario,
+                "observed_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "cleanup": cleanup,
+                "assertions": [item.id for item in assertions if item.holds],
+            },
+        }
+        if surface == "cli":
+            self.results[-1]["cli_observation"] = recorded
+        else:
+            self.observations.append(recorded)
 
 
 # ---------------------------------------------------------------------------
