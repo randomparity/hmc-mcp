@@ -13,6 +13,7 @@ the mock spoke plain HTTP, so every invocation failed with an SSL error.
 from __future__ import annotations
 
 import ipaddress
+import secrets
 import ssl
 import threading
 from datetime import UTC, datetime, timedelta
@@ -224,7 +225,7 @@ def _env(port: int, certificate_path: str) -> dict[str, str]:
         "HMC_HOST": "127.0.0.1",
         "HMC_PORT": str(port),
         "HMC_USER": "hscroot",
-        "HMC_PASSWORD": "abc123",  # fake credential for the mock HMC
+        "HMC_PASSWORD": secrets.token_hex(8),  # the mock HMC accepts any logon
         "HMC_VERIFY_SSL": "true",
         "SSL_CERT_FILE": certificate_path,
     }
@@ -297,3 +298,66 @@ def test_lpar_power_on_e2e(mock_hmc):
     body = power_on_request["body"].decode()
     assert "<OperationName" in body and ">PowerOn<" in body
     assert "<GroupName" in body and ">LogicalPartition<" in body
+
+
+# TLS trust (#1595): with HMC_VERIFY_SSL=true the client trusts its bundled roots
+# plus SSL_CERT_FILE / SSL_CERT_DIR, and nothing else. docs/configuration.md
+# ("TLS trust") documents exactly these four behaviours.
+
+
+def _systems_list(server, certificate_path, **overrides):
+    env = _env(server.server_address[1], certificate_path)
+    env.update(overrides)
+    return RUNNER.invoke(cli.app, ["systems", "list"], env=env)
+
+
+def test_ssl_cert_file_trust_verifies_hmc_e2e(mock_hmc):
+    server, certificate_path = mock_hmc
+
+    result = _systems_list(server, certificate_path)
+
+    assert result.exit_code == 0
+    assert "server1" in result.stdout
+
+
+def test_verify_ssl_without_trusted_ca_fails_e2e(mock_hmc, monkeypatch):
+    server, certificate_path = mock_hmc
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.delenv("SSL_CERT_DIR", raising=False)
+    env = _env(server.server_address[1], certificate_path)
+    del env["SSL_CERT_FILE"]
+
+    result = RUNNER.invoke(cli.app, ["systems", "list"], env=env)
+
+    assert result.exit_code != 0
+    assert "CERTIFICATE_VERIFY_FAILED" in result.output
+
+
+def test_requests_ca_bundle_alone_does_not_trust_e2e(mock_hmc, monkeypatch):
+    server, certificate_path = mock_hmc
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.delenv("SSL_CERT_DIR", raising=False)
+    env = _env(server.server_address[1], certificate_path)
+    del env["SSL_CERT_FILE"]
+    env["REQUESTS_CA_BUNDLE"] = certificate_path
+
+    result = RUNNER.invoke(cli.app, ["systems", "list"], env=env)
+
+    assert result.exit_code != 0
+    assert "CERTIFICATE_VERIFY_FAILED" in result.output
+
+
+def test_unterminated_pem_bundle_fails_to_load_e2e(mock_hmc, tmp_path):
+    server, certificate_path = mock_hmc
+    pem = Path(certificate_path).read_text().rstrip("\n")
+    joined = tmp_path / "joined.pem"
+    joined.write_text(pem + "\n" + pem + "\n")
+    unterminated = tmp_path / "unterminated.pem"
+    unterminated.write_text(pem + pem)
+
+    good = _systems_list(server, certificate_path, SSL_CERT_FILE=str(joined))
+    bad = _systems_list(server, certificate_path, SSL_CERT_FILE=str(unterminated))
+
+    assert good.exit_code == 0
+    assert bad.exit_code != 0
+    assert "PEM lib" in bad.output

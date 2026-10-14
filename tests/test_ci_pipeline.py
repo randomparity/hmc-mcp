@@ -48,7 +48,6 @@ BASELINED_FINDINGS = {
     "docs/capabilities/maturity.json": 59,
     "justfile": 1,
     "tests/app/test_cli.py": 2,
-    "tests/app/test_cli_e2e.py": 1,
     "tests/conftest.py": 1,
     # An enum type name long enough to read as Base64 entropy, once per enum list (#1202).
     "tests/fixtures/live/vocabulary/enums-v10r3-p8-8247-22l.json": 1,
