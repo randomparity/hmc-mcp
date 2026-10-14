@@ -20,6 +20,7 @@ import check_capability_inventory as inventory
 import live_test_baseline as baseline
 import live_test_preflight as preflight
 import live_test_runner as runner
+from live_test import cli
 
 from hmcpctl.config import HMCConfig
 
@@ -179,10 +180,43 @@ def prepare(args):
     return {
         "root": root,
         "claims": claims,
+        "cli_coverage": cli_coverage([row["operation"] for row in rows], [], ""),
         "branch": args.branch,
         "systems": systems,
         "authorization": authorization,
     }
+
+
+def cli_coverage(operations, documents, candidate):
+    coverage = dict.fromkeys(operations, "gap: CLI not verified in this window")
+    for document in documents:
+        run = document.get("run", {})
+        if (
+            run.get("tested_commit") != candidate
+            or run.get("tree_clean") is not True
+            or run.get("partial") is not False
+            or run.get("group") != "bare-cec"
+            or run.get("subtasks") != runner.SUBTASK_GROUPS["bare-cec"]
+        ):
+            continue
+        for row in document.get("results", []):
+            recorded = row.get("cli_observation", {})
+            operation = recorded.get("operation")
+            observation = recorded.get("observation", {})
+            if (
+                operation in coverage
+                and operation in cli.LABELS
+                and row.get("tool") == cli.LABELS[operation]
+                and row.get("subtask") == 35
+                and row.get("status") == "PASS"
+                and row.get("result") == "passed"
+                and observation.get("result") == "passed"
+                and observation.get("scenario") == cli.SCENARIO
+                and observation.get("cleanup") == "not-required"
+                and observation.get("assertions")
+            ):
+                coverage[operation] = "exercised: bare-cec CLI at candidate"
+    return coverage
 
 
 def authorize(plan, path):
@@ -384,6 +418,12 @@ def run_window(plan, execution):
         if not arm_ok or not recovery_ok or execution.cancelled:
             return False
         results.append(result)
+        if arm == "bare-cec":
+            plan["cli_coverage"] = cli_coverage(
+                plan["cli_coverage"],
+                [read_json(result, 16 * 1024 * 1024)],
+                plan["authorization"]["candidate"],
+            )
     for index, system, before, ids in captures:
         after = capture(execution, index, system, "after", ids)
         if not execution.run(
@@ -440,6 +480,7 @@ def main(argv=None):
                     {
                         "authorization": plan["authorization"],
                         "systems": plan["systems"],
+                        "cli_coverage": plan["cli_coverage"],
                         "phases": [
                             "baseline",
                             "preflight/arm/recovery",
@@ -480,6 +521,7 @@ def main(argv=None):
                             "candidate": plan["authorization"]["candidate"],
                             "arms": plan["authorization"]["arms"],
                             "phases": execution.phases,
+                            "cli_coverage": plan["cli_coverage"],
                         },
                         stream,
                         indent=2,

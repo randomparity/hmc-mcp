@@ -33,6 +33,9 @@ def window(tmp_path):
     git(root, "update-ref", "refs/remotes/origin/main", "HEAD")
     git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
     git(root, "switch", "-c", "fixture-window")
+    shutil.copyfile(
+        ROOT / "scripts/live_test/cli.py", root / "scripts/live_test/cli.py"
+    )
     script = ROOT / "scripts/run_release_window.py"
     if script.exists():
         shutil.copyfile(script, root / "scripts/run_release_window.py")
@@ -122,6 +125,7 @@ def test_dry_run_derives_arms_without_hardware_or_writes(window):
     result = invoke(window, "--dry-run")
     assert result.returncode == 0, result.stdout + result.stderr
     plan = json.loads(result.stdout)
+    assert plan["cli_coverage"]["system.get"].startswith("gap:")
     assert plan["authorization"]["arms"] == ["round2"]
     assert plan["authorization"]["authorized"] is False
     assert plan["authorization"]["vios_access"] is False
@@ -246,6 +250,7 @@ def test_real_cli_promotes_only_after_complete_window(window, tmp_path):
         report,
         [(p.name, p.read_text()[-2000:]) for p in output.glob("*.log")],
     )
+    assert report["cli_coverage"]["system.get"].startswith("gap:")
     assert report["passed"] is True
     assert events.read_text().splitlines() == [
         "baseline-discovery",
@@ -606,3 +611,126 @@ def test_profiles_requires_explicit_vios_authorization(tmp_path):
     data["vios_access"] = True
     path.write_text(json.dumps(data))
     command.authorize(plan, path)
+
+
+def test_cli_coverage_requires_exact_complete_candidate():
+    import run_release_window as window_module
+    from live_test import cli
+    from live_test.observation import Assertion
+
+    run = runner.RunState()
+    run.record_verified(
+        35,
+        cli.LABELS["job.get"],
+        operation="job.get",
+        scenario=cli.SCENARIO,
+        assertions=[Assertion("cli-job-matches-completed-activation", True)],
+        cleanup="not-required",
+        data={},
+        surface="cli",
+    )
+    document = {
+        "run": {
+            "tested_commit": "a" * 40,
+            "tree_clean": True,
+            "partial": False,
+            "group": "bare-cec",
+            "subtasks": runner.SUBTASK_GROUPS["bare-cec"],
+        },
+        "results": run.results,
+    }
+    assert window_module.cli_coverage(["job.get", "system.get"], [], "a" * 40) == {
+        "job.get": "gap: CLI not verified in this window",
+        "system.get": "gap: CLI not verified in this window",
+    }
+    assert (
+        window_module.cli_coverage(["job.get"], [document], "a" * 40)["job.get"]
+        == "exercised: bare-cec CLI at candidate"
+    )
+    for key, value in [
+        ("tested_commit", "b" * 40),
+        ("tree_clean", False),
+        ("partial", True),
+        ("group", "round2"),
+    ]:
+        changed = {**document, "run": {**document["run"], key: value}}
+        assert window_module.cli_coverage(["job.get"], [changed], "a" * 40)[
+            "job.get"
+        ].startswith("gap:")
+    run.results[0]["result"] = "failed"
+    assert window_module.cli_coverage(["job.get"], [document], "a" * 40)[
+        "job.get"
+    ].startswith("gap:")
+
+
+def test_window_collects_bare_cec_cli_coverage_after_recovery(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    import run_release_window as window_module
+    from live_test import cli
+    from live_test.observation import Assertion
+
+    candidate = "a" * 40
+    run = runner.RunState()
+    run.record_verified(
+        35,
+        cli.LABELS["job.get"],
+        operation="job.get",
+        scenario=cli.SCENARIO,
+        assertions=[Assertion("cli-job-matches-completed-activation", True)],
+        cleanup="not-required",
+        data={},
+        surface="cli",
+    )
+    (tmp_path / "test-results-bare-cec.json").write_text(
+        json.dumps(
+            {
+                "run": {
+                    "tested_commit": candidate,
+                    "tree_clean": True,
+                    "partial": False,
+                    "group": "bare-cec",
+                    "subtasks": runner.SUBTASK_GROUPS["bare-cec"],
+                },
+                "results": run.results,
+            }
+        )
+    )
+    tables = {name: [] for name in window_module.baseline.TABLES}
+    tables["system"] = [
+        {"name": "system", "type_model": "8375-42A", "serial_num": "anonymous"}
+    ]
+    snapshot = tmp_path / "snapshot.json"
+    window_module.baseline.write_snapshot(
+        snapshot,
+        {
+            "version": 1,
+            "scope": {"host": "hmc.example.test", "system": "system", "vios_ids": []},
+            "tables": tables,
+        },
+    )
+    monkeypatch.setattr(window_module, "capture", lambda *args: snapshot)
+    monkeypatch.setattr(window_module, "git", lambda *args: candidate)
+    phases = []
+
+    def child(label, *args, **kwargs):
+        phases.append(label)
+        return True
+
+    execution = SimpleNamespace(run=child, safe=True, cancelled=False)
+    plan = {
+        "root": tmp_path,
+        "claims": tmp_path / "claims.json",
+        "branch": "promotion/test",
+        "systems": ["system"],
+        "authorization": {"arms": ["bare-cec"], "candidate": candidate},
+        "cli_coverage": window_module.cli_coverage(
+            ["job.get", "system.get"], [], candidate
+        ),
+    }
+    assert window_module.run_window(plan, execution)
+    assert plan["cli_coverage"] == {
+        "job.get": "exercised: bare-cec CLI at candidate",
+        "system.get": "gap: CLI not verified in this window",
+    }
+    assert phases.index("bare-cec-recovery") < phases.index("promotion")
