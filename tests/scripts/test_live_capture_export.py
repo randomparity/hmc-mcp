@@ -519,6 +519,7 @@ UNSCRUBBED_MAC = [
     f'<Adapter><MACAddress kb="CUR"{MAC}</MACAddress></Adapter>',
     "<Adapter><MACAddress>0A1B<2C3D4E5F</MACAddress></Adapter>",
     f"<Adapter><MACAddress><![CDATA[{MAC}]]></MACAddress></Adapter>",
+    f"<Adapter><MACAddress><![CDATA[{MAC}]]>\n  </MACAddress></Adapter>",
     f"<Adapter><ns-1:MACAddress>{MAC}</ns-1:MACAddress></Adapter>",
 ]
 
@@ -537,6 +538,8 @@ JOINED_MAC = [
     f"\x0b{MAC}",
     f"\u00e9{MAC}",
     f"{MAC}h",
+    f"\f{MAC}h",
+    f"\u00e9{MAC}h",
 ]
 
 
