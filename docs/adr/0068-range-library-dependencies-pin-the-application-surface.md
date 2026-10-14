@@ -134,3 +134,5 @@ requirement at a time, so every grouped run recorded these as unresolvable and
 left them in place. Dependabot now ignores `fastmcp-slim`, `mcp` and
 `mcp-types`, and the coupled-bump procedure in `CONTRIBUTING.md` moves them by
 hand, together with the lock. The pins stay exact; only who moves them changes.
+An `ignore` also covers Dependabot security updates, which are not enabled for
+this repository; the procedure names the advisory check that stands in for them.

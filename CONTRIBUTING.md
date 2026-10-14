@@ -49,14 +49,17 @@ bumped by hand:
 - `mcp` and `mcp-types` are pinned in the `app` extra, and each `mcp` release requires the
   `mcp-types` release of the same version.
 
-The ignore also suppresses Dependabot security updates for these packages; Dependabot alerts
-still open. Bump them when a Dependabot alert or security advisory names one of them, when a
-change needs a newer release, and before cutting a release
-([releasing](docs/development.md#releasing)). To bump:
+Dependabot alerts and security updates are not enabled for this repository, so nothing reports
+an advisory against these packages automatically. Bump them before cutting a release
+([releasing](docs/development.md#releasing)), when a change needs a newer release, and when the
+GitHub Advisory Database lists an advisory for one of them. Check it at each release with
+`gh api "advisories?ecosystem=pip&affects=<package>"` for each of the three. To bump:
 
 1. Choose the newest release of each package that is at least 14 days old on PyPI, and check
    that the chosen `fastmcp-slim` accepts the chosen `mcp` and `mcp-types`.
 2. Edit all four pins in `pyproject.toml`; keep them exact.
-3. Run `uv lock`, then `just setup`. Never run a bare `uv sync`.
+3. Run `uv lock` with the uv version CI pins (`version:` under `setup-uv` in
+   `.github/workflows/ci.yml`), for example `uvx uv@<version> lock`, so the lock format does not
+   churn; then run `just setup`. Never run a bare `uv sync`.
 4. Run `just tool-docs` in case the rendered tool reference changed, then `just verify` and
    `UV_NO_SYNC=1 uv run --no-sync prek run --all-files`, and read every leg of the CI matrix.
