@@ -109,6 +109,13 @@ _DEVICE_ID_ELEMENTS = (
     "|WorldWideNodeName|WWNN"
 )
 _ADDRESS_ELEMENTS = "NetworkAddress|IPAddress|PrimaryIPAddress|IPv6Address"
+#: The rest of an opening tag, up to a `>` that does not close it as `/>`. A self-closing
+#: element has no value, and `[^<]+` would otherwise take the whitespace after it.
+#: Quoted runs are skipped whole, so a `/>` inside an attribute value cannot end the tag;
+#: a run is any `"`...`"`, which also spans the `\"`-escaped quotes of a JSON-encoded body.
+#: A malformed tag (an unbalanced quote, a `<` in a value) falls back to the first `>`,
+#: so its value is still scrubbed rather than exported.
+_TAG_TAIL = r"""(?:(?:[^>"'<]|"[^"<]*"|'[^'<]*')*|[^>]*)(?<!/)>"""
 
 
 def _ipv6(match: re.Match[str]) -> str:
@@ -143,7 +150,7 @@ SECRET_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     # and its comment, which is conventionally user@host, up to the next `<`.
     (
         re.compile(
-            r"(<(?:\w+:)?(?:PublicSSHKeyValue|AuthorizedKeysValue)\b[^>]*>)[^<]+"
+            rf"(<(?:\w+:)?(?:PublicSSHKeyValue|AuthorizedKeysValue)\b{_TAG_TAIL})[^<]+"
         ),
         r"\g<1><REDACTED-SSHKEY>",
     ),
@@ -155,7 +162,10 @@ SECRET_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
         r"\g<1> <REDACTED-SSHKEY>",
     ),
     (re.compile(r"(?i)\b(x-api-session=)[^,}\s]+"), r"\g<1><REDACTED-SESSION>"),
-    (re.compile(r"(?i)(<X-API-Session\b[^>]*>)[^<]+"), r"\g<1><REDACTED-SESSION>"),
+    (
+        re.compile(rf"(?i)(<X-API-Session\b{_TAG_TAIL})[^<]+"),
+        r"\g<1><REDACTED-SESSION>",
+    ),
     (
         re.compile(r"(?i)\b(JSESSIONID|CCFWSESSION|LtpaToken2)=[^;,}\s]+"),
         r"\g<1>=<REDACTED-COOKIE>",
@@ -175,7 +185,7 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
         HMC_HOST,
     ),
     (
-        re.compile(rf"(<(?:\w+:)?(?:{_ADDRESS_ELEMENTS})\b[^>]*>)[^<]+"),
+        re.compile(rf"(<(?:\w+:)?(?:{_ADDRESS_ELEMENTS})\b{_TAG_TAIL})[^<]+"),
         rf"\g<1>{PLACEHOLDER_IP}",
     ),
     (re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"), PLACEHOLDER_IP),
@@ -186,7 +196,7 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     # and other short logical-unit segments stay.
     (re.compile(r"(?<=-)L[0-9A-F]{8,}(?=-L|\b)"), "L<REDACTED-DEVID>"),
     (
-        re.compile(rf"(<(?:\w+:)?(?:{_DEVICE_ID_ELEMENTS})\b[^>]*>)[^<]+"),
+        re.compile(rf"(<(?:\w+:)?(?:{_DEVICE_ID_ELEMENTS})\b{_TAG_TAIL})[^<]+"),
         r"\g<1><REDACTED-DEVID>",
     ),
     # A quoted CSV field holds every value up to its closing quote: "wwpns=a,b".
@@ -199,7 +209,7 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
         r"\g<1>=<REDACTED-DEVID>",
     ),
     (
-        re.compile(r"(<(?:\w+:)?(?:Logical)?SerialNumber\b[^>]*>)[^<]+"),
+        re.compile(rf"(<(?:\w+:)?(?:Logical)?SerialNumber\b{_TAG_TAIL})[^<]+"),
         r"\g<1><REDACTED-SERIAL>",
     ),
     (re.compile(r"\b(\d{4}-[0-9A-Z]{3}\*)[0-9A-Z]{7}\b"), r"\g<1><REDACTED-SERIAL>"),
