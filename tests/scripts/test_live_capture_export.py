@@ -413,11 +413,13 @@ def test_scrubbed_element_value_is_not_a_leak(
     )
 
 
-#: Malformed input the scrub rules leave unscrubbed: a `/>` ends the opening tag, and
-#: a `<` inside the value stops the rule's match.
+#: Input the scrub rules leave unscrubbed: a `/>` ends the opening tag, a `<` inside the
+#: value stops the rule's match, text follows a placeholder, and a CDATA section.
 UNSCRUBBED_MALFORMED = [
     '<SerialNumber kb="x"/>SYN77Q</SerialNumber>',
     "<UniqueDeviceID>SYN<77Q</UniqueDeviceID>",
+    '<SerialNumber kb="x"/>&lt;REDACTED-SERIAL&gt;SYN77Q</SerialNumber>',
+    "<X-API-Session><![CDATA[SYN77Q]]></X-API-Session>",
 ]
 
 
