@@ -16,6 +16,10 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
 
 ### Added
 
+- Run an explicitly authorized release window with `scripts/run_release_window.py`,
+  composing named arms, recovery, strict baselines, private evidence and local promotion;
+  dry-run derives the claimed arms without hardware access (#1513).
+
 - Promote completed live-window sidecars with `scripts/promote_live_observations.py`,
   producing a new local branch with validated catalog, release snapshot, packaged
   projection and generated tool documentation; raw results stay uncommitted. Validated,
