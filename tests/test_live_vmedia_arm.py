@@ -87,6 +87,7 @@ class FakeHMC:
     unmount_leaves_adapter: bool = False
     guarded_delete_allowed: bool = False
     guarded_delete_error: str | None = None
+    guarded_refusal_drops_media: bool = False
     optical_id_missing: bool = False
     boot_order: dict[str, Any] = field(
         default_factory=lambda: {
@@ -155,6 +156,8 @@ class FakeHMC:
         if mounted and self.guarded_delete_error:
             return "FAIL", _failure(self.guarded_delete_error)
         if mounted and not self.guarded_delete_allowed:
+            if self.guarded_refusal_drops_media:
+                self.media.pop(name)
             return "FAIL", _failure(
                 f"HMCError: Cannot delete optical media {name!r}: it is mounted on "
                 f"1 LPAR(s): '{LPAR_UUID}'. Unmount the media first."
@@ -598,6 +601,19 @@ async def test_a_delete_that_fails_for_another_reason_while_mounted_fails(arm):
     assert _while_mounted(state)["status"] == "FAIL"
     delete = _observations(state)["media.delete"][0]
     assert "refused-while-mounted" not in delete["assertions"]
+
+
+@pytest.mark.asyncio
+async def test_a_refusal_whose_medium_left_the_listing_is_not_counted_refused(arm):
+    state, hmc = arm
+    hmc.guarded_refusal_drops_media = True
+
+    await _run(state, 16, 19)
+
+    assert _while_mounted(state)["status"] == "SKIP"
+    delete = _observations(state)["media.delete"][0]
+    assert "refused-while-mounted" not in delete["assertions"]
+    assert delete["result"] == "failed"
 
 
 # ---------------------------------------------------------------------------
