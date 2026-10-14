@@ -16,6 +16,9 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
 
 ### Added
 
+- Retain release claimed operations with their live-test arms and scenarios, beginning
+  with v0.1.0; `just capability-inventory` validates every retained set (#1511).
+
 - `scripts/live_test_baseline.py` captures private, read-only live-window baselines
   and compares independent before/after state, including explicitly selected VIOS
   mappings and volume-group volumes (#1479).

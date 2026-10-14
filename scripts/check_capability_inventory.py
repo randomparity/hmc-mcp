@@ -1218,6 +1218,118 @@ def _check_runtime_projection(path: Path, expected: str) -> list[str]:
     return []
 
 
+def _release_routes() -> set[tuple[str, str, str]]:
+    from live_test_runner import RELEASE_SCENARIO_SUBTASKS, SUBTASK_GROUPS, SUBTASKS
+
+    routes: set[tuple[str, str, str]] = set()
+    seen: set[str] = set()
+    for subtask in set(RELEASE_SCENARIO_SUBTASKS.values()):
+        module = inspect.getmodule(SUBTASKS[subtask])
+        if module is None:
+            raise InventoryError(f"cannot resolve release scenario subtask {subtask}")
+        tree = ast.parse(inspect.getsource(module))
+        constants = {
+            target.id: node.value.value
+            for node in tree.body
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+            for target in node.targets
+            if isinstance(target, ast.Name) and isinstance(node.value.value, str)
+        }
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "record_verified"
+            ):
+                continue
+            keywords = {keyword.arg: keyword.value for keyword in node.keywords}
+            scenario_node = keywords.get("scenario")
+            scenario = None
+            if isinstance(scenario_node, ast.Constant):
+                scenario = scenario_node.value
+            elif isinstance(scenario_node, ast.Name):
+                scenario = constants.get(scenario_node.id)
+            if (
+                not isinstance(scenario, str)
+                or RELEASE_SCENARIO_SUBTASKS.get(scenario) != subtask
+            ):
+                continue
+            operation = keywords.get("operation")
+            if not isinstance(operation, ast.Constant) or not isinstance(
+                operation.value, str
+            ):
+                raise InventoryError(
+                    f"release scenario {scenario}: operation must be a literal"
+                )
+            seen.add(scenario)
+            for arm, tasks in SUBTASK_GROUPS.items():
+                if subtask in tasks:
+                    routes.add((operation.value, arm, scenario))
+    if seen != set(RELEASE_SCENARIO_SUBTASKS):
+        raise InventoryError(
+            "release scenario registration has no record_verified declaration"
+        )
+    return routes
+
+
+def load_release_claims(
+    path: Path, operations: Collection[str]
+) -> list[dict[str, str]]:
+    document = load_json(path)
+    if path.suffix != ".json" or not re.fullmatch(
+        r"v[A-Za-z0-9][A-Za-z0-9.+-]*", path.stem
+    ):
+        raise InventoryError(f"{path}: invalid release claims filename")
+    if (
+        set(document) != {"format_version", "operations"}
+        or type(document.get("format_version")) is not int
+        or document["format_version"] != 1
+        or not isinstance(document.get("operations"), list)
+    ):
+        raise InventoryError(f"{path}: invalid release claims format")
+    routes = _release_routes()
+    seen: set[str] = set()
+    result: list[dict[str, str]] = []
+    for row in document["operations"]:
+        if (
+            not isinstance(row, dict)
+            or set(row) != {"operation", "arm", "scenario"}
+            or any(not isinstance(value, str) or not value for value in row.values())
+        ):
+            raise InventoryError(f"{path}: invalid release claim row")
+        operation, arm, scenario = (
+            row[key] for key in ("operation", "arm", "scenario")
+        )
+        if operation not in operations:
+            raise InventoryError(f"{path}: unknown claimed operation {operation!r}")
+        if operation in seen:
+            raise InventoryError(f"{path}: duplicate claimed operation {operation!r}")
+        if (operation, arm, scenario) not in routes:
+            raise InventoryError(
+                f"{path}: unknown release claim route {(operation, arm, scenario)!r}"
+            )
+        seen.add(operation)
+        result.append(row)
+    return result
+
+
+def _release_claim_errors(root: Path, operations: Collection[str]) -> list[str]:
+    errors: list[str] = []
+    try:
+        paths = sorted((root / "releases").iterdir())
+        files = [path for path in paths if path.suffix == ".json"]
+        if not files:
+            return [f"{root}: release claims directory must contain a JSON file"]
+        for path in files:
+            try:
+                load_release_claims(path, operations)
+            except InventoryError as error:
+                errors.append(str(error))
+    except OSError as error:
+        errors.append(f"{root}: cannot read release claims: {error}")
+    return errors
+
+
 def _maturity_records(inventory: Path) -> list[dict[str, object]]:
     operations = load_json(inventory / "maturity.json").get("operations")
     if not isinstance(operations, list):
@@ -1380,15 +1492,13 @@ def validate_inventory(
             errors.append(f"source unit {identity}: invalid sha256")
     unknown, proposed, pending = _validate_rows(rows, units, errors)
     _validate_operations(operation_records, rows, registry, repo_root, errors)
-    _validate_maturity(
-        maturity_records,
-        {
-            record.get("operation")
-            for record in operation_records
-            if isinstance(record.get("operation"), str)
-        },
-        errors,
-    )
+    operation_ids = {
+        record.get("operation")
+        for record in operation_records
+        if isinstance(record.get("operation"), str)
+    }
+    _validate_maturity(maturity_records, operation_ids, errors)
+    errors.extend(_release_claim_errors(root, operation_ids))
     return Report(
         tuple(errors),
         tuple(sorted(unknown)),
