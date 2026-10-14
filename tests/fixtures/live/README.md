@@ -122,7 +122,7 @@ From the 2026-09-30 prototype export: the `v10r3-p9` enum list and the V11R2
 pairs `v11r2-p9-9009-42a`, `v11r2-p10-9028-21b`, `v11r2-p11-9824-42a` and
 `v11r2-p11-9242-21b`. From the first run of the tracked sweep and exporter on
 2026-10-01: `v10r3-p8-8247-22l`, `v11r2-p10-9080-hex` and `v11r2-p10-9043-mrx`
-(two HMCs, combined with the since-removed `--fold`). From a 2026-10-13 sweep run
+(from one HMC; see below). From a 2026-10-13 sweep run
 while the 9043-MRU was `No Connection` for the whole capture:
 `v11r2-p11-9043-mru`, whose HMC-wide reads also hold the HMC's other managed
 systems. From the same session's sweep of a second
@@ -152,8 +152,20 @@ lists them. The raw captures, the corpus and the `export.sh` that re-runs the
 derivation are private, on the live-test host under
 `~/hmc-live-evidence/2026-10-13-q1310/`.
 
+`v11r2-p10-9043-mrx.json` holds one HMC's capture: the second of the two HMCs
+that manage that system. It was derived on 2026-10-01 from that HMC's corpus with
+`--fold` naming the first HMC's vocabulary, and `sources` gained an entry for the
+fold. The fold read only the prototype's top-level `rest_values` and
+`rest_endpoints` keys, which the exporter's own `rest.values` and
+`rest.endpoints` output never carries, and it added every endpoint it read with a
+null `accept` and `content_type`; none of the file's 51 endpoints has a null
+`accept`. The fold added nothing, so on 2026-10-14 (#1561) its `sources` entry was
+removed by hand. No row changed. Re-deriving the pair from both HMCs' raw
+captures, with one `--source` each, would add the first HMC's rows.
+
 Regenerate them with `scripts/live_capture_export.py`, as
 `docs/live-testing.md` ("Capturing an HMC's vocabulary") describes; do not edit
-them by hand, apart from an allowlist entry's `reason`. To add a new capture to
+them by hand, apart from an allowlist entry's `reason` (the #1561 `sources`
+correction above is the one exception). To add a new capture to
 a pair that already has a vocabulary, follow that page's "Adding a capture to an
 existing pair": add the raw file to the pair's export inputs and re-derive.
