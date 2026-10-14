@@ -60,6 +60,15 @@ the exports above.
 Connection sweep of its second HMC (V11R2 SP1120): `ManagedSystem/quick/All` while two of its
 eleven systems read `State` `no connection`; its `sys-R` tokens are local to this file.
 
+`rest-ms-quick-all-mtms-pair` and `rest-ms-entry-mtms-pair` (`capture` prefix `2026-10-14-q1534/`)
+come from an operator-authorized read-only window for #1534 on the V10R3 HMC above: its
+`ManagedSystem/quick/All` and the full `ManagedSystem/{uuid}` entry of one of the systems it lists,
+`sys-R1`, an 8375-42A, read in one session. Every token is shared by the pair and by no other
+file. Tokenizing replaces both serials with `<REDACTED-SERIAL>`, so the comparison that matters
+was made on the raw capture before export: for all sixteen systems, the type, model and serial
+quick/All's `MTMS` gives equal the full entry's `MachineTypeModelAndSerialNumber`. The entry's
+`WWPNPrefix` is zeroed, which the exporter does not do.
+
 ## Format
 
 Every file is a JSON object with these keys:
