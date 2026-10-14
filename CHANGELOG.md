@@ -55,7 +55,7 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
 
 - A failed vSCSI or virtual-optical mapping create no longer says that `list-mappings` does not
   show a leftover VIOS server adapter. A partition-scoped listing omits it, an unscoped one
-  shows it with no identity, and the optical-mapping listing never shows it. The note still
+  shows it with no identity, and `hmc_list_optical_mappings` never shows it. The note still
   points at the `lshwres` server-adapter listing (#1537).
 - `hmc_create_lpar` and `hmc_provision_lpar` refuse promptly when the target managed system is not
   operating. Their name check, and every listing or lookup that finds a system's partition or VIOS

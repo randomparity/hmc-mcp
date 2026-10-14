@@ -295,7 +295,7 @@ def _append_mapping(
 _ADAPTER_SIDE_EFFECT = (
     "A failed mapping create can leave a VIOS virtual SCSI server adapter with no "
     "target device. A partition-scoped list-mappings does not show it, an unscoped one "
-    "shows it with no identity, and the optical-mapping listing never shows it. List the "
+    "shows it with no identity, and hmc_list_optical_mappings never shows it. List the "
     "VIOS server adapters with "
     "`lshwres -r virtualio --rsubtype scsi -m <managed-system> --level lpar "
     "--filter lpar_names=<vios-name> -F slot_num,remote_lpar_name,remote_slot_num` "
