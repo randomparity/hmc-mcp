@@ -37,3 +37,26 @@ format. When a release is cut, its entry keeps those changes and gains scope, **
   release cannot ship without one. `tests/unit/test_changelog.py` enforces this.
 - By convention, not by a test, changes to the six-name `hmcpctl.api` facade (ADR 0118) are
   recorded under ordinary changelog categories; domain-module APIs remain pre-release.
+
+## Coupled dependency bumps
+
+Dependabot updates one requirement at a time, so it cannot move pins that must change together.
+`.github/dependabot.yml` therefore ignores `fastmcp-slim`, `mcp` and `mcp-types`, and they are
+bumped by hand:
+
+- `fastmcp-slim` is pinned twice, as `fastmcp-slim[server]` in the `app` extra and as
+  `fastmcp-slim[client]` in the `dev` group; both pins carry the same version.
+- `mcp` and `mcp-types` are pinned in the `app` extra, and each `mcp` release requires the
+  `mcp-types` release of the same version.
+
+The ignore also suppresses Dependabot security updates for these packages; Dependabot alerts
+still open. Bump them when a Dependabot alert or security advisory names one of them, when a
+change needs a newer release, and before cutting a release
+([releasing](docs/development.md#releasing)). To bump:
+
+1. Choose the newest release of each package that is at least 14 days old on PyPI, and check
+   that the chosen `fastmcp-slim` accepts the chosen `mcp` and `mcp-types`.
+2. Edit all four pins in `pyproject.toml`; keep them exact.
+3. Run `uv lock`, then `just setup`. Never run a bare `uv sync`.
+4. Run `just tool-docs` in case the rendered tool reference changed, then `just verify` and
+   `UV_NO_SYNC=1 uv run --no-sync prek run --all-files`, and read every leg of the CI matrix.

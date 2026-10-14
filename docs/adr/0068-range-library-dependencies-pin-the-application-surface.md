@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-08-22)
+Accepted (2026-08-22). Amended 2026-10-13 (#1539) — see *Amendment* below.
 
 ## Context
 
@@ -124,3 +124,13 @@ re-creates the exact install blocker this record removes.
 dependencies behind an extra fragments every import-bearing consumer's install
 command and leaves the bare install without its transport and validation
 dependencies.
+
+## Amendment (2026-10-13, #1539)
+
+Two sets of application-surface pins must move together: `fastmcp-slim` is
+pinned in both the `app` extra and the `dev` group, and each `mcp` release
+requires the `mcp-types` release of the same version. Dependabot updates one
+requirement at a time, so every grouped run recorded these as unresolvable and
+left them in place. Dependabot now ignores `fastmcp-slim`, `mcp` and
+`mcp-types`, and the coupled-bump procedure in `CONTRIBUTING.md` moves them by
+hand, together with the lock. The pins stay exact; only who moves them changes.
