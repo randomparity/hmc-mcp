@@ -190,6 +190,98 @@ HMCs ship self-signed certificates, so TLS verification is off by default and
 `hmcpctl` emits `TLSVerificationDisabledWarning` once per HMC host and
 `verify_ssl` setting source per process while it stays off. Reusable Python
 consumers can import that category from `hmcpctl.api` and filter it without
-suppressing unrelated `UserWarning`s. To verify the HMC certificate, install
-its CA locally and set `HMC_VERIFY_SSL=true` (`--verify-ssl`) — otherwise the
-HMC credentials are at risk of man-in-the-middle interception.
+suppressing unrelated `UserWarning`s. To verify the HMC certificate, trust its
+CA through `SSL_CERT_FILE` (see [TLS trust](#tls-trust)) and set
+`HMC_VERIFY_SSL=true` (`--verify-ssl`) — otherwise the HMC credentials are at risk of
+man-in-the-middle interception.
+
+## TLS trust
+
+With `HMC_VERIFY_SSL=true` the client trusts the CA roots bundled with its HTTP library
+plus whatever `SSL_CERT_FILE` or `SSL_CERT_DIR` names. Nothing else is consulted:
+
+- The operating-system trust store is not read. Installing a CA with
+  `security add-trusted-cert` (macOS) or `update-ca-certificates` (Linux) does not make
+  verification succeed for `hmcpctl`.
+- `REQUESTS_CA_BUNDLE` and `CURL_CA_BUNDLE` are ignored.
+
+Set the variable in the environment of the process that runs `hmcpctl`, including the
+launcher of an MCP server. It needs no root access and applies to every HMC that process
+connects to. An unreadable or malformed file is an error; it does not fall back to the
+bundled roots.
+
+### Choose what to trust
+
+An HMC presents either a certificate signed by an organizational CA or its own
+self-signed certificate.
+
+- **CA-signed.** Trust the CA. The root alone is enough when the HMC sends its
+  intermediate certificates, which `openssl s_client -connect HMC:443 -showcerts` shows.
+  Otherwise add the intermediate too. Your organization's certificate service
+  publishes them; the examples call them `root-cert-1.cer` and `intermediate-cert-2.cer`.
+- **Self-signed.** Trust the HMC's certificate itself. Fetch it, then compare its
+  fingerprint with one you obtained by another route (for example from the HMC
+  administrator) before relying on it:
+
+  ```bash
+  openssl s_client -connect HMC:443 -servername HMC </dev/null 2>/dev/null \
+    | openssl x509 -out hmc-cert.pem
+  openssl x509 -in hmc-cert.pem -noout -fingerprint -sha256
+  ```
+
+The certificate's names must still match the host you connect to; trusting it does not
+disable hostname checking.
+
+### Build a PEM bundle
+
+The client reads PEM, which starts with `-----BEGIN CERTIFICATE-----`. A downloaded `.cer`
+file may be PEM or DER; a PEM file prints as text and a DER file does not:
+
+```bash
+head -c 27 root-cert-1.cer      # PEM prints "-----BEGIN CERTIFICATE-----"
+openssl x509 -inform DER -in root-cert-1.cer -out root-cert-1.pem   # convert DER to PEM
+```
+
+Put the certificates in one file, with a newline after each. Some downloaded files end
+without a trailing newline, so a plain `cat a.pem b.pem` can join one `END` line to the
+next `BEGIN` line, and the file then fails to load with `[X509] PEM lib`:
+
+```bash
+for f in root-cert-1.pem intermediate-cert-2.pem; do cat "$f"; echo; done > hmc-ca-bundle.pem
+export SSL_CERT_FILE="$PWD/hmc-ca-bundle.pem"
+export HMC_VERIFY_SSL=true
+hmcpctl console info
+```
+
+`SSL_CERT_FILE` replaces the bundled roots rather than adding to them. To trust a public
+CA as well, include it in the file.
+
+### Reuse the system trust store
+
+To trust what the operating system already trusts, export it to a file once and point
+`SSL_CERT_FILE` at the copy. Re-export it when the system store changes.
+
+```bash
+# macOS
+security find-certificate -a -p /Library/Keychains/System.keychain \
+  /System/Library/Keychains/SystemRootCertificates.keychain > system-ca-bundle.pem
+```
+
+On Linux the distribution already maintains a bundle (for example
+`/etc/ssl/certs/ca-certificates.crt` on Debian and Ubuntu, or
+`/etc/pki/tls/certs/ca-bundle.crt` on RHEL-family systems); `update-ca-certificates` or
+`update-ca-trust` rebuilds it, and `SSL_CERT_FILE` can point straight at it.
+
+### Use a directory instead of a file
+
+`SSL_CERT_DIR` names a directory of certificates, each reachable through a hash-named
+entry. Create the entry with the subject hash:
+
+```bash
+mkdir -p ca-dir && cp root-cert-1.pem ca-dir/
+ln -s root-cert-1.pem "ca-dir/$(openssl x509 -in root-cert-1.pem -noout -subject_hash).0"
+export SSL_CERT_DIR="$PWD/ca-dir"
+```
+
+A directory holding only unhashed `.pem` files trusts nothing. When both variables are
+set, `SSL_CERT_FILE` is used.
