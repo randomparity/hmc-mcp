@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
+import ssl
 import warnings
 from collections.abc import Mapping
 from threading import Lock
@@ -19,6 +21,7 @@ from typing import Any, Literal, Self, cast, get_args
 from urllib.parse import quote, unquote, urlparse
 
 import httpx
+import truststore
 
 from ..audit import records as audit
 from ..config import HMCConfig, env_var_value
@@ -427,9 +430,21 @@ class HMCClient(
 
     def _new_http_client(self, port: int) -> httpx.AsyncClient:
         base_url = httpx.URL(self.config.base_url).copy_with(port=port)
+        verify: bool | ssl.SSLContext = self.config.verify_ssl
+        if (
+            self.config.verify_ssl
+            and self.config.trust_system_store
+            and not os.environ.get("SSL_CERT_FILE")
+        ):
+            # ADR 0222: use the OS trust store via truststore when both
+            # verify_ssl and trust_system_store are on and no explicit bundle
+            # is set. An explicit SSL_CERT_FILE takes precedence, so the
+            # operator can always pin a bundle without toggling this flag.
+            ctx = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            verify = ctx
         return httpx.AsyncClient(
             base_url=base_url,
-            verify=self.config.verify_ssl,
+            verify=verify,
             timeout=self.config.timeout,
             headers={
                 "X-Audit-Memento": self.config.effective_audit_memento,
