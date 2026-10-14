@@ -928,13 +928,14 @@ has one is added by re-deriving, never by merging its rows in by hand: rows
 merged by hand are lost the next time anyone re-runs the derivation.
 
 1. Keep the new raw capture beside the pair's other raw captures, in the private
-   directory its export script reads; `tests/fixtures/live/README.md` says where
-   a pair's retained inputs are kept. A pair without retained raw captures cannot
-   take a new one this way: re-capture it in full instead.
+   directory its export script reads. `tests/fixtures/live/README.md` names the
+   pairs whose raw captures and export script are retained, and where; treat a
+   pair it names none for as having none, and re-capture that pair in full
+   instead.
 2. Add the raw file to that script's `tokenize` inputs, and add a `--source`
    naming it to its `vocabulary` command.
 3. Re-run the script, so every raw capture is tokenized in one pass into one
    corpus and the enum list and vocabulary are derived from it.
-4. Read the diff and run `just live-vocabulary`, as in steps 3 and 4 above. A
-   re-derivation can drop rows only an input you no longer hold produced; list
-   them in the pull request.
+4. Read the diff and run `just live-vocabulary`, as in steps 3 and 4 of
+   "Capturing an HMC's vocabulary". A re-derivation can drop rows only an input
+   you no longer hold produced; list them in the pull request.
