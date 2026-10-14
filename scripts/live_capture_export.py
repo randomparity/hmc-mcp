@@ -692,7 +692,7 @@ _SERIAL_KEYS = {
 }
 #: The keywords a serial element keeps (#1593), kept here on the same terms: only as the
 #: whole value, in their documented case.
-_SERIAL_KEPT = frozenset({"none", "auto"})
+_SERIAL_KEPT = frozenset(_SERIAL_ELEMENT[2].split("|"))
 
 
 def _replace_value(value: Any, token: str, keep: frozenset[str] = frozenset()) -> Any:

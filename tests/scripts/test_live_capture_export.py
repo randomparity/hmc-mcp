@@ -1540,7 +1540,9 @@ def test_tool_output_identifiers_are_redacted(key: str, token: str) -> None:
     assert disk["nested"][key] == {"@attrs": {"ksv": "V1"}, "#text": token}
 
 
-@pytest.mark.parametrize("key", ["VirtualSerialNumber", "virtual_serial_num"])
+@pytest.mark.parametrize(
+    "key", ["VirtualSerialNumber", "virtual_serial_num", "SerialNumber"]
+)
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
@@ -1553,10 +1555,13 @@ def test_tool_output_identifiers_are_redacted(key: str, token: str) -> None:
         ("SYN0001", "<REDACTED-SERIAL>"),
     ],
 )
-def test_tool_output_virtual_serial_keeps_only_keywords(
+def test_tool_output_serial_keeps_only_keywords(
     key: str, value: str, expected: str
 ) -> None:
-    """A virtual serial's `none` and `auto` are evidence; only their exact text is kept."""
+    """A serial's `none` and `auto` are evidence, as in a serial element (#1593).
+
+    Only their exact text is kept.
+    """
     data = {key: value, "nested": {key: {"@attrs": {"ksv": "V1"}, "#text": value}}}
     tool = {"kind": "tool", "step": "t", "tool": "x", "ok": True, "data": data}
     corpus = export.tokenize_records(_records(tool))
