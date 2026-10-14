@@ -802,7 +802,7 @@ def test_served_warnings_use_the_bounded_escaped_sink(capsys, monkeypatch):
     captured = _stderr(capsys)
     assert called == []
     assert "py.warnings: WARNING:" in captured
-    assert "unsafe\\x1bwarning" in captured
+    assert "unsafe\\u001bwarning" in captured
     assert "\x1b" not in captured
 
 
