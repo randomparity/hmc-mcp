@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -345,6 +346,48 @@ def test_self_closing_element_with_a_quoted_gt_fails_closed() -> None:
     body = '<Root><SerialNumber kb=">"/>\n  <Next>x</Next></Root>'
     with pytest.raises(export.BrokenBodyError):
         export.tokenize_records(_records(_rest("/e", body)))
+
+
+MALFORMED_SLASH_TAGS = [
+    '<SerialNumber kb="x/>1234ABC</SerialNumber>',
+    '<SerialNumber kb="a<b/>c">1234ABC</SerialNumber>',
+]
+
+
+@pytest.mark.parametrize("body", MALFORMED_SLASH_TAGS)
+def test_malformed_tag_with_a_slash_before_its_first_gt_is_scrubbed(body: str) -> None:
+    """Regression #1548: the fallback refused a first `>` after a `/` and kept the value."""
+    corpus = export.tokenize_records(_records(_rest("/e", body)))
+    assert "1234ABC" not in corpus[-1]["body"]
+
+
+@pytest.mark.parametrize("raw", MALFORMED_SLASH_TAGS)
+def test_malformed_slash_tag_is_scrubbed_in_json_encoded_text(raw: str) -> None:
+    """Tool records are scrubbed as `json.dumps` text, where every quote is `\\"`."""
+    tool = {"kind": "tool", "step": "t", "tool": "t", "ok": True, "data": {"raw": raw}}
+    corpus = export.tokenize_records(_records(tool))
+    assert "1234ABC" not in corpus[-1]["record"]["data"]["raw"]
+
+
+@pytest.mark.parametrize("attribute", ['kb="a>b"', 'kb="x/>"', "kb='a>b/>'"])
+def test_quote_aware_branch_is_tried_before_the_fallback(attribute: str) -> None:
+    """A `>` inside a quoted value: only the quote-aware branch ends the tag after it."""
+    body = f"<Root><SerialNumber {attribute}>1234ABC</SerialNumber></Root>"
+    corpus = export.tokenize_records(_records(_rest("/e", body)))
+    assert corpus[-1]["body"] == body.replace("1234ABC", "&lt;REDACTED-SERIAL&gt;")
+
+
+def test_many_unclosed_openings_do_not_backtrack() -> None:
+    """Regression #1548: the fallback backtracked over the rest of the body per opening.
+
+    Each opening still scans to the end of the body, so this stays quadratic, but fast:
+    under a second here, against about 14 s before the fix.
+    """
+    body = "<SerialNumber " * 20_000
+    started = time.perf_counter()
+    for rule, replacement in export.IDENTIFIER_RULES:
+        assert rule.sub(replacement, body) == body
+    assert time.perf_counter() - started < 10
 
 
 def test_uuid_tokens_keep_case_and_are_consistent() -> None:
