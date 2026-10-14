@@ -459,7 +459,12 @@ def test_vocabulary_keeps_values_shapes_and_bindings() -> None:
     assert "sys-R1" not in json.dumps(vocab)
 
 
-def test_ambiguous_enum_binding_is_left_unbound() -> None:
+def test_several_name_related_enums_holding_the_literals_bind_none() -> None:
+    """Ambiguity among enums named for the element leaves it unbound, not first-match.
+
+    Every enum here is name-related to `Thing`, so this never reaches an unrelated enum;
+    `test_literals_alone_never_bind_an_unrelated_enum` guards that (#1498).
+    """
     types = {"AThing.Enum": ["x", "y"], "BThing.Enum": ["x", "y", "z"]}
     assert export._bound_enum("Thing", {"x"}, types) is None
     assert export._bound_enum("Thing", {"x", "y"}, types) is None
