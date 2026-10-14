@@ -114,8 +114,13 @@ _ADDRESS_ELEMENTS = "NetworkAddress|IPAddress|PrimaryIPAddress|IPv6Address"
 #: Quoted runs are skipped whole, so a `/>` inside an attribute value cannot end the tag;
 #: a run is any `"`...`"`, which also spans the `\"`-escaped quotes of a JSON-encoded body.
 #: A malformed tag (an unbalanced quote, a `<` in a value) falls back to the first `>`,
-#: so its value is still scrubbed rather than exported.
-_TAG_TAIL = r"""(?:(?:[^>"'<]|"[^"<]*"|'[^'<]*')*|[^>]*)(?<!/)>"""
+#: even after a `/`, so its value is still scrubbed rather than exported — unless the
+#: quote-aware run does end in `/>`. Then the first `>` closes the tag only when no `/`
+#: precedes it; one inside a quoted value (`kb=">"/>`) breaks the body, and the export
+#: stops. The quote-aware branch must come first, and the possessive `[^>]*+` keeps the
+#: fallback from backtracking over a body full of unclosed openings.
+_ATTRS = r"""(?:[^>"'<]|"[^"<]*"|'[^'<]*')*"""
+_TAG_TAIL = rf"(?:{_ATTRS}(?<!/)>|(?!{_ATTRS}/>)[^>]*+>|[^>]*+(?<!/)>)"
 
 
 def _ipv6(match: re.Match[str]) -> str:
