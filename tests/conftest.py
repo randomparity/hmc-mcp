@@ -149,7 +149,8 @@ def wide_consoles(monkeypatch):
     """Render every Rich console at one wide width, whatever the terminal is (#1586).
 
     A narrow terminal wraps or truncates the text CLI and server tests match on, so
-    ``COLUMNS`` is pinned for the test and for any subprocess it starts. Typer builds
+    ``COLUMNS`` is pinned for the test and for any subprocess it starts. It is wide
+    enough that a message carrying a long temporary path stays on one line. Typer builds
     its help, error and traceback consoles per call, so they read it then; it prefers
     ``TERMINAL_WIDTH``, frozen into ``MAX_WIDTH`` at import, so that is cleared too.
 
@@ -166,7 +167,7 @@ def wide_consoles(monkeypatch):
 
     from hmcpctl.cli_commands import output
 
-    monkeypatch.setenv("COLUMNS", "200")
+    monkeypatch.setenv("COLUMNS", "1000")
     monkeypatch.delenv("TERMINAL_WIDTH", raising=False)
     monkeypatch.setattr(rich_utils, "MAX_WIDTH", None)
     handlers = [h for h in _PRISTINE_FASTMCP[0] if isinstance(h, RichHandler)]
