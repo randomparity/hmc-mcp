@@ -377,6 +377,86 @@ def test_quote_aware_branch_is_tried_before_the_fallback(attribute: str) -> None
     assert corpus[-1]["body"] == body.replace("1234ABC", "&lt;REDACTED-SERIAL&gt;")
 
 
+#: One element of each scrubbed set, with the token its rule writes (#1562).
+SCRUBBED_ELEMENTS = [
+    ("X-API-Session", "REDACTED-SESSION"),
+    ("x-api-session", "REDACTED-SESSION"),
+    ("SerialNumber", "REDACTED-SERIAL"),
+    ("ns:LogicalSerialNumber", "REDACTED-SERIAL"),
+    ("UniqueDeviceID", "REDACTED-DEVID"),
+    ("ns:WWPN", "REDACTED-DEVID"),
+]
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize(("element", "token"), SCRUBBED_ELEMENTS)
+def test_unscrubbed_element_value_is_a_leak(
+    element: str, token: str, encode: Any
+) -> None:
+    """Regression #1562: only the scrub rule stood between these values and the export."""
+    tok = export.Tokenizer({}, set())
+    body = f'<Root><{element} kb="CUR">SYN-77Q</{element}></Root>'
+    assert tok.leaks(encode(body)) == ["SYN-77Q"]
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize(("element", "token"), SCRUBBED_ELEMENTS)
+@pytest.mark.parametrize("placeholder", ["&lt;{}&gt;", "<{}>"])
+def test_scrubbed_element_value_is_not_a_leak(
+    element: str, token: str, encode: Any, placeholder: str
+) -> None:
+    """The token, escaped in an XML body or bare elsewhere, is the one allowed value."""
+    tok = export.Tokenizer({}, set())
+    value = placeholder.format(token)
+    assert (
+        tok.leaks(encode(f'<Root><{element} kb="CUR">{value}</{element}></Root>')) == []
+    )
+
+
+#: Malformed input the scrub rules leave unscrubbed: a `/>` ends the opening tag, and
+#: a `<` inside the value stops the rule's match.
+UNSCRUBBED_MALFORMED = [
+    '<SerialNumber kb="x"/>SYN77Q</SerialNumber>',
+    "<UniqueDeviceID>SYN<77Q</UniqueDeviceID>",
+]
+
+
+@pytest.mark.parametrize("body", UNSCRUBBED_MALFORMED)
+def test_malformed_element_the_rules_miss_fails_closed(body: str) -> None:
+    with pytest.raises(export.LeakError):
+        export.tokenize_records(_records(_rest("/e", body)))
+
+
+@pytest.mark.parametrize("raw", UNSCRUBBED_MALFORMED)
+def test_malformed_element_the_rules_miss_fails_closed_in_json(raw: str) -> None:
+    tool = {"kind": "tool", "step": "t", "tool": "t", "ok": True, "data": {"raw": raw}}
+    with pytest.raises(export.LeakError):
+        export.tokenize_records(_records(tool))
+
+
+LIVE_FIXTURES = sorted(
+    (Path(__file__).parents[1] / "fixtures" / "live").rglob("*.json")
+)
+
+
+@pytest.mark.parametrize("path", LIVE_FIXTURES, ids=lambda path: path.name)
+def test_committed_fixture_tokenizes_without_leaks(path: Path) -> None:
+    """A capture is re-tokenized as its record kind; a derived file is scanned as is.
+
+    Names are not collected: a fixture's names are already tokens, and re-tokenizing
+    them maps one token onto another, which the name check reads as a leak.
+    """
+    tok = export.Tokenizer({}, set())
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(data, dict) and ("body" in data or "command" in data):
+        kind = "rest" if "body" in data else "ssh"
+        record = {**data, "_src": path.name, "kind": kind}
+        text = json.dumps([export._tokenize_record(tok, record)])
+    else:
+        text = path.read_text(encoding="utf-8")
+    assert tok.leaks(text) == []
+
+
 def test_many_unclosed_openings_do_not_backtrack() -> None:
     """Regression #1548: the fallback backtracked over the rest of the body per opening.
 
