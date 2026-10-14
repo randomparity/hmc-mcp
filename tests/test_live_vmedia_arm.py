@@ -89,8 +89,8 @@ class FakeHMC:
     guarded_delete_error: str | None = None
     # A concurrent actor removes the medium; its mapping row is left as it was.
     guarded_refusal_drops_media: bool = False
-    # The media listing read right after the guard's refusal fails once.
-    guarded_refusal_fails_listing: bool = False
+    # The media listing read right after the guarded delete fails once.
+    guarded_delete_fails_listing: bool = False
     listing_fails: bool = False
     optical_id_missing: bool = False
     boot_order: dict[str, Any] = field(
@@ -159,10 +159,11 @@ class FakeHMC:
         mounted = any(row[3] == name for row in self.mappings)
         if mounted and self.guarded_delete_error:
             return "FAIL", _failure(self.guarded_delete_error)
+        if mounted:
+            self.listing_fails = self.guarded_delete_fails_listing
         if mounted and not self.guarded_delete_allowed:
             if self.guarded_refusal_drops_media:
                 self.media.pop(name)
-            self.listing_fails = self.guarded_refusal_fails_listing
             return "FAIL", _failure(
                 f"HMCError: Cannot delete optical media {name!r}: it is mounted on "
                 f"1 LPAR(s): '{LPAR_UUID}'. Unmount the media first."
@@ -624,10 +625,34 @@ async def test_a_refusal_whose_medium_left_the_listing_is_not_counted_refused(ar
     assert delete["result"] == "failed"
 
 
+def _delete_row(state) -> dict[str, Any]:
+    (row,) = [r for r in state.results if r["tool"] == "hmc_delete_optical_media"]
+    return row
+
+
+def _refusal_unverified(state) -> list[dict[str, Any]]:
+    return [
+        r
+        for r in state.results
+        if r["tool"] == "hmc_delete_optical_media (refusal unverified)"
+    ]
+
+
 @pytest.mark.asyncio
-async def test_a_refusal_followed_by_an_unreadable_listing_is_not_counted_refused(arm):
+async def test_a_delete_the_guard_lets_through_names_the_refusal_unmet(arm):
     state, hmc = arm
-    hmc.guarded_refusal_fails_listing = True
+    hmc.guarded_delete_allowed = True
+
+    await _run(state, 16, 19)
+
+    assert "refused-while-mounted" in _delete_row(state)["note"]
+    assert not _refusal_unverified(state)
+
+
+@pytest.mark.asyncio
+async def test_a_refusal_followed_by_an_unreadable_listing_is_unverified(arm):
+    state, hmc = arm
+    hmc.guarded_delete_fails_listing = True
 
     await _run(state, 16, 19)
 
@@ -638,12 +663,30 @@ async def test_a_refusal_followed_by_an_unreadable_listing_is_not_counted_refuse
         if r["tool"] == "hmc_list_optical_media (after the guarded delete)"
     ]
     assert listing["status"] == "FAIL"
+    (unverified,) = _refusal_unverified(state)
+    assert unverified["result"] == "skipped"
+    assert "listing" in unverified["note"]
     delete = _observations(state)["media.delete"][0]
     assert "refused-while-mounted" not in delete["assertions"]
-    assert delete["result"] == "failed"
+    assert delete["result"] == "passed"
+    assert "refused-while-mounted" not in _delete_row(state)["note"]
     # The final delete's own listing confirms removal, so nothing is left to recover.
     assert not _manual(state)
     assert not state.gaps
+
+
+@pytest.mark.asyncio
+async def test_an_accepted_delete_with_an_unreadable_listing_still_fails(arm):
+    state, hmc = arm
+    hmc.guarded_delete_allowed = True
+    hmc.guarded_delete_fails_listing = True
+
+    await _run(state, 16, 19)
+
+    delete = _observations(state)["media.delete"][0]
+    assert delete["result"] == "failed"
+    assert "refused-while-mounted" in _delete_row(state)["note"]
+    assert not _refusal_unverified(state)
 
 
 # ---------------------------------------------------------------------------
