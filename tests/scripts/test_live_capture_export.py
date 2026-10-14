@@ -530,16 +530,15 @@ def test_mac_element_the_rule_misses_fails_closed(body: str) -> None:
         export.tokenize_records(_records(_rest("/e", body)))
 
 
-#: Values joined to a word the rule does not zero: a `0x`, a JSON escape, a suffix.
+#: Values joined to a word the rule does not zero: a `0x`, a suffix, a suffix after a
+#: JSON escape, and a literal `\\u`, which JSON writes as `\\\\u`.
 JOINED_MAC = [
     f"0x{MAC}",
-    f"\n{MAC}",
-    f"\n{MAC[:4]}",
-    f"\x0b{MAC}",
-    f"\u00e9{MAC}",
     f"{MAC}h",
     f"\f{MAC}h",
     f"\u00e9{MAC}h",
+    f"\\u{MAC}",
+    f"\\\\u{MAC}",
 ]
 
 
@@ -563,10 +562,55 @@ def test_zeroed_mac_after_a_json_escape_is_not_a_leak(before: str) -> None:
     [*UNSCRUBBED_MAC, *(f"<MACAddress>{value}</MACAddress>" for value in JOINED_MAC)],
 )
 def test_mac_element_the_rule_misses_fails_closed_in_json(raw: str) -> None:
-    """In a tool record's JSON, `\\n` joins `n` to the value and `\\b` never sees it start."""
+    """A tool record is scanned as JSON text, where each of these leaves a live run."""
     tool = {"kind": "tool", "step": "t", "tool": "t", "ok": True, "data": {"raw": raw}}
     with pytest.raises(export.LeakError):
         export.tokenize_records(_records(tool))
+
+
+@pytest.mark.parametrize(
+    ("before", "kept"),
+    [
+        ("\b", "\b"),
+        ("\f", "\f"),
+        ("\n", "\n"),
+        ("\r", "\r"),
+        ("\t", "\t"),
+        ("\\", "\\"),
+        # The rule cannot tell `\u000b` from a literal `\u` before a MAC, so the
+        # escape becomes `\u0030`, the digit `0`, rather than a NUL XML cannot hold.
+        ("\x0b", "0"),
+        ("\u00e9", "0"),
+        # A surrogate pair is replaced whole: a lone high half cannot be written as UTF-8.
+        ("\U0001f600", "00"),
+    ],
+)
+@pytest.mark.parametrize("value", [MAC, MAC[:4]])
+def test_mac_after_a_json_escape_in_a_tool_record_is_zeroed(
+    before: str, kept: str, value: str
+) -> None:
+    """Regression #1591: the `f` of `\\f` was zeroed with the value, into `\\0`."""
+    raw = f"<MACAddress>{before}{value}</MACAddress>"
+    tool = {"kind": "tool", "step": "t", "tool": "t", "ok": True, "data": {"raw": raw}}
+    corpus = export.tokenize_records(_records(tool))
+    zeroed = f"<MACAddress>{kept}{'0' * len(value)}</MACAddress>"
+    assert corpus[-1]["record"]["data"]["raw"] == zeroed
+    assert "\x00" not in corpus[-1]["record"]["data"]["raw"]
+
+
+def test_mac_after_a_literal_backslash_u_is_zeroed_whole() -> None:
+    """Raw XML has no escapes: keeping `\\uA1B2` as one would export four MAC digits."""
+    body = f"<Adapter><MACAddress>\\u{MAC}</MACAddress></Adapter>"
+    corpus = export.tokenize_records(_records(_rest("/e", body)))
+    assert corpus[-1]["body"] == body.replace(MAC, "003000000000")
+
+
+def test_mac_after_an_escape_that_follows_a_backslash_stays_valid_json() -> None:
+    """`\\\\\\f` is a backslash then a form feed: the `f` is still an escape's letter."""
+    tok = export.Tokenizer({}, set())
+    scrubbed = tok.tokenize(json.dumps({"raw": f"<MACAddress>\\\f{MAC}</MACAddress>"}))
+    assert scrubbed is not None
+    assert json.loads(scrubbed) == {"raw": "<MACAddress>\\\f000000000000</MACAddress>"}
 
 
 LIVE_FIXTURES = sorted(
