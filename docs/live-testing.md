@@ -906,8 +906,9 @@ sweep refuses one inside a git work tree), and never commit or paste it.
      --out "$V/$P.json" --private '<lab-pattern>'
    ```
 
-   `--fold <derived.json> --fold-source '<where it came from>'` adds the REST values
-   and endpoints of a vocabulary derived earlier from the same pair.
+   A corpus tokenized from several raw captures names each one with its own
+   `--source`, in the order passed; each becomes one entry of the vocabulary's
+   `sources`.
 
    Read the vocabulary diff before committing it: name-bearing elements and fields
    keep only their shape (`<text>`, `<int>`, `<uuid-upper>`), so a literal that
@@ -919,3 +920,21 @@ sweep refuses one inside a git work tree), and never commit or paste it.
    which keeps the reasons of entries that still apply. Give every new entry a
    reason that cites #1202. A test value that is deliberately not an HMC answer
    is not allowlisted: end its line with `# live-vocabulary: allow <reason>`.
+
+### Adding a capture to an existing pair
+
+A committed vocabulary is derived output, so a new capture of a pair that already
+has one is added by re-deriving, never by merging its rows in by hand: rows
+merged by hand are lost the next time anyone re-runs the derivation.
+
+1. Keep the new raw capture beside the pair's other raw captures, in the private
+   directory its export script reads; `tests/fixtures/live/README.md` says where
+   a pair's retained inputs are kept. A pair without retained raw captures cannot
+   take a new one this way: re-capture it in full instead.
+2. Add the raw file to that script's `tokenize` inputs, and add a `--source`
+   naming it to its `vocabulary` command.
+3. Re-run the script, so every raw capture is tokenized in one pass into one
+   corpus and the enum list and vocabulary are derived from it.
+4. Read the diff and run `just live-vocabulary`, as in steps 3 and 4 above. A
+   re-derivation can drop rows only an input you no longer hold produced; list
+   them in the pull request.

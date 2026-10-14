@@ -90,9 +90,11 @@ Three subcommands, all offline:
     name, URL host, `--private` pattern match, IP address, location code, `-L` disk
     WWN segment, 16-hex WWN or run of twenty or more upper-case hex digits survives,
     or when a body that parsed as XML no longer parses.
-- `vocabulary CORPUS --enums ENUMS --firmware F --source TEXT [--fold D --fold-source
-  TEXT]... --out V.json` derives a vocabulary; `--fold` adds the REST values and
-  endpoints of an earlier derived vocabulary of the same pair.
+- `vocabulary CORPUS --enums ENUMS --firmware F --source TEXT [--source TEXT]...
+  --out V.json` derives a vocabulary; each `--source` names one raw capture the corpus
+  was tokenized from and becomes one `sources` entry.
+  Amended by #1526 (2026-10-13): `--fold` and `--fold-source` are removed; a capture
+  is added to a pair by re-deriving from all its raw captures.
 - `enums CORPUS --firmware F --out E.json` derives the schema enum lists from the captured
   `Enumerations.xsd` record, plus element-to-enum bindings stated in any captured schema.
 

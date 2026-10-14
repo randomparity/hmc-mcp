@@ -153,4 +153,6 @@ derivation are private, on the live-test host under
 
 Regenerate them with `scripts/live_capture_export.py`, as
 `docs/live-testing.md` ("Capturing an HMC's vocabulary") describes; do not edit
-them by hand, apart from an allowlist entry's `reason`.
+them by hand, apart from an allowlist entry's `reason`. To add a new capture to
+a pair that already has a vocabulary, follow that page's "Adding a capture to an
+existing pair": add the raw file to the pair's export inputs and re-derive.
