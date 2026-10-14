@@ -252,8 +252,8 @@ def test_quick_all_mtms_names_the_machine_its_full_entry_names():
 
     ADR 0184 counts a frame once by these three values whether it was read or only
     listed. Both records come from one read-only 2026-10-14 V10R3 window. Tokenizing
-    hides the serial, so the capture-time comparison of the raw values is the evidence
-    that they agree; it did, for every one of the HMC's sixteen systems.
+    hides the serial, so the evidence that the serials agree is the scripted comparison
+    of the raw capture that the fixtures README records.
     """
     entry = parse_feed(live_fixture("rest-ms-entry-mtms-pair")["body"])[0]
     summaries = json.loads(live_fixture("rest-ms-quick-all-mtms-pair")["body"])
