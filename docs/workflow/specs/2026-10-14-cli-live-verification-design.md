@@ -20,8 +20,10 @@ No caller migration or obsolete path is needed: this is an extension.
 A small live_test module owns bounded subprocess execution and CLI assertions.
 Use argument arrays without a shell; normalize HMC environment from RunState's
 resolved config, suppress color and inherited profile selection. A missing config
-fails closed. Capture at most 64 KiB of combined output; deadline 120 seconds;
-kill and reap the process group on timeout, excess output, or cancellation.
+fails closed. Capture at most 64 KiB of stdout; discard stderr so warnings cannot corrupt the
+response parser or disclose diagnostics; deadline 120 seconds;
+kill and reap the CLI child on timeout, excess output, or cancellation. Keep the
+child in the arm process group so the outer window cancellation also reaches it.
 Failures record safe diagnostics, not credentials or raw subprocess error text.
 
 State must equal the MCP-observed firmware state; reference codes must be a
@@ -75,7 +77,7 @@ The summary qualifies coverage by candidate and overall window result.
 - Actors: trusted operator and HMC; remote response data is untrusted. Local checkout
   and interpreter are trusted under the existing clean candidate requirement.
 - Controls: fixed command paths, argument arrays and isolated Python; HMC config
-  pinned in child environment; byte/time bounds and group reaping; structured parsing
+  pinned in child environment; byte/time bounds and child reaping; structured parsing
   and identity assertions; current candidate/complete-run checks before coverage.
 - Out of scope: hostile local operator or modified interpreter, already outside the
   release runner trust model; automatic authorization or public raw evidence uploads.

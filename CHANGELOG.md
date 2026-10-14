@@ -16,6 +16,10 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
 
 ### Added
 
+- Bare-CEC live testing exercises the installed CLI state, reference-code and job-show
+  paths with separate asserted CLI observations. Release-window reports state CLI
+  coverage or gaps for each claim; v0.1.0 remains MCP-only evidence (#1477).
+
 - Run an explicitly authorized release window with `scripts/run_release_window.py`,
   composing named arms, recovery, strict baselines, private evidence and local promotion;
   dry-run derives the claimed arms without hardware access (#1513).
