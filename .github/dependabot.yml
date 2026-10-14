@@ -11,6 +11,12 @@ updates:
         applies-to: "version-updates"
         patterns:
           - "*"
+    # These pins move together, which Dependabot cannot do; bump them by hand
+    # with the coupled-bump procedure in CONTRIBUTING.md.
+    ignore:
+      - dependency-name: "fastmcp-slim"
+      - dependency-name: "mcp"
+      - dependency-name: "mcp-types"
 
   - package-ecosystem: "github-actions"
     directory: "/"

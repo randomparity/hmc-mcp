@@ -16,12 +16,17 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
 
 ### Added
 
+- Retain release claimed operations with their live-test arms and scenarios, beginning
+  with v0.1.0; `just capability-inventory` validates every retained set (#1511).
+
 - `scripts/live_test_baseline.py` captures private, read-only live-window baselines
   and compares independent before/after state, including explicitly selected VIOS
   mappings and volume-group volumes (#1479).
 
 ### Changed
 
+- The `app` extra now pins `fastmcp-slim[server]==4.0.10`, up from 4.0.3; `mcp` and `mcp-types`
+  stay at 2.2.0 (#1539).
 - Generated tool-reference verification retains the last release’s state regardless of the
   rendering date, with a regression check spanning more than 90 days (#1509).
 - CLI and MCP capability discovery retain the last release’s verification state, initially

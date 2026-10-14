@@ -134,7 +134,9 @@ captures (`~/hmc-live-evidence/2026-10-13-q1290/`), corpus and the `export.sh` t
 re-runs the derivation (`~/hmc-live-evidence/2026-10-13-q1498/`) are private, on the
 live-test host. Beside them sit the
 documented job statuses (`enums-documented-jobs.json`, names cited to
-`docs/refs/`, each marked captured or documented-only) and the allowlist of
+`docs/refs/`, each marked captured or documented-only), the stated bindings
+(`enums-stated-bindings.json`, the eighteen element-to-enum bindings #1516 dropped,
+each citing that PR's table) and the allowlist of
 `just live-vocabulary`. Each vocabulary names its sources.
 
 `v10r3-p9.json` was re-derived on 2026-10-13 (#1310) from one corpus, tokenized
