@@ -159,8 +159,8 @@ class FakeHMC:
         mounted = any(row[3] == name for row in self.mappings)
         if mounted and self.guarded_delete_error:
             return "FAIL", _failure(self.guarded_delete_error)
-        if mounted:
-            self.listing_fails = self.guarded_delete_fails_listing
+        if mounted and self.guarded_delete_fails_listing:
+            self.listing_fails = True
         if mounted and not self.guarded_delete_allowed:
             if self.guarded_refusal_drops_media:
                 self.media.pop(name)
@@ -293,6 +293,19 @@ def _manual(state) -> list[dict[str, Any]]:
 def _while_mounted(state) -> dict[str, Any]:
     (row,) = [r for r in state.results if r["tool"].endswith("(while mounted)")]
     return row
+
+
+def _delete_row(state) -> dict[str, Any]:
+    (row,) = [r for r in state.results if r["tool"] == "hmc_delete_optical_media"]
+    return row
+
+
+def _refusal_unverified(state) -> list[dict[str, Any]]:
+    return [
+        r
+        for r in state.results
+        if r["tool"] == "hmc_delete_optical_media (refusal unverified)"
+    ]
 
 
 def _mutations(hmc) -> list[tuple[str, dict[str, Any]]]:
@@ -584,6 +597,8 @@ async def test_a_delete_the_guard_lets_through_while_mounted_fails(arm):
     delete = _observations(state)["media.delete"][0]
     assert delete["result"] == "failed"
     assert "refused-while-mounted" not in delete["assertions"]
+    assert "refused-while-mounted" in _delete_row(state)["note"]
+    assert not _refusal_unverified(state)
 
 
 @pytest.mark.asyncio
@@ -623,30 +638,6 @@ async def test_a_refusal_whose_medium_left_the_listing_is_not_counted_refused(ar
     delete = _observations(state)["media.delete"][0]
     assert "refused-while-mounted" not in delete["assertions"]
     assert delete["result"] == "failed"
-
-
-def _delete_row(state) -> dict[str, Any]:
-    (row,) = [r for r in state.results if r["tool"] == "hmc_delete_optical_media"]
-    return row
-
-
-def _refusal_unverified(state) -> list[dict[str, Any]]:
-    return [
-        r
-        for r in state.results
-        if r["tool"] == "hmc_delete_optical_media (refusal unverified)"
-    ]
-
-
-@pytest.mark.asyncio
-async def test_a_delete_the_guard_lets_through_names_the_refusal_unmet(arm):
-    state, hmc = arm
-    hmc.guarded_delete_allowed = True
-
-    await _run(state, 16, 19)
-
-    assert "refused-while-mounted" in _delete_row(state)["note"]
-    assert not _refusal_unverified(state)
 
 
 @pytest.mark.asyncio
