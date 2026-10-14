@@ -808,6 +808,7 @@ class RunState:
     iso_http_server: IsoHttpServer = field(default_factory=IsoHttpServer)
     # The `--group` this run was dispatched with; a system-wide step gates on it.
     group: str | None = None
+    hmc_config: HMCConfig | None = None
 
     async def call(
         self,
@@ -1536,6 +1537,9 @@ def _restore_artifacts_from_results(
         print(f"  ⚠️  Could not restore artifacts from {results_path}: {exc}")
         return False
 
+    # Recovery witnesses belong to one invocation, never to restored context.
+    candidate.lp3_baseline.pop("round2_snapshot", None)
+    candidate.lp3_baseline.pop("round2_fixture", None)
     state.artifacts = candidate
     print(
         f"  ℹ  Artifacts restored from {results_path} "
@@ -1855,6 +1859,7 @@ async def main(
         return 1
     state = RunState(config=config, known_gaps=known_gaps, group=group)
     hmc_config = hmc_config or HMCConfig()
+    state.hmc_config = hmc_config
     print(f"Starting live integration tests at {datetime.now(UTC).isoformat()}")
     schema_version = env_var_value("HMC_SCHEMA_VERSION") or "(not set)"
     print(f"HMC_SCHEMA_VERSION={schema_version}")
