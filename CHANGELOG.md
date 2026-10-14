@@ -22,6 +22,8 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
 
 ### Changed
 
+- The `app` extra now pins `fastmcp-slim[server]==4.0.10`, up from 4.0.3; `mcp` and `mcp-types`
+  stay at 2.2.0 (#1539).
 - Generated tool-reference verification retains the last release’s state regardless of the
   rendering date, with a regression check spanning more than 90 days (#1509).
 - CLI and MCP capability discovery retain the last release’s verification state, initially

@@ -37,3 +37,32 @@ format. When a release is cut, its entry keeps those changes and gains scope, **
   release cannot ship without one. `tests/unit/test_changelog.py` enforces this.
 - By convention, not by a test, changes to the six-name `hmcpctl.api` facade (ADR 0118) are
   recorded under ordinary changelog categories; domain-module APIs remain pre-release.
+
+## Coupled dependency bumps
+
+Dependabot updates one requirement at a time, so it cannot move pins that must change together.
+`.github/dependabot.yml` therefore ignores `fastmcp-slim`, `mcp` and `mcp-types`, and they are
+bumped by hand:
+
+- `fastmcp-slim` is pinned twice, as `fastmcp-slim[server]` in the `app` extra and as
+  `fastmcp-slim[client]` in the `dev` group; both pins carry the same version.
+- `mcp` and `mcp-types` are pinned in the `app` extra, and each `mcp` release requires the
+  `mcp-types` release of the same version.
+
+Dependabot alerts and security updates are not enabled for this repository, so nothing reports
+an advisory against these packages automatically. Bump them before cutting a release
+([releasing](docs/development.md#releasing)), when a change needs a newer release, and when the
+GitHub Advisory Database lists an advisory affecting a pinned version. Check it at each release
+with `gh api "advisories?ecosystem=pip&affects=<package>@<pinned version>"` for each of the
+three. To bump:
+
+1. Choose the newest release of each package that is at least 14 days old on PyPI, and check
+   that the chosen `fastmcp-slim` accepts the chosen `mcp` and `mcp-types`. A newer release
+   that is still too young is picked up by the next bump after it turns 14 days old; nothing
+   tracks it in between.
+2. Edit all four pins in `pyproject.toml`; keep them exact.
+3. Run `uv lock` with the uv version CI pins (`version:` under `setup-uv` in
+   `.github/workflows/ci.yml`), for example `uvx uv@<version> lock`, so the lock format does not
+   churn; then run `just setup`. Never run a bare `uv sync`.
+4. Run `just tool-docs` in case the rendered tool reference changed, then `just verify` and
+   `UV_NO_SYNC=1 uv run --no-sync prek run --all-files`, and read every leg of the CI matrix.

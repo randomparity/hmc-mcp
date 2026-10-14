@@ -141,6 +141,10 @@ verification state. For 0.1.0 the epic is #871: the Tier A kdive adopt contract 
 Tier B bare-CEC path, 15 claimed operations. Changing the claimed set after the live window
 reopens the window for any operation it adds.
 
+Before naming the candidate, run the
+[coupled dependency bump](../CONTRIBUTING.md#coupled-dependency-bumps) for `fastmcp-slim`,
+`mcp` and `mcp-types`, which Dependabot does not update.
+
 ### Freeze
 
 The candidate is the `main` commit whose claimed operations' code the release ships and the
