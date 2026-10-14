@@ -581,6 +581,8 @@ def test_mac_element_the_rule_misses_fails_closed_in_json(raw: str) -> None:
         # the escape's digits as well; `\u0000` is still an escape.
         ("\x0b", "\x00"),
         ("\u00e9", "\x00"),
+        # A surrogate pair is zeroed whole: a lone high half cannot be written as UTF-8.
+        ("\U0001f600", "\x00\x00"),
     ],
 )
 @pytest.mark.parametrize("value", [MAC, MAC[:4]])
