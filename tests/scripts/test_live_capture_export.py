@@ -261,6 +261,7 @@ def test_identifier_rules(raw: str, gone: str, token: str) -> None:
     [
         ("MACAddress", "0A1B2C3D4E5F", "000000000000"),  # pragma: allowlist secret
         ("SerialNumber", "1234ABC", "&lt;REDACTED-SERIAL&gt;"),
+        ("VirtualSerialNumber", "SYN0001", "&lt;REDACTED-SERIAL&gt;"),
         ("WWPN", "c0507609abcd0001", "&lt;REDACTED-DEVID&gt;"),
         ("VolumeUniqueID", "3E213600507680", "&lt;REDACTED-DEVID&gt;"),
         ("MediaUDID", "lab7rh8", "&lt;REDACTED-DEVID&gt;"),
@@ -304,6 +305,69 @@ def test_mac_elements_scrub_only_hex(element: str, value: str, token: str) -> No
     body = f"<{element}>{value}</{element}>"
     corpus = export.tokenize_records(_records(_rest("/ms", body)))
     assert corpus[-1]["body"] == f"<{element}>{token}</{element}>"
+
+
+SERIAL_ELEMENTS = ["SerialNumber", "LogicalSerialNumber", "ns:VirtualSerialNumber"]
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("element", SERIAL_ELEMENTS)
+@pytest.mark.parametrize("keyword", ["none", "auto"])
+def test_serial_keyword_is_kept_as_evidence(
+    element: str, keyword: str, encode: Any
+) -> None:
+    """#1593: `none` and `auto` are what a partition has instead of a virtual serial."""
+    tok = export.Tokenizer({}, set())
+    body = encode(f'<Root><{element} kb="CUD">{keyword}</{element}></Root>')
+    assert tok.tokenize(body) == body
+    assert tok.leaks(body) == []
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("element", SERIAL_ELEMENTS)
+@pytest.mark.parametrize(
+    "value", ["None", "nonesuch", "none ", "autoSYN0001", "SYN0001"]
+)
+def test_serial_near_keyword_is_scrubbed(element: str, value: str, encode: Any) -> None:
+    """Only the exact keyword is kept: anything else in a serial element is a serial."""
+    tok = export.Tokenizer({}, set())
+    body = encode(f"<Root><{element}>{value}</{element}></Root>")
+    scrubbed = tok.tokenize(body)
+    assert scrubbed == body.replace(
+        value, _escaped(SERIAL) if encode is str else SERIAL
+    )
+    assert tok.leaks(scrubbed) == []
+    assert tok.leaks(body) == [value]
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("attribute", ['kb="a>b"', "kb='a>b'"])
+def test_serial_keyword_after_a_quoted_gt_is_kept(attribute: str, encode: Any) -> None:
+    """A `>` inside an attribute does not end the tag the keyword is checked after."""
+    tok = export.Tokenizer({}, set())
+    body = encode(
+        f"<Root><VirtualSerialNumber {attribute}>none</VirtualSerialNumber></Root>"
+    )
+    assert tok.tokenize(body) == body
+    assert tok.leaks(body) == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "<VirtualSerialNumber>SYN<x>none</VirtualSerialNumber>",
+        "<VirtualSerialNumber>SYN</x>auto</VirtualSerialNumber>",
+        "<Root>SYN0001>none</VirtualSerialNumber></Root>",
+        "<VirtualSerialNumber SYN</VirtualSerialNumber>none</VirtualSerialNumber>",
+        '<VirtualSerialNumber kb="x<SYN>none</VirtualSerialNumber>',
+        "<VirtualSerialNumber SYN0001/>none</VirtualSerialNumber>",
+        '<VirtualSerialNumber kb="SYN0001>none</VirtualSerialNumber>',
+    ],
+)
+def test_serial_keyword_not_after_its_opening_tag_is_a_leak(body: str) -> None:
+    """A keyword is evidence only as the element's whole text, in the backstop too."""
+    with pytest.raises(export.LeakError):
+        export.tokenize_records(_records(_rest("/e", body)))
 
 
 @pytest.mark.parametrize(
@@ -392,6 +456,7 @@ SCRUBBED_ELEMENTS = [
     ("ns:PrimaryIPAddress", ADDRESS),
     ("SerialNumber", SERIAL),
     ("ns:LogicalSerialNumber", SERIAL),
+    ("VirtualSerialNumber", SERIAL),
     ("UniqueDeviceID", DEVID),
     ("ns:WWPN", DEVID),
 ]
@@ -408,6 +473,7 @@ VARIANT_ELEMENTS = [
     ("serialnumber", SERIAL),
     ("ns-1:SerialNumber", SERIAL),
     ("ns.v1:LOGICALSERIALNUMBER", SERIAL),
+    ("ns-1:virtualserialnumber", SERIAL),
     ("uniquedeviceid", DEVID),
     ("ns-1:UniqueDeviceID", DEVID),
     ("ns.v1:wwpn", DEVID),
@@ -863,6 +929,12 @@ def test_uuid_tokens_keep_case_and_are_consistent() -> None:
     upper = corpus[1]["path"].rsplit("/", 1)[1]
     assert upper == "00000001-ABCD-4EF0-8ABC-000000000001"
     assert corpus[-1]["stdout"] == upper.lower()
+
+
+def test_private_pattern_with_a_kept_group_is_still_a_leak() -> None:
+    """Only the serial backstop's own `kept` group is exempt, never an operator's."""
+    tok = export.Tokenizer({}, set(), [r"(?P<kept>ROOM-\d)"])
+    assert tok.leaks("lab ROOM-7 rack") == ["ROOM-7"]
 
 
 def test_private_pattern_is_replaced() -> None:

@@ -134,10 +134,11 @@ _NAME_ESCAPE = r"\\++u(?!00[0-7]|(?i:{}))[0-9A-Fa-f]{{4}}".format(
 #: tail after the name ends at the same `>` whichever prefix matched, and retrying each
 #: one would scan the tail again per segment of `<SerialNumber:SerialNumber:...`.
 _NS_PREFIX = rf"(?:(?:[\w.-]|[^\x00-\x7f\s]|{_NAME_ESCAPE})++:)*"
-#: Elements whose whole text a rule replaces: the element name pattern and the text the
-#: rule writes. The same entry builds the scrub rule and its `leaks()` backstop. Names
-#: match in any case, after any namespace prefix: neither is significant to whoever
-#: reads the value, so neither may hide it.
+#: Elements whose whole text a rule replaces: the element name pattern, the text the
+#: rule writes and, optionally, the keywords it keeps as evidence. The same entry builds
+#: the scrub rule and its `leaks()` backstop. Names match in any case, after any
+#: namespace prefix: neither is significant to whoever reads the value, so neither may
+#: hide it. A keyword is kept only as the element's whole text, in its documented case.
 _SESSION_ELEMENT = (rf"{_NS_PREFIX}(?i:X-API-Session)", "<REDACTED-SESSION>")
 _SSH_KEY_ELEMENT = (
     rf"{_NS_PREFIX}(?i:PublicSSHKeyValue|AuthorizedKeysValue)",
@@ -145,15 +146,32 @@ _SSH_KEY_ELEMENT = (
 )
 _ADDRESS_ELEMENT = (rf"{_NS_PREFIX}(?i:{_ADDRESS_ELEMENTS})", PLACEHOLDER_IP)
 _DEVICE_ID_ELEMENT = (rf"{_NS_PREFIX}(?i:{_DEVICE_ID_ELEMENTS})", "<REDACTED-DEVID>")
-_SERIAL_ELEMENT = (rf"{_NS_PREFIX}(?i:(?:Logical)?SerialNumber)", "<REDACTED-SERIAL>")
+#: A virtual serial number is assigned to a partition, which otherwise holds `none`, or
+#: `auto` while the HMC assigns one (#1593). Neither keyword is any serial, so the other
+#: serial elements keep them too.
+_SERIAL_ELEMENT = (
+    rf"{_NS_PREFIX}(?i:(?:Logical|Virtual)?SerialNumber)",
+    "<REDACTED-SERIAL>",
+    "none|auto",
+)
 
 
-def _element_rule(element: str, value: str) -> tuple[re.Pattern[str], str]:
-    """Replace the text of each *element* with *value*."""
-    return re.compile(rf"(<(?>{element}\b){_TAG_TAIL})[^<]+"), rf"\g<1>{value}"
+def _element_rule(
+    element: str, value: str, keep: str | None = None
+) -> tuple[re.Pattern[str], str]:
+    """Replace the text of each *element* with *value*, unless it is a *keep* keyword.
+
+    The tag tail is atomic: once it has ended the tag, a kept keyword after it cannot
+    send the match back to end the tag at a `>` inside a quoted attribute instead.
+    """
+    kept = rf"(?!(?:{keep})<)" if keep else ""
+    return (
+        re.compile(rf"(<(?>{element}\b)(?>{_TAG_TAIL})){kept}[^<]+"),
+        rf"\g<1>{value}",
+    )
 
 
-def _element_leak(element: str, value: str) -> re.Pattern[str]:
+def _element_leak(element: str, value: str, keep: str | None = None) -> re.Pattern[str]:
     """Any text that ends at a closing *element* tag and is not *value* as written.
 
     An XML body escapes a `<REDACTED-...>` token, so the text allowed is *value* with
@@ -165,9 +183,22 @@ def _element_leak(element: str, value: str) -> re.Pattern[str]:
     text or CDATA followed by a child element, comment or processing instruction is
     not seen. A run starts only after a `<` or `>` and never backtracks, so the scan
     stays linear in the corpus.
+
+    A *keep* keyword is matched as the `kept` group, which `leaks()` does not report,
+    only right after a well-formed opening tag: its quoted runs closed and no `<` in
+    it. Anywhere else, after a child element or a malformed tag the scrub rule ended
+    at a later `>`, it is element text like any other. Matching an opening tag scans
+    it to its end, as the scrub rule does.
     """
     written = re.escape(value.replace("<", "&lt;").replace(">", "&gt;"))
-    return re.compile(rf"(?:(?<![^<>])(?!{written}<)[^<>]++|\]\]>)(?=</{element}\b)")
+    kept = (
+        rf"(?P<kept><(?>{element}\b){_ATTRS}(?<!/)>(?:{keep})(?=</{element}\b))|"
+        if keep
+        else ""
+    )
+    return re.compile(
+        rf"{kept}(?:(?<![^<>])(?!{written}<)[^<>]++|\]\]>)(?=</{element}\b)"
+    )
 
 
 #: The JSON escapes a value can follow: `\\`, `\n` or `\u00e9`. A lookbehind must be
@@ -599,7 +630,13 @@ class Tokenizer:
             and (name in words if WORD.fullmatch(name) else name in text)
         ]
         found += [host for host in self.hosts if host in text]
-        for pattern in (*ALWAYS_LEAKS, *self.private):
+        for pattern in ALWAYS_LEAKS:
+            found += [
+                m.group(0)
+                for m in pattern.finditer(text)
+                if not m.groupdict().get("kept")
+            ]
+        for pattern in self.private:
             found += [m.group(0) for m in pattern.finditer(text)]
         return found
 
