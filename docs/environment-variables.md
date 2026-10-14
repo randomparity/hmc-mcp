@@ -18,7 +18,7 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
 | `HMC_PROFILE` | string | _(none)_ | Named profile to load from `~/.config/hmcpctl/config.toml` (or platform equivalent); a value that is not a profile key is resolved through the top-level `nicknames` table. Selects the connection when no explicit `--host`/`HMC_HOST` is set |
 | `HMC_SSH_KEY_FILE` | path | _(none)_ | Path to an SSH private key file; when set, SSH commands use key-based auth instead of password auth |
 | `HMC_SSH_VERIFY_HOST_KEY` | bool | `true` | Verify SSH host keys against the process user's `~/.ssh/known_hosts`. Set `false` only for an explicit bypass; every connection warns. Profile key: `ssh_verify_host_key`. See [SSH trust setup](HMC_HINTS.md#ssh-host-key-trust) |
-| `HMC_VERIFY_SSL` | bool | `false` | Verify the HMC TLS certificate. HMCs ship self-signed certs; set to `true` only after installing the HMC CA locally |
+| `HMC_VERIFY_SSL` | bool | `false` | Verify the HMC TLS certificate. HMCs ship self-signed certs; set to `true` only after trusting the HMC's CA through `SSL_CERT_FILE` or `SSL_CERT_DIR`; see [TLS trust](configuration.md#tls-trust) |
 | `HMC_TIMEOUT` | float | `180.0` | HTTP request timeout in seconds. A `ManagedSystem` feed read on a large HMC has taken longer than 60 s (#1202) |
 | `HMC_UPLOAD_TIMEOUT` | positive float | `600.0` | Seconds the ISO upload (`hmc_upload_iso` / `hmcpctl storage upload-iso`) waits for the HMC's response after it has streamed the last byte. The HMC answers only once it has taken the whole file, and the wait grows with the ISO's size. The wait is never shorter than `HMC_TIMEOUT`; the upload's connect and write waits stay at `HMC_TIMEOUT`. TOML profile key: `upload_timeout`. See ADR 0177 (amended by #1055) |
 | `HMC_MAX_RESPONSE_BYTES` | positive integer | `33554432` (32 MiB) | Maximum HMC REST response size in bytes, including successful and error replies. Exact-boundary responses are accepted; larger declared or streamed bodies are refused. Raise for unusually large inventories only when memory permits: this bounds response bytes, not total process memory. Zero is invalid and cannot disable the ceiling. TOML profile key: `max_response_bytes`. Error-body diagnostics keep their separate 4096-byte cap |
@@ -60,14 +60,15 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
      words "where the setting came from"; that clause is the anchor, and this note must
      stay one `- **` bullet. -->
 - **TLS verification** (`HMC_VERIFY_SSL`): HMCs ship self-signed certificates,
-  so TLS verification is off by default. To verify the HMC certificate, install
-  its CA locally and set `HMC_VERIFY_SSL=true` — otherwise credentials are at
-  risk of man-in-the-middle interception.
+  so TLS verification is off by default. To verify the HMC certificate, trust its
+  CA through `SSL_CERT_FILE` or `SSL_CERT_DIR` ([TLS trust](configuration.md#tls-trust))
+  and set `HMC_VERIFY_SSL=true` — otherwise credentials are at risk of
+  man-in-the-middle interception.
   The `false` default is deliberate and stays until 1.0: self-signed
-  certificates are the norm on HMCs, and this package has no certificate-trust
-  story yet (no trust-store configuration, no per-host pinning, no fingerprint
-  option), so flipping the default would break every existing operator's working
-  configuration on upgrade with no migration path. Because the insecure-by-default
+  certificates are the norm on HMCs, and the only trust configuration is those two
+  variables (no setting for the operating-system store, no per-host pinning, no
+  fingerprint option), so flipping the default would break every existing operator's
+  working configuration on upgrade with no migration path. Because the insecure-by-default
   state must still be observable, every client constructed with verification off
   emits a `tls-verification-disabled` record to the audit stream, naming the HMC
   host and where the setting came from (`explicit-argument`,
