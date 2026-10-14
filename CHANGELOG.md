@@ -34,6 +34,10 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
 
 ### Changed
 
+- Round2 live testing preserves the configured partition and disk while provisioning
+  temporary owned fixtures. Recovery independently compares a fresh system/VIOS baseline
+  and original partition properties; missing legacy witnesses fail closed (#1513).
+
 - The `app` extra now pins `fastmcp-slim[server]==4.0.10`, up from 4.0.3; `mcp` and `mcp-types`
   stay at 2.2.0 (#1539).
 - Generated tool-reference verification retains the last release’s state regardless of the

@@ -22,7 +22,10 @@ there is nothing for it to leave. It witnesses the lpar-config arm (subtask 39) 
 any partition still carrying its reserved `hmcpctl-live-lpar-` prefix, and the
 lpar-power arm (subtask 41) by a `hmcpctl-live-pwr-` partition, a VIOS mapping backed
 by an `lppwr` volume, an `lppwr` volume left in the configured volume group, or a VIOS
-vSCSI adapter serving a `hmcpctl-live-pwr-` partition. Every other
+vSCSI adapter serving a `hmcpctl-live-pwr-` partition. Complete round2 runs carry
+an ST0 snapshot: recovery independently recaptures system and VIOS tables and
+reads the original partition's description/profile compatibility. Missing witness
+data or scope mismatches fail closed. Every other
 subtask the run dispatched is listed as NOT WITNESSED, to be checked by hand
 (docs/live-testing.md, step 4).
 
@@ -32,7 +35,7 @@ clears it. Exit 2 means some state could not be read, or the run dispatched a
 subtask this script does not witness, which is not the same as clean. A run
 that an exception or interrupt stopped (`run.partial` present and not `false`)
 also exits 2 whatever the checks found, under a PARTIAL header: the call in
-flight at the stop has no row, so what it changed is never checked.
+flight at the stop may have no row, so complete execution is not attested.
 
 **This never remediates.** It issues no mutating call: a remediator acting on
 a partial read strands exactly what the arm's cleanup guards exist to refuse.
@@ -59,6 +62,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import live_test_baseline as independent_baseline
 import live_test_runner as runner
 from live_test import (
     lpar_config,
@@ -83,6 +87,7 @@ from live_test.vmedia import (
     scsi_adapter_listing,
 )
 
+from hmcpctl.config import HMCConfig
 from hmcpctl.operations.lpar.ownership import parse_lpar_ownership_caller_token
 from hmcpctl.ssh.commands import HMC_NO_RESULTS
 from hmcpctl.ssh.profiles import profile_io_slot_rows_command
@@ -95,6 +100,7 @@ _READ_ONLY_TOOLS = frozenset(
     {
         "hmc_list_dedicated_pcie_slots",
         "hmc_get_lpar_description",
+        "hmc_get_lpar_proc_compat",
         "hmc_get_lpar_state",
         "hmc_run_command",
         "hmc_read_lpar_boot_order",
@@ -1515,6 +1521,93 @@ async def check_test_partition(call, inputs: LparResidueInputs) -> list[Finding]
     return findings
 
 
+@dataclass(frozen=True)
+class Round2Inputs:
+    """Fresh pre-mutation baseline and identity for the complete round2 dispatch."""
+
+    snapshot: dict[str, Any]
+    hmc: dict[str, Any]
+    lpar: str
+    description: str
+    compatibility: dict[str, Any]
+
+
+def round2_inputs_from_document(
+    document: dict[str, Any], subtasks: list[int]
+) -> Round2Inputs | None:
+    if document.get("run", {}).get("group") != "round2":
+        return None
+    if subtasks != runner.SUBTASK_GROUPS["round2"]:
+        raise ValueError("round2 dispatch does not match the complete named arm")
+    config = runner._decode_saved_config(document.get("config"))
+    artifacts = document.get("artifacts")
+    saved = artifacts.get("lp3_baseline") if isinstance(artifacts, dict) else None
+    if not isinstance(saved, dict):
+        raise TypeError("round2 has no producer baseline")
+    captured = independent_baseline.validate(saved.get("round2_snapshot"))
+    hmc = document.get("hmc")
+    if (
+        not isinstance(hmc, dict)
+        or captured["scope"]["host"] != hmc.get("host")
+        or captured["scope"]["system"] != config.system_name
+    ):
+        raise ValueError("round2 snapshot scope does not match its run")
+    if captured["scope"]["vios_ids"] != [artifacts.get("vios_partition_id")]:
+        raise ValueError("round2 snapshot omits its serving VIOS")
+    description, compatibility = saved.get("description"), saved.get("proc_compat")
+    if (
+        not isinstance(description, str)
+        or not isinstance(compatibility, dict)
+        or not compatibility.get("profile")
+        or not compatibility.get("profile_mode")
+    ):
+        raise ValueError("round2 description/profile baseline is incomplete")
+    return Round2Inputs(captured, hmc, config.lp3_name, description, compatibility)
+
+
+async def check_round2(call, inputs: Round2Inputs) -> list[Finding]:
+    config = HMCConfig()
+    if runner._hmc_identity(config) != inputs.hmc:
+        raise StateUnreadable("current HMC identity does not match round2 results")
+    scope = inputs.snapshot["scope"]
+    # This installed capture interface performs only REST GETs and listing SSH commands.
+    now = independent_baseline.validate(
+        await independent_baseline.capture(config, scope["system"], scope["vios_ids"])
+    )
+    findings = []
+    if now != inputs.snapshot:
+        findings.append(
+            Finding(
+                "round2 baseline drift",
+                "independent system/VIOS tables differ",
+                "inspect the retained baseline and current system; restore manually",
+            )
+        )
+    for tool, expected in (
+        ("hmc_get_lpar_description", inputs.description),
+        ("hmc_get_lpar_proc_compat", inputs.compatibility),
+    ):
+        status, data = await call(
+            tool, system_name_or_uuid=scope["system"], lpar_name_or_uuid=inputs.lpar
+        )
+        from live_test.observation import plain_data
+
+        data = plain_data(data)
+        if status != "PASS" or type(data) is not type(expected):
+            raise StateUnreadable("round2 property read is incomplete", findings)
+        if tool == "hmc_get_lpar_description":
+            data = data.removesuffix("\n").removesuffix("\r")
+        if data != expected:
+            findings.append(
+                Finding(
+                    "round2 property drift",
+                    f"{tool} differs from baseline",
+                    "restore the property from the retained private baseline",
+                )
+            )
+    return findings
+
+
 async def check_run(
     call,
     pcie: RecoveryInputs | None,
@@ -1524,6 +1617,7 @@ async def check_run(
     users: bool = False,
     lpar_config_inputs: LparConfigInputs | None = None,
     lpar_power_inputs: LparPowerInputs | None = None,
+    round2_inputs: Round2Inputs | None = None,
 ) -> list[Finding]:
     """Each arm's checks in turn, each read whatever the others found."""
     findings: list[Finding] = []
@@ -1540,6 +1634,7 @@ async def check_run(
         (check_network, network_inputs),
         (check_lpar_config, lpar_config_inputs),
         (check_lpar_power, lpar_power_inputs),
+        (check_round2, round2_inputs),
     ):
         if inputs is None:
             continue
@@ -1571,6 +1666,7 @@ async def _run_checks(
     users: bool = False,
     lpar_config_inputs: LparConfigInputs | None = None,
     lpar_power_inputs: LparPowerInputs | None = None,
+    round2_inputs: Round2Inputs | None = None,
 ) -> list[Finding]:
     state = runner.RunState(config=runner.LiveTestConfig())
     # The checks need the live run's composition, not bare ``create_mcp``:
@@ -1589,6 +1685,7 @@ async def _run_checks(
             users,
             lpar_config_inputs,
             lpar_power_inputs,
+            round2_inputs,
         )
 
 
@@ -1637,7 +1734,7 @@ def _report(
     if partial:
         print(
             "PARTIAL  the run was interrupted: the call in flight has no row, so "
-            "check what its arm changes by hand (docs/live-testing.md)"
+            "inspect its partial evidence and independent checks (docs/live-testing.md)"
         )
     elif not findings and not unwitnessed and not unread:
         print("CLEAN  nothing this run dispatched was left behind")
@@ -1669,7 +1766,16 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    unwitnessed = sorted(set(subtasks) - _WITNESSED_SUBTASKS)
+    round2_inputs = None
+    round2_error = None
+    try:
+        round2_inputs = round2_inputs_from_document(document, subtasks)
+    except (ValueError, TypeError, KeyError) as error:
+        round2_error = str(error)
+    witnessed = _WITNESSED_SUBTASKS | (
+        set(runner.SUBTASK_GROUPS["round2"]) if round2_inputs else set()
+    )
+    unwitnessed = sorted(set(subtasks) - witnessed)
     pcie = inputs_from_document(document)
     partition = lpar_inputs_from_document(document, subtasks)
     vios = vios_backup_inputs_from_document(document, subtasks)
@@ -1678,7 +1784,7 @@ def main(argv: list[str] | None = None) -> int:
     lpar_power_inputs = lpar_power_inputs_from_document(document, subtasks)
 
     findings: list[Finding] = []
-    unread: list[str] = []
+    unread: list[str] = [round2_error] if round2_error else []
     try:
         users = users_witnessed(document, subtasks)
     except ValueError as error:
@@ -1693,6 +1799,7 @@ def main(argv: list[str] | None = None) -> int:
             network_inputs,
             lpar_config_inputs,
             lpar_power_inputs,
+            round2_inputs,
         )
     ):
         if not runner._bootstrap_config():
@@ -1708,6 +1815,7 @@ def main(argv: list[str] | None = None) -> int:
                     users,
                     lpar_config_inputs,
                     lpar_power_inputs,
+                    round2_inputs,
                 )
             )
         except MutatingCallRefused as refused:
