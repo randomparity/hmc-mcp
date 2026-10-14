@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -711,6 +711,7 @@ dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "truststore" },
     { name = "typing-extensions" },
 ]
 
@@ -752,6 +753,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.13.4,<3" },
     { name = "pydantic-settings", specifier = ">=2.15.0,<3" },
     { name = "rich", marker = "extra == 'app'", specifier = "==15.0.0" },
+    { name = "truststore", specifier = ">=0.10.4,<1" },
     { name = "typer", marker = "extra == 'app'", specifier = "==0.27.2" },
     { name = "typing-extensions", specifier = ">=4.16.0,<5" },
     { name = "uvicorn", marker = "extra == 'app'", specifier = "==0.52.4" },
