@@ -1098,11 +1098,10 @@ def test_serve_reports_an_unloadable_policy_and_starts_nothing(tmp_path, monkeyp
     )
     result = CliRunner().invoke(app, ["serve", "--access-policy", "missing"])
 
-    # `fail` renders through a rich Console, which hard-folds a non-tty line at
-    # 80 columns with no spaces to break on, so a tmp_path substring can fold
-    # mid-word between runs. Assert on wrap-proof text instead.
+    # `fail` renders through a rich Console that wraps a non-tty line at 80 columns,
+    # and the line carries tmp_path, so the wrap can land inside the phrase (#1536).
     assert result.exit_code == 1
-    assert "TOML parse error" in result.output
+    assert "TOML parse error" in " ".join(result.output.split())
 
 
 def test_inspection_reports_which_tools_a_targets_table_cannot_bound():
