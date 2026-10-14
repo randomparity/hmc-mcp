@@ -360,6 +360,8 @@ def test_serial_keyword_after_a_quoted_gt_is_kept(attribute: str, encode: Any) -
         "<Root>SYN0001>none</VirtualSerialNumber></Root>",
         "<VirtualSerialNumber SYN</VirtualSerialNumber>none</VirtualSerialNumber>",
         '<VirtualSerialNumber kb="x<SYN>none</VirtualSerialNumber>',
+        "<VirtualSerialNumber SYN0001/>none</VirtualSerialNumber>",
+        '<VirtualSerialNumber kb="SYN0001>none</VirtualSerialNumber>',
     ],
 )
 def test_serial_keyword_not_after_its_opening_tag_is_a_leak(body: str) -> None:
@@ -927,6 +929,12 @@ def test_uuid_tokens_keep_case_and_are_consistent() -> None:
     upper = corpus[1]["path"].rsplit("/", 1)[1]
     assert upper == "00000001-ABCD-4EF0-8ABC-000000000001"
     assert corpus[-1]["stdout"] == upper.lower()
+
+
+def test_private_pattern_with_a_kept_group_is_still_a_leak() -> None:
+    """Only the serial backstop's own `kept` group is exempt, never an operator's."""
+    tok = export.Tokenizer({}, set(), [r"(?P<kept>ROOM-\d)"])
+    assert tok.leaks("lab ROOM-7 rack") == ["ROOM-7"]
 
 
 def test_private_pattern_is_replaced() -> None:

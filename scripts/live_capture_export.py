@@ -630,12 +630,14 @@ class Tokenizer:
             and (name in words if WORD.fullmatch(name) else name in text)
         ]
         found += [host for host in self.hosts if host in text]
-        for pattern in (*ALWAYS_LEAKS, *self.private):
+        for pattern in ALWAYS_LEAKS:
             found += [
                 m.group(0)
                 for m in pattern.finditer(text)
                 if not m.groupdict().get("kept")
             ]
+        for pattern in self.private:
+            found += [m.group(0) for m in pattern.finditer(text)]
         return found
 
 
