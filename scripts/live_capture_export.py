@@ -292,7 +292,9 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     _element_rule(*_SERIAL_ELEMENT),
     (re.compile(r"\b(\d{4}-[0-9A-Z]{3}\*)[0-9A-Z]{7}\b"), r"\g<1><REDACTED-SERIAL>"),
     # Every element naming a MAC address, `MACAddressPrefix` and `MacAddressValue` too, in
-    # any case and after any namespace prefix.
+    # any case and after any namespace prefix. A self-closing `<MACAddress/>` has no
+    # value: text after it belongs to its parent, which this rule and `_MAC_LEAK` leave
+    # alone unless it ends at a closing MAC tag.
     (
         re.compile(rf"(<{_NS_PREFIX}(?i:\w*MACAddress\w*+){_TAG_TAIL})([^<]+)"),
         _mac_element,
