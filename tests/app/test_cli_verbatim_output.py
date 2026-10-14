@@ -21,7 +21,6 @@ from typer.testing import CliRunner
 import hmcpctl.cli_commands
 from hmcpctl import cli
 from hmcpctl.cli_commands import console as cli_console
-from hmcpctl.cli_commands import output as cli_output
 from hmcpctl.cli_commands import raw as cli_raw
 from hmcpctl.cli_commands.lpar import config as cli_lpars
 from hmcpctl.cli_commands.lpar import inventory as cli_lpar_inventory
@@ -399,10 +398,6 @@ def test_issue_listed_sites_print_hmc_and_argument_text_verbatim(
     monkeypatch, module, value, runners, argv
 ):
     _stub(monkeypatch, module, value, *runners)
-    # Each command prints through the console its module imported by name. Rich freezes
-    # that console's width when COLUMNS is set at import, so monkeypatch.setenv cannot
-    # widen it then and a narrow width wraps the marker; pin it here (#1570).
-    monkeypatch.setattr(module, "console", Console(width=200, emoji=False))
 
     result = RUNNER.invoke(cli.app, argv)
 
@@ -413,10 +408,6 @@ def test_issue_listed_sites_print_hmc_and_argument_text_verbatim(
 def test_systems_list_table_prints_bracketed_system_name_verbatim(monkeypatch):
     system = {"UUID": "u1", "Resource": {"SystemName": MARKED, "State": "operating"}}
     _stub(monkeypatch, cli_systems, [system], "with_client")
-    # A narrow terminal truncates the name cell. Click's terminal_width= never reaches
-    # Rich, which sizes from COLUMNS or the real terminal, so pin the table console's
-    # width (#1560).
-    monkeypatch.setattr(cli_output, "console", Console(width=200, emoji=False))
 
     result = RUNNER.invoke(cli.app, ["systems", "list"])
 
