@@ -155,6 +155,14 @@ _SERIAL_ELEMENT = (
     "none|auto",
 )
 
+#: `virtual_serial_num=` holds the same serial, or the same keywords, in `lssyscfg -r
+#: lpar` output (#1618). A keyword is kept only as the field's whole value, in its
+#: documented case. An unquoted value ends at a field separator, a quote, a line end or
+#: the end of the text, and in `json.dumps` text at the `\n`, `\r` or `\"` escape; a
+#: quoted one ends only at its closing quote.
+_VIRTUAL_SERIAL_KEPT = "(?-i:none|auto)"
+_FIELD_END = r'(?=[,\n"]|\\[nr"]|$)'
+
 
 def _element_rule(
     element: str, value: str, keep: str | None = None
@@ -332,11 +340,17 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     _element_rule(*_DEVICE_ID_ELEMENT),
     # A quoted CSV field holds every value up to its closing quote: "wwpns=a,b".
     (
-        re.compile(r'(?i)"(unique_id|udid|wwpns?|wwnn|serial_num)=[^"\n]*"'),
+        re.compile(
+            r'(?i)"(unique_id|udid|wwpns?|wwnn|serial_num|virtual_serial_num'
+            rf'(?!={_VIRTUAL_SERIAL_KEPT}\\?"))=[^"\n]*"'
+        ),
         r'"\g<1>=<REDACTED-DEVID>"',
     ),
     (
-        re.compile(r"(?i)\b(unique_id|udid|wwpns?|wwnn|serial_num)=[^,\n\"]+"),
+        re.compile(
+            r"(?i)\b(unique_id|udid|wwpns?|wwnn|serial_num|virtual_serial_num"
+            rf"(?!={_VIRTUAL_SERIAL_KEPT}{_FIELD_END}))=[^,\n\"]+"
+        ),
         r"\g<1>=<REDACTED-DEVID>",
     ),
     _element_rule(*_SERIAL_ELEMENT),
@@ -383,6 +397,13 @@ ALWAYS_LEAKS = (
         )
     ),
     _MAC_LEAK,
+    # A virtual serial the key=value rules missed: no word boundary is needed, and
+    # `json.dumps` text hides one behind a `\n` escape.
+    re.compile(
+        r"(?i)virtual_serial_num="
+        rf"(?!(?:<REDACTED-DEVID>|&lt;REDACTED-DEVID&gt;|{_VIRTUAL_SERIAL_KEPT}){_FIELD_END})"
+        r'[^,\n"]+'
+    ),
 )
 #: Elements whose values are fixed HMC vocabulary (task names such as `View HMC Logs`).
 #: A candidate name found inside one is HMC wording, never a private name.
