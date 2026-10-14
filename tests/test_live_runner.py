@@ -6579,8 +6579,8 @@ async def test_st14_cleanup_uses_scoped_delete_and_independent_exact_inventory(
             return "FAIL", observation.CallFailure(
                 "HMCCLIError", "HSCL8012 partition not found", "", None, False
             )
-        if tool == "hmc_list_storage_mappings":
-            return "PASS", []
+        if tool == "hmc_get_vios_storage_detail":
+            return "PASS", {"Resource": {"VirtualSCSIMappings": {}}}
         if tool == "hmc_run_command":
             return "PASS", _st14_volumes(state, *listed)
         if tool == "hmc_delete_virtual_disk":
@@ -6654,8 +6654,8 @@ async def test_st14_cleanup_delete_failures_are_fail_and_stop(monkeypatch, failu
             return "FAIL", observation.CallFailure(
                 "HMCCLIError", "HSCL8012 partition not found", "", None, False
             )
-        if tool == "hmc_list_storage_mappings":
-            return "PASS", []
+        if tool == "hmc_get_vios_storage_detail":
+            return "PASS", {"Resource": {"VirtualSCSIMappings": {}}}
         if tool == "hmc_run_command":
             return "PASS", _st14_volumes(state, "hp14deadbeef")
         if tool == "hmc_delete_virtual_disk":
@@ -6711,8 +6711,8 @@ async def test_st14_cleanup_refuses_unproven_absence(monkeypatch, fault):
             return "FAIL", observation.CallFailure(
                 "HMCCLIError", "HSCL8012 partition not found", "", None, False
             )
-        if tool == "hmc_list_storage_mappings":
-            return "PASS", []
+        if tool == "hmc_get_vios_storage_detail":
+            return "PASS", {"Resource": {"VirtualSCSIMappings": {}}}
         if tool != "hmc_run_command":
             return "PASS", {}
         reads += 1

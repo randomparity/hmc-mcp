@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import secrets
 import shlex
 from typing import TYPE_CHECKING, cast
@@ -189,6 +190,35 @@ async def _fixture_partition(client: Client, state: RunState, name: str) -> bool
     return None
 
 
+async def _fixture_disk_unmapped(
+    client: Client, state: RunState, fixture: dict[str, str]
+) -> bool:
+    import live_test_baseline as baseline
+
+    status, detail = await state.call(
+        client,
+        "hmc_get_vios_storage_detail",
+        vios_name_or_uuid=fixture["vios_uuid"],
+        system_name_or_uuid=state.config.system_name,
+    )
+    if status != "PASS" or not isinstance(detail, dict):
+        return False
+    resource = detail.get("Resource")
+    if not isinstance(resource, dict):
+        return False
+    try:
+        # The complete validator distinguishes bare adapters and empty optical
+        # targets from malformed backings, unlike the lossy list projection.
+        rows = baseline.mapping_rows(resource, str(state.artifacts.vios_partition_id))
+    except (ValueError, TypeError, KeyError):
+        return False
+    return not any(
+        json.loads(row["backing"])["storage"].get("VirtualDisk", {}).get("DiskName")
+        == fixture["disk"]
+        for row in rows
+    )
+
+
 async def _cleanup_fixture(
     client: Client, state: RunState, fixture: dict[str, str]
 ) -> None:
@@ -232,22 +262,7 @@ async def _cleanup_fixture(
                 "MANUAL RECOVERY REQUIRED: partition remains",
             )
             return
-    status, mappings = await state.call(
-        client,
-        "hmc_list_storage_mappings",
-        vios_name_or_uuid=fixture["vios_uuid"],
-        system_name_or_uuid=state.config.system_name,
-    )
-    if (
-        status != "PASS"
-        or not isinstance(mappings, list)
-        or any(
-            not isinstance(row, dict)
-            or not isinstance(row.get("backing_name"), str)
-            or row["backing_name"] == disk
-            for row in mappings
-        )
-    ):
+    if not await _fixture_disk_unmapped(client, state, fixture):
         state.record(
             14,
             "fixture disk cleanup",

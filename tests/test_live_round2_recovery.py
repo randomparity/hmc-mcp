@@ -84,6 +84,7 @@ class Hardware:
         self.mappings = []
         self.fail = None
         self.foreign = False
+        self.raw_mappings = []
 
     async def call(self, _client, tool, **kw):
         self.calls.append((tool, kw))
@@ -152,7 +153,18 @@ class Hardware:
             self.mappings = []
             return "PASS", {"resource_deleted": True, "workflow_completed": True}
         if tool == "hmc_list_storage_mappings":
-            return "PASS", self.mappings
+            from hmcpctl.operations.storage.resources import _storage_mapping
+
+            return "PASS", [
+                *self.mappings,
+                *(asdict(_storage_mapping(row)) for row in self.raw_mappings),
+            ]
+        if tool == "hmc_get_vios_storage_detail":
+            return "PASS", {
+                "Resource": {
+                    "VirtualSCSIMappings": {"VirtualSCSIMapping": self.raw_mappings}
+                }
+            }
         if tool == "hmc_delete_virtual_disk":
             self.disks.discard(kw["disk_name"])
             return "PASS", {}
@@ -540,3 +552,40 @@ def test_restored_context_drops_prior_round2_witnesses(state, tmp_path):
     assert "round2_snapshot" not in restored.artifacts.lp3_baseline
     assert "round2_fixture" not in restored.artifacts.lp3_baseline
     assert restored.artifacts.lp3_baseline["description"] == "original"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("shape", ["bare", "optical", "malformed", "fixture"])
+async def test_st14_cleanup_classifies_complete_unbacked_mapping_inventory(
+    state, monkeypatch, shape
+):
+    hardware = Hardware(state)
+    mapping = {
+        "ServerAdapter": {
+            "AdapterName": "vhost9",
+            "VirtualSlotNumber": "19",
+            "RemoteLogicalPartitionID": "9",
+            "RemoteSlotNumber": "3",
+        }
+    }
+    if shape == "optical":
+        mapping["TargetDevice"] = {
+            "VirtualOpticalTargetDevice": {"TargetName": "vtopt9"}
+        }
+    elif shape == "malformed":
+        mapping["Storage"] = {}
+    elif shape == "fixture":
+        mapping["TargetDevice"] = {"VirtualDiskTargetDevice": {"TargetName": "vtscsi9"}}
+        mapping["Storage"] = {"VirtualDisk": {"DiskName": "hp14deadbeef"}}
+    hardware.raw_mappings = [mapping]
+    monkeypatch.setattr(provisioning.secrets, "token_hex", lambda _: "deadbeef")
+    monkeypatch.setattr(runner.RunState, "call", hardware.call)
+    await provisioning.exercise_storage_provisioning(None, state)
+    assert hardware.partitions == {state.config.lp3_name: ("original-uuid", "original")}
+    if shape in {"bare", "optical"}:
+        assert hardware.disks == {state.config.vdisk_name}
+        assert not any(row["status"] == "FAIL" for row in state.results)
+    else:
+        assert "hp14deadbeef" in hardware.disks
+        assert not any(tool == "hmc_delete_virtual_disk" for tool, _ in hardware.calls)
+        assert any(row["status"] == "FAIL" for row in state.results)
