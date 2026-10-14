@@ -61,7 +61,6 @@ BASELINED_FINDINGS = {
     "tests/fixtures/live/vocabulary/enums-v11r2-p11-9824-42a.json": 1,
     "tests/fixtures/live/vocabulary/enums-v11r2-p9-9009-42a.json": 1,
     "tests/unit/test_ssh.py": 1,
-    "tests/unit/test_client.py": 1,
 }
 ACTION_PINS = {
     "actions/checkout": (

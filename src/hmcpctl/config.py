@@ -170,6 +170,15 @@ class HMCConfig(BaseSettings):
     verify_ssl: bool = Field(
         default=False, description="Verify the HMC TLS certificate"
     )
+    trust_system_store: bool = Field(
+        default=True,
+        description=(
+            "When true and verify_ssl is true, use the operating-system trust store "
+            "via truststore.SSLContext instead of only the certifi roots. Set false "
+            "to rely on SSL_CERT_FILE / SSL_CERT_DIR and the bundled roots only "
+            "(HMC_TRUST_SYSTEM_STORE). Ignored when verify_ssl is false."
+        ),
+    )
     timeout: float = Field(default=180.0, description="HTTP timeout in seconds")
     upload_timeout: float = Field(
         default=600.0,

@@ -103,6 +103,15 @@ def main(
         envvar="HMC_VERIFY_SSL",
         help="Verify the HMC TLS certificate",
     ),
+    trust_system_store: bool | None = typer.Option(
+        None,
+        "--trust-system-store/--no-trust-system-store",
+        envvar="HMC_TRUST_SYSTEM_STORE",
+        help=(
+            "When --verify-ssl is on, trust the OS certificate store via truststore. "
+            "An explicit SSL_CERT_FILE takes precedence. On by default."
+        ),
+    ),
     profile: str | None = typer.Option(
         None,
         "--profile",
@@ -110,7 +119,14 @@ def main(
         help="Named profile from ~/.config/hmcpctl/config.toml (or platform equivalent)",
     ),
 ) -> None:
-    option_names = ("host", "user", "password", "verify_ssl", "profile")
+    option_names = (
+        "host",
+        "user",
+        "password",
+        "verify_ssl",
+        "trust_system_store",
+        "profile",
+    )
     command_line_options = frozenset(
         name
         for name in option_names
@@ -121,6 +137,7 @@ def main(
         user=user,
         password=password,
         verify_ssl=verify_ssl,
+        trust_system_store=trust_system_store,
         profile=profile,
         command_line_options=command_line_options,
     )

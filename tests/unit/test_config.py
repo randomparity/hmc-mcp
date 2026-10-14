@@ -1427,6 +1427,7 @@ def test_from_mapping_applies_every_supplied_key():
         "ssh_key_file": "/keys/row",
         "ssh_verify_host_key": False,
         "verify_ssl": True,
+        "trust_system_store": False,
         "timeout": 15.0,
         "upload_timeout": 450.0,
         "max_response_bytes": 67108864,
