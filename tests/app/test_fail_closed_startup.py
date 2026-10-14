@@ -100,7 +100,9 @@ def _plain(text: str) -> str:
     """The rendered words alone, so a phrase matches wherever Rich wrapped it (#1621).
 
     Rich breaks a line wherever the console width falls, and a message carrying a
-    temporary path can put that break inside any phrase after it.
+    temporary path can put that break inside any phrase after it. Only breaks at
+    whitespace are rejoined: a word wider than the console is folded mid-word, and the
+    joined pieces no longer match.
     """
     return " ".join(_unstyle(text).split())
 
@@ -465,7 +467,9 @@ def test_an_unresolvable_config_home_refuses_without_a_traceback(monkeypatch):
 
 
 # Narrower than "cannot be read", so Rich must break that phrase wherever the path ends;
-# 40 columns wraps it only for some temporary-path lengths (#1621).
+# 40 columns wraps it only for some temporary-path lengths (#1621). It must also stay at
+# least len("access-policy"): any narrower and Rich folds that word mid-word, which turns
+# the "no access-policy file at" negative back into one that cannot fail.
 _PHRASE_SPLITTING_COLUMNS = len("cannot be read") - 1
 
 
