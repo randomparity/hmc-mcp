@@ -418,7 +418,7 @@ def test_element_name_case_and_prefix_are_scrubbed(
 def test_namespace_prefix_does_not_span_a_tag(gap: str) -> None:
     """A prefix is name characters only: `x:SerialNumber` in another tag is not one."""
     tok = export.Tokenizer({}, set())
-    body = f"<Note kb{gap}x:SerialNumber>SYN-77Q</Note>"
+    body = f"<Note{gap}x:SerialNumber>SYN-77Q</Note>"
     assert tok.tokenize(body) == body
 
 
