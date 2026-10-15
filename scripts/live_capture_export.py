@@ -267,10 +267,11 @@ _JOINED_OCTET = (
     rf"(?<![0-9A-Fa-f])[0-9A-Fa-f]++(?={_MAC_SEPARATOR})"
     r"|(?<=[0-9A-Fa-f][-.:])[0-9A-Fa-f]++"
 )
-#: A `_JOINED_OCTET` with a non-zero digit. The first starts as a joined six-digit run
-#: does, so never on an escape's letter or digits.
+#: A `_JOINED_OCTET` with a non-zero digit. The first never starts on an escape's letter
+#: or digits; a run right after an escape ends at the separator, so the word-bounded
+#: branch of `_LIVE_HEX_RUN` already reports it.
 _LIVE_JOINED_OCTET = (
-    rf"(?:(?<![0-9A-Fa-f\\])(?<!\\u)|{_AFTER_ESCAPE})0*+[1-9A-Fa-f][0-9A-Fa-f]*+"
+    r"(?<![0-9A-Fa-f\\])(?<!\\u)0*+[1-9A-Fa-f][0-9A-Fa-f]*+"
     rf"(?={_MAC_SEPARATOR})|(?<=[0-9A-Fa-f][-.:])0*+[1-9A-Fa-f]"
 )
 #: A hex run with a non-zero digit: one no ASCII letter or digit adjoins, as the MAC
