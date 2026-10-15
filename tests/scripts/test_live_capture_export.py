@@ -2412,6 +2412,9 @@ def test_built_in_accounts_are_not_names() -> None:
         ("serial_number", "<REDACTED-SERIAL>"),
         ("VirtualSerialNumber", "<REDACTED-SERIAL>"),
         ("virtual_serial_num", "<REDACTED-SERIAL>"),
+        ("LogicalSerialNum", "<REDACTED-SERIAL>"),
+        ("cluster_serial_num", "<REDACTED-SERIAL>"),
+        ("peer_collective_serial_num", "<REDACTED-SERIAL>"),
     ],
 )
 def test_tool_output_identifiers_are_redacted(key: str, token: str) -> None:
@@ -2438,7 +2441,15 @@ def test_tool_output_identifiers_are_redacted(key: str, token: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "key", ["VirtualSerialNumber", "virtual_serial_num", "SerialNumber"]
+    "key",
+    [
+        "VirtualSerialNumber",
+        "virtual_serial_num",
+        "SerialNumber",
+        "logical_serial_num",
+        "ClusterSerialNum",
+        "PEER_COLLECTIVE_SERIAL_NUM",
+    ],
 )
 @pytest.mark.parametrize(
     ("value", "expected"),

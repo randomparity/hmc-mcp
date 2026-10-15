@@ -833,6 +833,9 @@ _SERIAL_KEYS = {
     "serial",
     "serialnum",
     "virtualserialnum",
+    "logicalserialnum",
+    "clusterserialnum",
+    "peercollectiveserialnum",
 }
 #: The keywords a serial element keeps (#1593), kept here on the same terms: only as the
 #: whole value, in their documented case.
