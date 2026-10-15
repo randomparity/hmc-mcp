@@ -258,9 +258,11 @@ _AFTER_LITERAL_U = (
     r"(?<=\\u)(?:(?=[0-9A-Fa-f]{1,3}(?![0-9A-Za-z]))0*+[1-9A-Fa-f]"
     rf"|(?!00[03]0)(?=[0-9A-Fa-f]{{4}}{_MAC_SEPARATOR}))"
 )
-#: A whole hex run that a MAC separator and hex follow, or that follows hex and a
-#: separator: an octet, even joined to a word, as in `G0A:1B` or `5FG` (#1640). Each
-#: starts only where a run does, so a run is scanned once.
+#: A whole hex run directly before a MAC separator and hex, or directly after hex and a
+#: separator: an octet, even when a word character adjoins its other end, as in
+#: `G0A:1B` or `:5FG` (#1640). A word character between the run and the separator, as
+#: in `0AG:1B`, is not covered. Each starts only where a run does, so a run is scanned
+#: once.
 _JOINED_OCTET = (
     rf"(?<![0-9A-Fa-f])[0-9A-Fa-f]++(?={_MAC_SEPARATOR})"
     r"|(?<=[0-9A-Fa-f][-.:])[0-9A-Fa-f]++"
