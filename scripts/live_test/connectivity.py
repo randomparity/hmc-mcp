@@ -105,8 +105,11 @@ async def _discover_console(client: Client, state: RunState) -> object:
     console_uuid = None
     if st == "PASS" and isinstance(data, dict):
         console_uuid = data.get("uuid") or data.get("UUID")
-    # console.info can fail with HTTP 500 on the same firmware bug that breaks
-    # list_systems; record the assertion so the gap is visible in the maturity catalog.
+    # console.info reads the ManagementConsole feed, which some HMC firmware builds
+    # have answered with HTTP 500 over a null Session/SessionId/Value (#880). #1531's
+    # sweep read only ManagedSystem, so it says nothing about this endpoint. No outcome
+    # is declared: a 500 records a failed assertion, keeping the gap visible in the
+    # maturity catalog.
     state.record_verified(
         1,
         "hmc_get_console_info",
