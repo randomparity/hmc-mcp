@@ -340,6 +340,14 @@ class TLSVerificationDisabledWarning(UserWarning):
     """Warning emitted when HMC TLS certificate verification is disabled."""
 
 
+class HMCVerifySSLDefaultWarning(UserWarning):
+    """Warning emitted at client construction when ``verify_ssl`` defaults to false.
+
+    The ``false`` default will change to ``true`` in the 1.0 release; this warning
+    names the forthcoming change and the migration options available before then.
+    """
+
+
 _reported_tls_warning_keys: set[tuple[str, VerifySSLSource]] = set()
 _tls_warning_lock = Lock()
 
@@ -414,6 +422,22 @@ class HMCClient(
             audit.record_tls_verification_disabled(
                 host=self.config.host,
                 source=self._verify_ssl_source,
+            )
+        if not self.config.verify_ssl and self._verify_ssl_source == "field-default":
+            # ADR 0224 Decision 3: one-time pre-1.0 startup warning that the
+            # false default will flip to true in 1.0. Only operators who have
+            # not set HMC_VERIFY_SSL explicitly (field-default) hear it; an
+            # explicit false is a deliberate choice and is silent here.
+            warnings.warn(
+                "HMC_VERIFY_SSL defaults to false, but that default will change "
+                "to true in the 1.0 release. To keep verification off for this "
+                "HMC, set HMC_VERIFY_SSL=false explicitly (or pass "
+                "--verify-ssl=false). To verify instead, trust the HMC's "
+                "certificate: set HMC_TRUST_SYSTEM_STORE=true (the default) and "
+                "HMC_VERIFY_SSL=true, set HMC_CA_BUNDLE to a PEM file, or set "
+                "SSL_CERT_FILE/SSL_CERT_DIR. See docs/configuration.md#tls-trust.",
+                HMCVerifySSLDefaultWarning,
+                stacklevel=2,
             )
         # X-Audit-Memento is evaluated once at construction time — this is safe
         # because each tool invocation creates a new HMCClient (via asyncio.run(_go)).
