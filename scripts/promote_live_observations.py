@@ -305,6 +305,8 @@ def _refuse_weaker(operation: str, evidence: list, observation: dict) -> None:
     # No scenario declares its assertion set, and a passing observation records
     # only the assertions it held; a conditional one can drop out (ST19's
     # refused-while-mounted). The evidence being replaced is the only baseline.
+    # A refusal stops the whole window's promotion, by the same rule as every
+    # other PromotionError.
     held = set(observation["assertions"])
     for row in evidence:
         if (
@@ -317,7 +319,8 @@ def _refuse_weaker(operation: str, evidence: list, observation: dict) -> None:
             missing = ", ".join(sorted(set(row["assertions"]) - held))
             raise PromotionError(
                 f"passing observation for {operation} lacks assertions held by the "
-                f"evidence it would replace: {missing}"
+                f"evidence it would replace: {missing}; rerun the scenario so they "
+                "hold, or retire the stored row in a reviewed commit before the window"
             )
 
 

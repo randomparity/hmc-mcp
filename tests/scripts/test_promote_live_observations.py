@@ -389,7 +389,7 @@ def test_refuse_passing_observation_with_strict_subset_of_assertions():
     weaker = {**_STORED, "id": "new", "assertions": _HELD[1:]}
     with pytest.raises(
         promotion.PromotionError,
-        match="media.delete lacks assertions .*: refused-while-mounted$",
+        match="media.delete lacks assertions .*: refused-while-mounted; rerun",
     ):
         promotion._merge(catalog, {"media.delete": [("round2", weaker)]}, [], [])
     assert catalog["operations"][0]["evidence"] == [_STORED]
@@ -416,7 +416,7 @@ def test_replace_with_equal_superset_or_non_subset_assertions(assertions):
     ("stored", "change"),
     [
         ({**_STORED, "result": "failed"}, {}),
-        ({**_STORED, "channel": "fixture"}, {}),
+        ({**_STORED, "channel": "automated"}, {}),
         (_STORED, {"scenario": "st19-other-scenario"}),
         (_STORED, {"result": "failed"}),
     ],
