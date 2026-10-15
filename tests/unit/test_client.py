@@ -4397,6 +4397,7 @@ def test_trust_system_store_on_with_verify_ssl_uses_ssl_context(monkeypatch):
     import truststore
 
     monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.delenv("SSL_CERT_DIR", raising=False)
     captured = _patch_async_client(monkeypatch)
     HMCClient(make_config(verify_ssl=True, trust_system_store=True))
     assert len(captured) >= 1
@@ -4409,6 +4410,7 @@ def test_trust_system_store_off_with_verify_ssl_does_not_use_ssl_context(monkeyp
     import truststore
 
     monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.delenv("SSL_CERT_DIR", raising=False)
     captured = _patch_async_client(monkeypatch)
     HMCClient(make_config(verify_ssl=True, trust_system_store=False))
     assert len(captured) >= 1
@@ -4426,9 +4428,22 @@ def test_trust_system_store_ssl_cert_file_wins_over_system_store(monkeypatch):
     assert not isinstance(captured[0], truststore.SSLContext)
 
 
+def test_trust_system_store_ssl_cert_dir_wins_over_system_store(monkeypatch):
+    """When SSL_CERT_DIR is set, trust_system_store is bypassed."""
+    import truststore
+
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.setenv("SSL_CERT_DIR", "/some/ca-dir")
+    captured = _patch_async_client(monkeypatch)
+    HMCClient(make_config(verify_ssl=True, trust_system_store=True))
+    assert len(captured) >= 1
+    assert not isinstance(captured[0], truststore.SSLContext)
+
+
 def test_trust_system_store_ignored_when_verify_ssl_false(monkeypatch):
     """trust_system_store has no effect when verify_ssl=False."""
     monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.delenv("SSL_CERT_DIR", raising=False)
     captured = _patch_async_client(monkeypatch)
     HMCClient(make_config(verify_ssl=False, trust_system_store=True))
     # When verify_ssl=False, verify stays False (a bool), not an SSLContext.

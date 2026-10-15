@@ -27,15 +27,15 @@ dependency of the `app` extra but was not a declared dependency of `hmcpctl`.
 ## Decision
 
 Add an opt-in field `trust_system_store` (default `true`) to `HMCConfig`. When
-both `verify_ssl` and `trust_system_store` are `true` **and** no `SSL_CERT_FILE`
-environment variable is set, `_new_http_client` builds a
+both `verify_ssl` and `trust_system_store` are `true` **and** neither `SSL_CERT_FILE`
+nor `SSL_CERT_DIR` is set, `_new_http_client` builds a
 `truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)` and passes it as `verify=` to
 `httpx.AsyncClient` instead of passing `True`.
 
-**`SSL_CERT_FILE` takes precedence.** When the operator exports an explicit
-bundle, the client uses it as before. The system store is consulted only when no
-explicit bundle overrides it, preserving backward compatibility for operators who
-already export `SSL_CERT_FILE`.
+**`SSL_CERT_FILE` and `SSL_CERT_DIR` take precedence.** When the operator exports an
+explicit bundle or directory, the client uses it as before. The system store is consulted
+only when no explicit bundle overrides it, preserving backward compatibility for operators
+who already export `SSL_CERT_FILE` or `SSL_CERT_DIR`.
 
 **`trust_system_store` is opt-out, not opt-in.** The default is `true` because
 the system store is the expected trust source on every OS. An operator who wants
