@@ -185,17 +185,31 @@ _KEYWORD_SERIAL_KEY = "(?:virtual|logical|cluster|peer_collective)_serial_num"
 #: The other keys the key=value rules scrub, which keep no keyword.
 _DEVICE_ID_KEY = "(?:unique_id|udid|wwpns?|wwnn|serial_num)"
 _SERIAL_KEPT_RE = "(?-i:none|auto)"
-_VALUE_END = r"(?:[,\n]|\r(?=\n)|</|\\n|\\r(?=\\n)|$)"
+_VALUE_END = r"(?:[,\n]|\r(?=\n)|</[\w.:-]++>|\\n|\\r(?=\\n)|$)"
 _FIELD_END = rf'(?={_VALUE_END}|"(?:{_VALUE_END}|[}}\]])|\\"(?:{_VALUE_END}|"))'
 #: The token the key=value rules write, in a body or an XML body, then the backslashes
 #: the quoted rule keeps before its closing quote, all but the last: that one is read as
 #: the `\` of an escaped quote or escape, as `_FIELD_END` reads it (#1641).
 _KEY_VALUE_TOKEN = r"(?:<REDACTED-DEVID>|&lt;REDACTED-DEVID&gt;)(?:\\(?=\\))*+"
-#: A token's closing quote, raw or escaped, then a space or tab between fields or XML
-#: attributes, or the end of a tag: the quoted rule scrubbed up to that quote, and the
-#: unquoted rule up to the quote that closes an attribute (#1641). The backstops pass
-#: the token there; any other text after the quote is read as part of the value.
+#: A quoted field's closing quote, raw or escaped, then a space or tab between fields or
+#: XML attributes, or the end of a tag: the quoted rule scrubbed up to that quote
+#: (#1641). The backstops pass the token there only when a quote opened the field; any
+#: other text after the quote is read as part of the value.
 _QUOTE_END = r'\\?"(?:[ \t]|\\t|/?>|\?>)'
+
+
+def _key_value_leak(start: str, key: str, kept: str = "") -> re.Pattern[str]:
+    """A *key* value the key=value rules missed, quoted too, after *start*.
+
+    The token they write passes before a field end, and before a `_QUOTE_END` when a
+    quote opened the field; so does a *kept* keyword before a field end.
+    """
+    keyword = f"|{kept}{_FIELD_END}" if kept else ""
+    quoted = rf"(?!{_KEY_VALUE_TOKEN}(?:{_FIELD_END}|{_QUOTE_END}){keyword})"
+    unquoted = rf"(?!{_KEY_VALUE_TOKEN}{_FIELD_END}{keyword})"
+    return re.compile(
+        rf'(?i){start}(?:(?<="){key}={quoted}|(?<!"){key}={unquoted})"?[^,\n"]+'
+    )
 
 
 def _element_rule(
@@ -475,20 +489,11 @@ ALWAYS_LEAKS = (
         )
     ),
     _MAC_LEAK,
-    # A device id or serial the key=value rules missed, quoted too, where they start.
-    re.compile(
-        rf"(?i){_KEY_START}{_DEVICE_ID_KEY}="
-        rf"(?!{_KEY_VALUE_TOKEN}(?:{_FIELD_END}|{_QUOTE_END}))"
-        r'"?[^,\n"]+'
-    ),
-    # A keyword-holding serial the key=value rules missed, quoted too: no word boundary
-    # is needed, and `json.dumps` text hides one behind a `\n` escape.
-    re.compile(
-        rf"(?i){_KEYWORD_SERIAL_KEY}="
-        rf"(?!{_KEY_VALUE_TOKEN}(?:{_FIELD_END}|{_QUOTE_END})"
-        rf"|{_SERIAL_KEPT_RE}{_FIELD_END})"
-        r'"?[^,\n"]+'
-    ),
+    # A device id or serial the key=value rules missed, where they start.
+    _key_value_leak(_KEY_START, _DEVICE_ID_KEY),
+    # A keyword-holding serial the key=value rules missed: no word boundary is needed,
+    # and `json.dumps` text hides one behind a `\n` escape.
+    _key_value_leak("", _KEYWORD_SERIAL_KEY, _SERIAL_KEPT_RE),
 )
 #: Elements whose values are fixed HMC vocabulary (task names such as `View HMC Logs`).
 #: A candidate name found inside one is HMC wording, never a private name.

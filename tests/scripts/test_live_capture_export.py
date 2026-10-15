@@ -665,7 +665,6 @@ def test_unquoted_value_stops_at_a_line_end_cr_and_a_tag(
     [
         '<a b="{key}=SYN0001"/>',
         '<a b="{key}=SYN0001" c="d">t</a>',
-        '<a b="x {key}=SYN0001">t</a>',
         "<a>{key}=SYN0001</a>",
         '<?pi b="{key}=SYN0001"?><a/>',
     ],
@@ -697,14 +696,28 @@ def test_quoted_field_before_a_space_or_tab_exports(stdout: str, key: str) -> No
         '"{key}=<REDACTED-DEVID>"?SYN0001',
         json.dumps('"{key}=<REDACTED-DEVID>"SYN0001'),
         "{key}=<REDACTED-DEVID><SYN0001",
+        "{key}=<REDACTED-DEVID></SYN0001",
+        'x=1,{key}=<REDACTED-DEVID>" SYN0001',
+        json.dumps('x=1,{key}=<REDACTED-DEVID>"\tSYN0001'),
+        '<a>{key}=&lt;REDACTED-DEVID&gt;">SYN0001</a>',
     ],
 )
 def test_backstop_reports_text_joined_after_a_closing_quote(
     text: str, key: str
 ) -> None:
-    """Only a space, a tab or a tag's end after the quote ends the field (#1641)."""
+    """Only a space, a tab or a tag's end after the quote ends the field, and only when a
+    quote opened it (#1641)."""
     text = text.format(key=key)
     assert export.Tokenizer({}, set()).leaks(text)
+
+
+@pytest.mark.parametrize("key", [*DEVICE_ID_KEYS, *KEYWORD_SERIAL_KEYS])
+def test_key_value_after_text_in_an_xml_attribute_fails_closed(key: str) -> None:
+    """The backstop cannot tell an attribute's closing quote from one in the value, so a
+    field that no quote opened fails the export rather than pass the text after it."""
+    body = f'<a b="x {key}=SYN0001" c="d"/>'
+    with pytest.raises(export.LeakError):
+        export.tokenize_records(_records(_rest("/e", body)))
 
 
 @pytest.mark.parametrize(
