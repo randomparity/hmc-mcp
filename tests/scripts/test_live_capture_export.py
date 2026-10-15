@@ -2362,23 +2362,27 @@ def test_run_with_live_groups_after_zeroed_ones_is_a_leak(value: str) -> None:
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
 @pytest.mark.parametrize(
-    ("before", "value", "scrubbed"),
+    ("before", "value", "scrubbed", "after"),
     [
-        ("node-", "0a-1b-2c-3d-4e-5f", "00-00-00-00-00-00"),
-        ("c0507-", "0a-1b-2c-3d-4e-5f-6a", "00-00-00-00-00-00-00"),
-        ("bridge.", "0a1b.2c3d.4e5f", "0000.0000.0000"),
+        ("node-", "0a-1b-2c-3d-4e-5f", "00-00-00-00-00-00", ""),
+        ("c0507-", "0a-1b-2c-3d-4e-5f-6a", "00-00-00-00-00-00-00", ""),
+        ("vlan_10-", "0a-1b-2c-3d-4e-5f", "00-00-00-00-00-00", ""),
+        ("bridge.", "0a1b.2c3d.4e5f", "0000.0000.0000", ""),
+        ("pci_ab12.", "0a1b.2c3d.4e5f", "0000.0000.0000", ""),
+        ("", "0a-1b-2c-3d-4e-5f", "00-00-00-00-00-00", "-backup"),
+        ("", "0a1b.2c3d.4e5f", "0000.0000.0000", ".abcde"),
     ],
 )
-def test_separated_run_after_a_word_ending_in_hex_is_scrubbed(
-    encode: Any, before: str, value: str, scrubbed: str
+def test_separated_run_beside_a_word_ending_or_starting_in_hex_is_scrubbed(
+    encode: Any, before: str, value: str, scrubbed: str, after: str
 ) -> None:
-    """A word's last hex letters and the separator after it are not a whole group, so a
-    run may start after them."""
+    """A word's hex letters and the separator between it and a run are not a whole
+    group, so the run starts or ends there."""
     tok = export.Tokenizer({}, set())
-    body = encode(f"hdr\n{before}{value} x")
+    body = encode(f"hdr\n{before}{value}{after} x")
     assert tok.leaks(body) == [value]
     out = tok.tokenize(body)
-    assert out == encode(f"hdr\n{before}{scrubbed} x")
+    assert out == encode(f"hdr\n{before}{scrubbed}{after} x")
     assert out is not None
     assert tok.leaks(out) == []
 
@@ -2411,7 +2415,7 @@ def test_free_text_rules_after_a_long_backslash_run_do_not_backtrack() -> None:
     (#1669)."""
     escapes = "\\" * 20_000 + "u00e9 \\n\\t\\f\\b0a1b \\\\\\b0:1B "
     runs = "0a-" * 20_000 + "0ag " + "0a1b." * 20_000 + "0a1bg "
-    zeroed = "00-" * 20_000 + "00g " + "0000." * 20_000 + "0000g "
+    zeroed = "00-" * 20_000 + "00 " + "0000." * 20_000 + "0000 "
     body = (escapes + runs + zeroed) * 5
     assert len(FREE_TEXT_RULES) == 8
     for rule in FREE_TEXT_RULES:
@@ -2419,7 +2423,8 @@ def test_free_text_rules_after_a_long_backslash_run_do_not_backtrack() -> None:
         pattern = pattern.replace(export._LEAK_START, r"(?<![\w\\])")
         for _, _, zeroed in export._MAC_FORMS:
             pattern = pattern.replace(f"(?!{zeroed})", "")
-        assert _cost_ratio(rule, re.compile(pattern, rule.flags), "", body) < 10
+        baseline = re.compile(pattern, rule.flags)
+        assert _cost_ratio(rule, baseline, lambda match: match.group(0), body) < 10
 
 
 def test_tool_record_the_rules_turn_into_invalid_json_fails_closed(

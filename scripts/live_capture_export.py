@@ -300,22 +300,24 @@ _SCRUB_START = (
 _LEAK_START = rf"(?:(?<![\w\\])|{_AFTER_ESCAPE})"
 #: Free-text MACs in each separator style: a guard, the run, and the run zeroed whole as
 #: the scrub rules write it. A longer hyphen or dotted run, such as a hyphenated WWPN, is
-#: zeroed whole, not left with live groups after a MAC's worth. The guard refuses a start
-#: after a whole group and its separator, so a run is matched from its first group only
-#: and scanned once; a group joined to a word, as in `node-0a-1b-...`, is not a whole
-#: one. A backstop checks the guard before the zeroed run, or each group would scan the
-#: rest of the run. A longer colon run is the IPv6 rule's.
+#: zeroed whole, not left with live groups after a MAC's worth. Each group ends at a word
+#: boundary, so a word after the run, as in `...-5f-backup`, ends it rather than hiding
+#: it. The guard refuses a start after a whole group and its separator, so a run is
+#: matched from its first group only and scanned once; a group joined to a word, as in
+#: `node-0a-1b-...` or `vlan_10-0a-...`, is not a whole one. A backstop checks the guard
+#: before the zeroed run, or each group would scan the rest of the run. A longer colon
+#: run is the IPv6 rule's.
 _MAC_FORMS = (
     ("", r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b", r"(?:00:){5}00\b"),
     (
-        r"(?<!(?<![0-9A-Za-z])[0-9A-Fa-f]{2}-)",
-        r"[0-9A-Fa-f]{2}(?:-[0-9A-Fa-f]{2}){5,}+\b",
-        r"00(?:-00){5,}+(?!-[0-9A-Fa-f]{2}\b)",
+        r"(?<!(?<!\w)[0-9A-Fa-f]{2}-)",
+        r"[0-9A-Fa-f]{2}(?:-[0-9A-Fa-f]{2}\b){5,}+",
+        r"00(?:-00\b){5,}+(?!-[0-9A-Fa-f]{2}\b)",
     ),
     (
-        r"(?<!(?<![0-9A-Za-z])[0-9A-Fa-f]{4}\.)",
-        r"[0-9A-Fa-f]{4}(?:\.[0-9A-Fa-f]{4}){2,}+\b",
-        r"0000(?:\.0000){2,}+(?!\.[0-9A-Fa-f]{4}\b)",
+        r"(?<!(?<!\w)[0-9A-Fa-f]{4}\.)",
+        r"[0-9A-Fa-f]{4}(?:\.[0-9A-Fa-f]{4}\b){2,}+",
+        r"0000(?:\.0000\b){2,}+(?!\.[0-9A-Fa-f]{4}\b)",
     ),
 )
 #: A MAC separator and the hex digit after it.
