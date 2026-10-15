@@ -258,16 +258,27 @@ _AFTER_LITERAL_U = (
     r"(?<=\\u)(?:(?=[0-9A-Fa-f]{1,3}(?![0-9A-Za-z]))0*+[1-9A-Fa-f]"
     rf"|(?!00[03]0)(?=[0-9A-Fa-f]{{4}}{_MAC_SEPARATOR}))"
 )
+#: A whole hex run that a MAC separator and hex follow, or that follows hex and a
+#: separator: an octet, even joined to a word, as in `G0A:1B` or `5FG` (#1640). Each
+#: starts only where a run does, so a run is scanned once.
+_JOINED_OCTET = rf"(?<![0-9A-Fa-f])[0-9A-Fa-f]++(?={_MAC_SEPARATOR})|(?<=[0-9A-Fa-f][-.:])[0-9A-Fa-f]++"
+#: A `_JOINED_OCTET` with a non-zero digit. The first starts as a joined six-digit run
+#: does, so never on an escape's letter or digits.
+_LIVE_JOINED_OCTET = (
+    rf"(?:(?<![0-9A-Fa-f\\])(?<!\\u)|{_AFTER_ESCAPE})0*+[1-9A-Fa-f][0-9A-Fa-f]*+"
+    rf"(?={_MAC_SEPARATOR})|(?<=[0-9A-Fa-f][-.:])0*+[1-9A-Fa-f]"
+)
 #: A hex run with a non-zero digit: one no ASCII letter or digit adjoins, as the MAC
 #: element rule zeroes a word, or six or more digits joined to a word, as in
 #: `0x0A1B2C3D4E5F` or after a JSON escape, which `\b` reads as part of the value's
 #: word. A shorter run inside a word, such as the `A` of `ALL`, is not one. Both err
 #: towards failing closed: `TYPE_A` and a hex-letter word such as `FEEDBACK` count.
-#: So do the first octets of a separated MAC after a `\\u` (#1622).
+#: So do the first octets of a separated MAC after a `\\u` (#1622), and a joined octet
+#: (#1640).
 _LIVE_HEX_RUN = (
     rf"(?:(?:(?<![0-9A-Za-z\\])|{_AFTER_ESCAPE})0*+[1-9A-Fa-f][0-9A-Fa-f]*+(?![0-9A-Za-z])"
     rf"|(?:(?<![0-9A-Fa-f\\])(?<!\\u)|{_AFTER_ESCAPE})(?=[0-9A-Fa-f]{{6}})0*+[1-9A-Fa-f]"
-    rf"|{_AFTER_LITERAL_U})"
+    rf"|{_LIVE_JOINED_OCTET}|{_AFTER_LITERAL_U})"
 )
 #: Text that ends at a closing MAC element tag and still holds a live hex run, or a CDATA
 #: section there, whitespace aside. Found as `_element_leak` finds a value, so a malformed
@@ -315,11 +326,12 @@ def _email(match: re.Match[str]) -> str:
 #: of its low half never strands the high one. An escape before a MAC separator takes an
 #: empty run, so its digits are zeroed: in raw XML they are a separated MAC's first
 #: octets. So are up to four digits after a `\\u` the scan did not match as an escape
-#: (#1622).
+#: (#1622). So is a joined octet (#1640).
 _MAC_ELEMENT_RUN = re.compile(
     r"(?P<escape>\\u[dD][89abAB][0-9A-Fa-f]{2}\\u[dD][c-fC-F][0-9A-Fa-f]{2}"
     rf"|{'|'.join(_JSON_ESCAPES)})(?P<run>[0-9A-Fa-f]+\b|(?={_MAC_SEPARATOR}))?"
     r"|(?<=\\u)[0-9A-Fa-f]{1,4}\b|\b[0-9A-Fa-f]+\b"
+    rf"|{_JOINED_OCTET}"
 )
 _ESCAPE_DIGITS = re.compile(r"(?<=\\u)[0-9A-Fa-f]{4}")
 

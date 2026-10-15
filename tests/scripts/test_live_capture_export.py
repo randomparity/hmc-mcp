@@ -1184,6 +1184,63 @@ def test_octets_surviving_a_literal_backslash_u_are_a_leak(
     assert tok.leaks(body) == [body[body.index(">") + 1 : body.index("</")]]
 
 
+#: Separated MACs with an octet joined to a word character, and the export: a run that
+#: a MAC separator and more hex follow, or that follows a hex digit and a separator, is
+#: zeroed whatever adjoins it (#1640).
+JOINED_OCTET = [
+    ("G0A:1B:2C:3D:4E:5F", "G00:00:00:00:00:00"),
+    ("\\U0A:1B:2C:3D:4E:5F", "\\U00:00:00:00:00:00"),
+    ("G0A-1B-2C-3D-4E-5F", "G00-00-00-00-00-00"),
+    ("x0a1b.2c3d.4e5f", "x0000.0000.0000"),
+    ("0A:1B:2C:3D:4E:5FG", "00:00:00:00:00:00G"),
+    ("0A:1BG:2C:3D:4E:5F", "00:00G:00:00:00:00"),
+]
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize(("value", "zeroed"), JOINED_OCTET)
+def test_mac_octet_joined_to_a_word_is_zeroed(
+    encode: Any, value: str, zeroed: str
+) -> None:
+    """Regression #1640: `G0A:1B:...` exported `G0A:00:...`, and no leak was reported."""
+    tok = export.Tokenizer({}, set())
+    scrubbed = tok.tokenize(encode(f"<MACAddress>{value}</MACAddress>"))
+    assert scrubbed == encode(f"<MACAddress>{zeroed}</MACAddress>")
+    assert tok.leaks(scrubbed) == []
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "G0A:00:00:00:00:00",
+        "\\U0A:00:00:00:00:00",
+        "x0a1b.0000.0000",
+        "00:00:00:00:00:5FG",
+        "00:1BG:00:00:00:00",
+    ],
+)
+def test_octet_joined_to_a_word_is_a_leak(encode: Any, value: str) -> None:
+    """What main exported for #1640's values: the leak check saw no live run."""
+    tok = export.Tokenizer({}, set())
+    body = encode(f"<MACAddress>{value}</MACAddress>")
+    assert tok.leaks(body) == [body[body.index(">") + 1 : body.index("</")]]
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize(
+    "value", ["none", "auto", "auto-negotiate", "ALL", "G0A", "G0A:x"]
+)
+def test_mac_element_text_without_a_separated_octet_is_kept(
+    encode: Any, value: str
+) -> None:
+    """A keyword, and a run no separator and hex follow, keep today's handling."""
+    tok = export.Tokenizer({}, set())
+    body = encode(f"<MACAddress>{value}</MACAddress>")
+    assert tok.tokenize(body) == body
+    assert tok.leaks(body) == []
+
+
 def test_mac_after_an_escape_that_follows_a_backslash_stays_valid_json() -> None:
     """`\\\\\\f` is a backslash then a form feed: the `f` is still an escape's letter."""
     tok = export.Tokenizer({}, set())
@@ -1276,6 +1333,30 @@ def test_mac_leak_check_after_many_backslash_u_does_not_backtrack() -> None:
     body = "<MACAddress>" + "\\u0A1Bx\\u0Ax\\u0A1B.x\\u0030." * 5_000 + "</MACAddress>"
     without = re.compile(
         export._MAC_LEAK.pattern.replace(export._AFTER_LITERAL_U, "(?!)")
+    )
+    assert without.pattern != export._MAC_LEAK.pattern
+    assert _cost_ratio(export._MAC_LEAK, without, "", body) < 10
+
+
+def test_joined_octet_scrub_scans_each_run_once() -> None:
+    """A run joined to a word that no separator follows is not rescanned from each of its
+    positions, so the #1640 branches cost about what the rule without them does. Without
+    the lookbehind that starts it on a run's first digit, the rule cost 100x."""
+    body = ("G" + "A" * 5_000 + " ") * 20
+    rule = export._MAC_ELEMENT_RUN
+    without = re.compile(rule.pattern.replace(export._JOINED_OCTET, "(?!)"))
+    assert without.pattern != rule.pattern
+    assert _cost_ratio(rule, without, export._zero_run, body) < 10
+
+
+def test_joined_octet_leak_check_scans_each_run_once() -> None:
+    """The leak check over zeroed runs joined to words costs about what it does without
+    the #1640 branches. A run of zeros is skipped fast, so only a long one shows a rescan:
+    without the lookbehind that starts it on a run's first digit, the check cost 30x."""
+    zeros = "0" * 50_000
+    body = f"<MACAddress>G{zeros}G:{zeros} </MACAddress>"
+    without = re.compile(
+        export._MAC_LEAK.pattern.replace(export._LIVE_JOINED_OCTET, "(?!)")
     )
     assert without.pattern != export._MAC_LEAK.pattern
     assert _cost_ratio(export._MAC_LEAK, without, "", body) < 10
