@@ -65,7 +65,7 @@ class SystemsMixin:
                     "Management-console inventory is unavailable because the HMC "
                     "could not serialize a null property; the likely cause is an "
                     "X-HMC-Schema-Version pin (HMC_SCHEMA_VERSION): unset "
-                    "HMC_SCHEMA_VERSION, or the profile's schema_version, and retry",
+                    "HMC_SCHEMA_VERSION and any profile schema_version, and retry",
                     status_code=500,
                     body=exc.body,
                 ) from exc
@@ -162,9 +162,9 @@ class SystemsMixin:
                     "could not serialize a null hardware property, and it "
                     "could not be resolved from the managed-system summary; "
                     "the likely cause is an X-HMC-Schema-Version pin "
-                    "(HMC_SCHEMA_VERSION): unset HMC_SCHEMA_VERSION, or the "
-                    "profile's schema_version, and retry, or query the system "
-                    "by name with systems show",
+                    "(HMC_SCHEMA_VERSION): unset HMC_SCHEMA_VERSION and any "
+                    "profile schema_version, and retry, or query the system by "
+                    "name with systems show",
                     status_code=500,
                     body=exc.body,
                 ) from (fallback_exc or exc)
