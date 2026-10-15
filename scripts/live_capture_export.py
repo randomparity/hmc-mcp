@@ -225,10 +225,10 @@ _AFTER_ESCAPE = "|".join(f"(?<={escape})" for escape in _JSON_ESCAPES)
 _MAC_SEPARATOR = r"[-.:][0-9A-Fa-f]"
 #: The digits after a `\\u` where a separated MAC's first octets stay: fewer than an
 #: escape holds, or four before a separator that are not the `0030` or `0000` the MAC
-#: element rule writes there. Each check reads at most five characters ahead. Four
+#: element rule writes there. Each check reads at most six characters ahead. Four
 #: digits before any other separator, or at the end of the value, stay: they read as an
-#: escape such as `\\u00e9`. A non-ASCII character before a separated MAC in a REST
-#: body is a leak, as the export writes it as such an escape.
+#: escape such as `\\u00e9`. In a REST body, a non-ASCII character before a separator
+#: and a hex digit is a leak, as the export writes it as such an escape.
 _AFTER_LITERAL_U = (
     r"(?<=\\u)(?:(?=[0-9A-Fa-f]{1,3}(?![0-9A-Za-z]))0*+[1-9A-Fa-f]"
     rf"|(?!00[03]0)(?=[0-9A-Fa-f]{{4}}{_MAC_SEPARATOR}))"
