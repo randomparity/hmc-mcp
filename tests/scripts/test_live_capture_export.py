@@ -1581,8 +1581,10 @@ def test_octet_after_an_escape_ending_in_hex_is_a_leak(encode: Any, value: str) 
     tok = export.Tokenizer({}, set())
     body = encode(f"<MACAddress>{value}</MACAddress>")
     text = body[body.index(">") + 1 : body.index("</")]
-    # The free-text MAC backstop reports the MAC after the escape too (#1669).
-    assert tok.leaks(body) == [text[-len("0A:00:00:00:00:00") :], text]
+    # The free-text MAC backstop reports the MAC after the escape too (#1669), but not
+    # after a raw `é`, a word character it is joined to.
+    mac = text[-len("0A:00:00:00:00:00") :]
+    assert tok.leaks(body) == ([text] if text.startswith("é") else [mac, text])
 
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
