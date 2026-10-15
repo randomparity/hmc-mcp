@@ -699,6 +699,7 @@ def test_quoted_field_before_a_space_or_tab_exports(stdout: str, key: str) -> No
         "{key}=<REDACTED-DEVID></SYN0001",
         'x=1,{key}=<REDACTED-DEVID>" SYN0001',
         json.dumps('x=1,{key}=<REDACTED-DEVID>"\tSYN0001'),
+        json.dumps('x "{key}=<REDACTED-DEVID>\\" SYN0001'),
         '<a>{key}=&lt;REDACTED-DEVID&gt;">SYN0001</a>',
     ],
 )

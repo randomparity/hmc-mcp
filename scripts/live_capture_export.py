@@ -187,15 +187,18 @@ _DEVICE_ID_KEY = "(?:unique_id|udid|wwpns?|wwnn|serial_num)"
 _SERIAL_KEPT_RE = "(?-i:none|auto)"
 _VALUE_END = r"(?:[,\n]|\r(?=\n)|</[\w.:-]++>|\\n|\\r(?=\\n)|$)"
 _FIELD_END = rf'(?={_VALUE_END}|"(?:{_VALUE_END}|[}}\]])|\\"(?:{_VALUE_END}|"))'
-#: The token the key=value rules write, in a body or an XML body, then the backslashes
-#: the quoted rule keeps before its closing quote, all but the last: that one is read as
-#: the `\` of an escaped quote or escape, as `_FIELD_END` reads it (#1641).
-_KEY_VALUE_TOKEN = r"(?:<REDACTED-DEVID>|&lt;REDACTED-DEVID&gt;)(?:\\(?=\\))*+"
+#: The token the key=value rules write, in a body or an XML body.
+_KEY_VALUE_TOKEN = "(?:<REDACTED-DEVID>|&lt;REDACTED-DEVID&gt;)"
+#: The backslashes the quoted rule keeps before its closing quote, all but the last:
+#: that one is read as the `\` of an escaped quote or escape, as `_FIELD_END` reads it
+#: (#1641).
+_KEPT_BACKSLASHES = r"(?:\\(?=\\))*+"
 #: A quoted field's closing quote, then a space or tab between fields or XML attributes,
 #: or the end of a tag: the quoted rule scrubbed up to that quote (#1641). The backstops
 #: scan `json.dumps` text, where a quote inside a string is `\"` and a raw one opens or
 #: closes the string, so both quotes must be escaped: a field at the start of a string
-#: has no quote of its own. Any other text after the quote is read as part of the value.
+#: has no quote of its own. Any other text after the quote is read as part of the value,
+#: and so is the quote after a kept backslash: that one was in the value.
 _QUOTE_END = r'\\"(?: |\\t|/?>|\?>)'
 
 
@@ -206,8 +209,9 @@ def _key_value_leak(start: str, key: str, kept: str = "") -> re.Pattern[str]:
     escaped quote opened the field; so does a *kept* keyword before a field end.
     """
     keyword = f"|{kept}{_FIELD_END}" if kept else ""
-    quoted = rf"(?!{_KEY_VALUE_TOKEN}(?:{_FIELD_END}|{_QUOTE_END}){keyword})"
-    unquoted = rf"(?!{_KEY_VALUE_TOKEN}{_FIELD_END}{keyword})"
+    field_end = rf"(?:{_KEPT_BACKSLASHES}{_FIELD_END}|{_QUOTE_END})"
+    quoted = rf"(?!{_KEY_VALUE_TOKEN}{field_end}{keyword})"
+    unquoted = rf"(?!{_KEY_VALUE_TOKEN}{_KEPT_BACKSLASHES}{_FIELD_END}{keyword})"
     return re.compile(
         rf'(?i){start}(?:(?<=\\"){key}={quoted}|(?<!\\"){key}={unquoted})"?[^,\n"]+'
     )
