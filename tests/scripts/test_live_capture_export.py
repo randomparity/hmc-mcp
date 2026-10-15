@@ -993,6 +993,29 @@ def test_value_behind_a_malformed_closing_name_is_a_leak(
 
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("prefix", UNSCRUBBED_PREFIXES)
+@pytest.mark.parametrize("element", ["SerialNumber", "MACAddress"])
+def test_cdata_behind_a_malformed_closing_name_is_a_leak(
+    element: str, prefix: str, encode: Any
+) -> None:
+    """A CDATA section before such a closing tag is reported as it is before any (#1660)."""
+    tok = export.Tokenizer({}, set())
+    name = f"{prefix}{element}"
+    body = encode(f"<Root><{name}><![CDATA[0A1B2C3D4E5F]]></{name}></Root>")
+    assert tok.leaks(body) == ["]]>"]
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("prefix", UNSCRUBBED_PREFIXES)
+def test_kept_keyword_before_a_malformed_closing_name_is_not_a_leak(
+    prefix: str, encode: Any
+) -> None:
+    """A keyword after a well-formed opening tag is kept whatever closes it (#1660)."""
+    tok = export.Tokenizer({}, set())
+    assert tok.leaks(encode(f"<SerialNumber>none</{prefix}SerialNumber>")) == []
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
 @pytest.mark.parametrize("element", ["SerialNumber", "MACAddress"])
 @pytest.mark.parametrize(
     "markup",
