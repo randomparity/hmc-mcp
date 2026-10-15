@@ -413,6 +413,7 @@ def test_ssl_cert_dir_hashed_trusts_hmc_e2e(mock_hmc, tmp_path):
         certificate_path,
         SSL_CERT_FILE=None,
         SSL_CERT_DIR=str(ssl_dir),
+        # truststore on macOS ignores SSL_CERT_DIR; opt out so httpx reads it.
         HMC_TRUST_SYSTEM_STORE="false",
     )
 
@@ -433,6 +434,7 @@ def test_ssl_cert_dir_unhashed_trusts_nothing_e2e(mock_hmc, tmp_path):
         certificate_path,
         SSL_CERT_FILE=None,
         SSL_CERT_DIR=str(ssl_dir),
+        # truststore on macOS ignores SSL_CERT_DIR; opt out so httpx reads it.
         HMC_TRUST_SYSTEM_STORE="false",
     )
 
