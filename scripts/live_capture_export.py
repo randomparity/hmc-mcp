@@ -172,21 +172,30 @@ _SERIAL_ELEMENT = (
 #: `peer_collective_serial_num=` in `lssyscfg -r sys` output (#1637). `\bserial_num` has
 #: no boundary inside any of them to match at, so each is named. A keyword is kept only
 #: as the field's whole value, in its documented case. A value ends at a field separator,
-#: a line feed, a carriage return before one, or the end of the text, `json.dumps`'s
-#: `\n` and `\r` escapes on the same terms; any other carriage return is in the value.
-#: It also ends at a quote, raw or escaped, that one of those follows; a raw quote also
-#: before a JSON `}` or `]`, and `\"` before the quote that closes a JSON string. A quote
-#: with anything else after it is in the value, and the unquoted rule and the backstop
-#: read it so even where the quoted rule kept the keyword before it. The scrub rules
-#: themselves read no escape, so in `json.dumps` text a value runs on over a `\n` and a
-#: quoted field loses the `\` of its closing `\"`, which fails the export as broken JSON:
-#: over-scrubbing, never a leak.
+#: a line feed, a carriage return before one, a closing tag or the end of the text,
+#: `json.dumps`'s `\n` and `\r` escapes on the same terms; any other carriage return is
+#: in the value (#1641). It also ends at a quote, raw or escaped, that one of those
+#: follows; a raw quote also before a JSON `}` or `]`, and `\"` before the quote that
+#: closes a JSON string. A quote with anything else after it is in the value, and the
+#: unquoted rule and the backstop read it so even where the quoted rule kept the keyword
+#: before it. The unquoted rule reads no escape, so in `json.dumps` text a value runs on
+#: over a `\n`: over-scrubbing, never a leak. The quoted rule keeps the backslashes
+#: before its closing quote, so `json.dumps` text stays valid JSON (#1641).
 _KEYWORD_SERIAL_KEY = "(?:virtual|logical|cluster|peer_collective)_serial_num"
 #: The other keys the key=value rules scrub, which keep no keyword.
 _DEVICE_ID_KEY = "(?:unique_id|udid|wwpns?|wwnn|serial_num)"
 _SERIAL_KEPT_RE = "(?-i:none|auto)"
-_VALUE_END = r"(?:[,\n]|\r(?=\n)|\\n|\\r(?=\\n)|$)"
+_VALUE_END = r"(?:[,\n]|\r(?=\n)|</|\\n|\\r(?=\\n)|$)"
 _FIELD_END = rf'(?={_VALUE_END}|"(?:{_VALUE_END}|[}}\]])|\\"(?:{_VALUE_END}|"))'
+#: The token the key=value rules write, in a body or an XML body, then the backslashes
+#: the quoted rule keeps before its closing quote, all but the last: that one is read as
+#: the `\` of an escaped quote or escape, as `_FIELD_END` reads it (#1641).
+_KEY_VALUE_TOKEN = r"(?:<REDACTED-DEVID>|&lt;REDACTED-DEVID&gt;)(?:\\(?=\\))*+"
+#: A token's closing quote, raw or escaped, then a space or tab between fields or XML
+#: attributes, or the end of a tag: the quoted rule scrubbed up to that quote, and the
+#: unquoted rule up to the quote that closes an attribute (#1641). The backstops pass
+#: the token there; any other text after the quote is read as part of the value.
+_QUOTE_END = r'\\?"(?:[ \t]|\\t|/?>|\?>)'
 
 
 def _element_rule(
@@ -405,18 +414,20 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     # and other short logical-unit segments stay.
     (re.compile(r"(?<=-)L[0-9A-F]{8,}(?=-L|\b)"), "L<REDACTED-DEVID>"),
     _element_rule(*_DEVICE_ID_ELEMENT),
-    # A quoted CSV field holds every value up to its closing quote: "wwpns=a,b".
+    # A quoted CSV field holds every value up to its closing quote: "wwpns=a,b". The
+    # backslashes before that quote stay, so `json.dumps`'s `\"` keeps its escape and an
+    # escaped backslash its pair. Each run is read once, possessively.
     (
         re.compile(
             rf'(?i)"({_DEVICE_ID_KEY}|{_KEYWORD_SERIAL_KEY}'
-            rf'(?!={_SERIAL_KEPT_RE}\\?"))=[^"\n]*"'
+            rf'(?!={_SERIAL_KEPT_RE}\\?"))=(?:[^"\n\\]++|\\++(?!"))*+(\\*+)"'
         ),
-        r'"\g<1>=<REDACTED-DEVID>"',
+        r'"\g<1>=<REDACTED-DEVID>\g<2>"',
     ),
     (
         re.compile(
             rf"(?i){_KEY_START}({_DEVICE_ID_KEY}|{_KEYWORD_SERIAL_KEY}"
-            rf"(?!={_SERIAL_KEPT_RE}{_FIELD_END}))=[^,\n\"]+"
+            rf"(?!={_SERIAL_KEPT_RE}{_FIELD_END}))=(?:[^,\n\r\"<]++|\r(?!\n))++"
         ),
         r"\g<1>=<REDACTED-DEVID>",
     ),
@@ -467,14 +478,15 @@ ALWAYS_LEAKS = (
     # A device id or serial the key=value rules missed, quoted too, where they start.
     re.compile(
         rf"(?i){_KEY_START}{_DEVICE_ID_KEY}="
-        rf"(?!(?:<REDACTED-DEVID>|&lt;REDACTED-DEVID&gt;){_FIELD_END})"
+        rf"(?!{_KEY_VALUE_TOKEN}(?:{_FIELD_END}|{_QUOTE_END}))"
         r'"?[^,\n"]+'
     ),
     # A keyword-holding serial the key=value rules missed, quoted too: no word boundary
     # is needed, and `json.dumps` text hides one behind a `\n` escape.
     re.compile(
         rf"(?i){_KEYWORD_SERIAL_KEY}="
-        rf"(?!(?:<REDACTED-DEVID>|&lt;REDACTED-DEVID&gt;|{_SERIAL_KEPT_RE}){_FIELD_END})"
+        rf"(?!{_KEY_VALUE_TOKEN}(?:{_FIELD_END}|{_QUOTE_END})"
+        rf"|{_SERIAL_KEPT_RE}{_FIELD_END})"
         r'"?[^,\n"]+'
     ),
 )

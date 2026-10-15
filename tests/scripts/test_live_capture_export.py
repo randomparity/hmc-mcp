@@ -603,6 +603,110 @@ def test_device_id_backstop_passes_the_token(text: str, key: str) -> None:
     assert export.Tokenizer({}, set()).leaks(text.format(key=key)) == []
 
 
+@pytest.mark.parametrize("key", [*DEVICE_ID_KEYS, *KEYWORD_SERIAL_KEYS])
+@pytest.mark.parametrize(
+    ("raw", "scrubbed"),
+    [
+        ('"{key}=SYN0001",x=1', '"{key}=<REDACTED-DEVID>",x=1'),
+        ('x=1,"{key}=SYN0001"', 'x=1,"{key}=<REDACTED-DEVID>"'),
+        ('x=1,"{key}=SYN0001\\",y', 'x=1,"{key}=<REDACTED-DEVID>\\",y'),
+        ('x=1,"{key}=SYN0001\\\\"', 'x=1,"{key}=<REDACTED-DEVID>\\\\"'),
+    ],
+)
+def test_quoted_key_value_field_stays_valid_json(
+    raw: str, scrubbed: str, key: str
+) -> None:
+    """#1641: the rule keeps the backslashes before a closing quote, so the `\\` of
+    `json.dumps`'s `\\"` stays and an escaped backslash keeps its pair."""
+    tok = export.Tokenizer({}, set())
+    raw, scrubbed = raw.format(key=key), scrubbed.format(key=key)
+    assert tok.tokenize(raw) == scrubbed
+    encoded = tok.tokenize(json.dumps(raw))
+    assert encoded is not None
+    assert json.loads(encoded) == scrubbed
+    assert tok.leaks(json.dumps(scrubbed)) == []
+
+
+@pytest.mark.parametrize("key", [*DEVICE_ID_KEYS, *KEYWORD_SERIAL_KEYS])
+def test_quoted_key_value_field_in_a_tool_record_exports(key: str) -> None:
+    """A tool record is scrubbed as `json.dumps` text and parsed back (#1641)."""
+    tool = {"kind": "tool", "step": "t", "tool": "t", "ok": True}
+    tool["data"] = f'name=lpar-A1,"{key}=SYN0001",state=Running'
+    corpus = export.tokenize_records(_records(tool))
+    assert corpus[-1]["record"]["data"] == (
+        f'name=lpar-A1,"{key}=<REDACTED-DEVID>",state=Running'
+    )
+
+
+@pytest.mark.parametrize("key", [*DEVICE_ID_KEYS, *KEYWORD_SERIAL_KEYS])
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize(
+    "fields",
+    ["x=1,{key}={value}\r\nx=2", "<a>{key}={value}</a>"],
+    ids=["crlf", "close-tag"],
+)
+def test_unquoted_value_stops_at_a_line_end_cr_and_a_tag(
+    fields: str, encode: Any, key: str
+) -> None:
+    """#1641: the value no longer swallows the CR of a CRLF or the tag after it."""
+    tok = export.Tokenizer({}, set())
+    body = encode(fields.format(key=key, value="SYN0001"))
+    scrubbed = tok.tokenize(body)
+    if encode is str or "\r" not in fields:
+        token = "&lt;REDACTED-DEVID&gt;" if body.startswith("<") else DEVID
+        assert scrubbed == body.replace("SYN0001", token)
+    assert "SYN0001" not in scrubbed
+    assert tok.leaks(json.dumps(scrubbed) if encode is str else scrubbed) == []
+
+
+@pytest.mark.parametrize("key", [*DEVICE_ID_KEYS, *KEYWORD_SERIAL_KEYS])
+@pytest.mark.parametrize(
+    "body",
+    [
+        '<a b="{key}=SYN0001"/>',
+        '<a b="{key}=SYN0001" c="d">t</a>',
+        '<a b="x {key}=SYN0001">t</a>',
+        "<a>{key}=SYN0001</a>",
+        '<?pi b="{key}=SYN0001"?><a/>',
+    ],
+)
+def test_key_value_in_an_xml_body_exports(body: str, key: str) -> None:
+    """#1641: the backstop passes a scrubbed value an attribute's quote or a tag ends."""
+    body = body.format(key=key)
+    corpus = export.tokenize_records(_records(_rest("/e", body)))
+    assert corpus[-1]["body"] == body.replace("SYN0001", "&lt;REDACTED-DEVID&gt;")
+
+
+@pytest.mark.parametrize("key", [*DEVICE_ID_KEYS, *KEYWORD_SERIAL_KEYS])
+@pytest.mark.parametrize(
+    "stdout", ['"{key}=SYN0001" x=1', '"{key}=SYN0001"\tx=1', 'a "{key}=SYN0001" b']
+)
+def test_quoted_field_before_a_space_or_tab_exports(stdout: str, key: str) -> None:
+    """#1641: a closing quote, then a space or tab, ends a field the rule scrubbed."""
+    stdout = stdout.format(key=key)
+    corpus = export.tokenize_records(_records(_ssh("lssyscfg -r lpar", stdout)))
+    assert corpus[-1]["stdout"] == stdout.replace("SYN0001", "<REDACTED-DEVID>")
+
+
+@pytest.mark.parametrize("key", [*DEVICE_ID_KEYS, *KEYWORD_SERIAL_KEYS])
+@pytest.mark.parametrize(
+    "text",
+    [
+        '"{key}=<REDACTED-DEVID>"SYN0001',
+        '"{key}=<REDACTED-DEVID>"/SYN0001',
+        '"{key}=<REDACTED-DEVID>"?SYN0001',
+        json.dumps('"{key}=<REDACTED-DEVID>"SYN0001'),
+        "{key}=<REDACTED-DEVID><SYN0001",
+    ],
+)
+def test_backstop_reports_text_joined_after_a_closing_quote(
+    text: str, key: str
+) -> None:
+    """Only a space, a tab or a tag's end after the quote ends the field (#1641)."""
+    text = text.format(key=key)
+    assert export.Tokenizer({}, set()).leaks(text)
+
+
 @pytest.mark.parametrize(
     "element",
     [
@@ -1391,6 +1495,25 @@ def test_key_start_after_many_escapes_does_not_backtrack() -> None:
     for rule, replacement in rules:
         bounded = re.compile(rule.pattern.replace(export._KEY_START, r"\b"), rule.flags)
         assert _cost_ratio(rule, bounded, replacement, body) < 10
+
+
+#: The quoted key=value rule's value and closing quote, and a scan of it with no
+#: backslash handling.
+_QUOTED_VALUE = r'(?:[^"\n\\]++|\\++(?!"))*+(\\*+)"'
+_QUOTED_VALUE_SCAN = r'[^"\n]*+()"'
+
+
+def test_quoted_key_value_rule_reads_each_backslash_run_once() -> None:
+    """The run kept before the closing quote is read once, so the #1641 rule costs about
+    what one scan to the quote does. A lazy value before the run costs 1000x+."""
+    body = ('x "serial_num=' + "\\" * 20_000 + "\n") * 5
+    rule, replacement = next(
+        r for r in export.IDENTIFIER_RULES if _QUOTED_VALUE in r[0].pattern
+    )
+    scan = re.compile(
+        rule.pattern.replace(_QUOTED_VALUE, _QUOTED_VALUE_SCAN), rule.flags
+    )
+    assert _cost_ratio(rule, scan, replacement, body) < 10
 
 
 @pytest.mark.parametrize(
