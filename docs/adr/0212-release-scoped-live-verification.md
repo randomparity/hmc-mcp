@@ -91,8 +91,8 @@ its behavior. This ADR authorizes no live run or tag.
 ## Amendment (2026-10-15, #1658)
 
 Operation-keyed evidence holds one live row per producing observation, keyed by
-its catalog-wide unique observation id (which also fixes its scenario), not one
-row per operation. Promotion replaces a stored live row only when the window
+its catalog-wide unique observation id, not one row per operation; a
+re-produced id replaces its stored row even when its scenario changed. Promotion replaces a stored live row only when the window
 produced that observation again; every other stored row is kept until a
 reviewed commit retires it. The strict-subset refusal compares a passing
 observation with the stored row it replaces. A claimed operation still needs a

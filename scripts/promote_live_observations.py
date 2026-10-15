@@ -358,7 +358,8 @@ def _merge(catalog: dict, observations: dict, gaps: list, claims: list) -> None:
         )
         # Each producer keeps its own row: a window replaces the stored rows whose
         # observation it produced again and leaves every other stored row alone.
-        # Ids are catalog-wide unique, so an id names one observation and scenario.
+        # Ids are catalog-wide unique; a re-produced id replaces its stored row
+        # even when its scenario changed.
         produced: dict[str, list] = defaultdict(list)
         for arm, value in options:
             produced[value["id"]].append((arm, value))

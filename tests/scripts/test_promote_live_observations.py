@@ -460,13 +460,13 @@ _DEDICATED = {
 _AUTOMATED = {**_SHARED, "id": "contract", "channel": "automated"}
 
 
-def _lpar_modify(observations, claims=()):
+def _lpar_modify(observations, claims=(), stored=(_AUTOMATED, _SHARED, _DEDICATED)):
     catalog = {
         "operations": [
             {
                 "operation": "lpar.modify",
                 "implementation": {"state": "implemented", "missing_scope": []},
-                "evidence": [_AUTOMATED, _SHARED, _DEDICATED],
+                "evidence": list(stored),
             }
         ]
     }
@@ -525,6 +525,19 @@ def test_refuse_claim_superseded_by_newer_evidence(newer):
     # Readers would report the newer row; promotion refuses before the branch.
     with pytest.raises(promotion.PromotionError, match="newer live observation"):
         _lpar_modify([("round2", _later(_SHARED)), newer], [_CLAIM])
+
+
+def test_refuse_claim_tied_with_a_failed_row_of_greater_id():
+    tied = ("dedicated", _later(_DEDICATED, result="failed"))
+    with pytest.raises(promotion.PromotionError, match="newer live observation"):
+        _lpar_modify([("round2", _later(_SHARED)), tied], [_CLAIM])
+
+
+def test_newer_non_live_evidence_does_not_supersede_a_claim():
+    automated = _later(_AUTOMATED, observed_at="2026-10-16T00:00:00Z", result="failed")
+    assert _lpar_modify(
+        [("round2", _later(_SHARED))], [_CLAIM], stored=(automated, _DEDICATED)
+    ) == [automated, _DEDICATED, _later(_SHARED)]
 
 
 def test_refuse_claim_superseded_by_a_newer_stored_row_of_another_closure():

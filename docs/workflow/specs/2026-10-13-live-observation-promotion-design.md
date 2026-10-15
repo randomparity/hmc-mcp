@@ -33,8 +33,9 @@ For non-registry recording labels, reuse source-declared release routes
 to validate operation/arm/scenario. Use the producer's second-resolution timestamp floor;
 reject missing, stale or mismatched results without copying their raw payloads. Reject
 stale/future evidence and duplicate ids within a sidecar; validate catalog-wide ids
-after selection. Multiple arms can observe the same observation id (catalog-wide unique, so it
-also fixes the scenario): keep its latest timestamp (ties with differing content fail).
+after selection. Multiple arms can observe the same observation id (catalog-wide unique; a
+re-produced id replaces its stored row even when its scenario changed): keep its latest
+timestamp (ties with differing content fail).
 Require each claim's newest operation/scenario observation in its named arm's supplied
 sidecar to be passed evidence. Replace a stored live row only when the window produced its
 id again, keeping every other stored live row, non-live evidence and implementation (ADR
