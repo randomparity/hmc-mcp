@@ -435,10 +435,11 @@ class HMCClient(
             self.config.verify_ssl
             and self.config.trust_system_store
             and not os.environ.get("SSL_CERT_FILE")
+            and not os.environ.get("SSL_CERT_DIR")
         ):
             # ADR 0222: use the OS trust store via truststore when both
             # verify_ssl and trust_system_store are on and no explicit bundle
-            # is set. An explicit SSL_CERT_FILE takes precedence, so the
+            # is set. SSL_CERT_FILE or SSL_CERT_DIR takes precedence, so the
             # operator can always pin a bundle without toggling this flag.
             ctx = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             verify = ctx

@@ -205,8 +205,8 @@ With `HMC_VERIFY_SSL=true` the client determines what to trust from two sources,
    the operating-system trust store (macOS Keychain, Windows Credential Store, the Linux
    CA bundle rebuilt by `update-ca-certificates` / `update-ca-trust`) is consulted via
    the `truststore` library (ADR 0222).
-3. **Bundled `certifi` roots**: when `HMC_TRUST_SYSTEM_STORE=false` and no `SSL_CERT_FILE`
-   is set, only the CA roots bundled with the HTTP library are trusted.
+3. **Bundled `certifi` roots**: when `HMC_TRUST_SYSTEM_STORE=false` and neither `SSL_CERT_FILE`
+   nor `SSL_CERT_DIR` is set, only the CA roots bundled with the HTTP library are trusted.
 
 Set these variables in the environment of the process that runs `hmcpctl`, including the
 launcher of an MCP server. They need no root access and apply to every HMC that process
@@ -270,20 +270,67 @@ export HMC_VERIFY_SSL=true
 hmcpctl console info
 ```
 
+This works on macOS (Keychain), Windows (Certificate Store), and Linux without any
+additional setup.
+
 If you need to export a static bundle — for example when `HMC_TRUST_SYSTEM_STORE=false`,
 or when you want a snapshot that is immune to OS store changes — export it once and point
 `SSL_CERT_FILE` at the copy. Re-export it when the system store changes.
 
+#### macOS
+
 ```bash
-# macOS
 security find-certificate -a -p /Library/Keychains/System.keychain \
   /System/Library/Keychains/SystemRootCertificates.keychain > system-ca-bundle.pem
+export SSL_CERT_FILE="$PWD/system-ca-bundle.pem"
 ```
 
-On Linux the distribution already maintains a bundle (for example
-`/etc/ssl/certs/ca-certificates.crt` on Debian and Ubuntu, or
-`/etc/pki/tls/certs/ca-bundle.crt` on RHEL-family systems); `update-ca-certificates` or
-`update-ca-trust` rebuilds it, and `SSL_CERT_FILE` can point straight at it.
+#### Linux
+
+Linux distributions maintain a system bundle that `update-ca-certificates` (Debian/Ubuntu)
+or `update-ca-trust` (RHEL/Fedora) rebuilds when you add a CA. Point `SSL_CERT_FILE` at
+the existing bundle — no regeneration is needed to read the current store:
+
+```bash
+# Debian / Ubuntu
+export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+
+# RHEL / Fedora (RHEL ≤ 9 / Fedora ≤ 42)
+export SSL_CERT_FILE=/etc/pki/tls/cert.pem
+
+# RHEL / Fedora (RHEL 11+ / Fedora 43+)
+export SSL_CERT_FILE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
+```
+
+> **Note:** These paths and commands were verified against distribution documentation and
+> the `truststore` library's source; they were not run on a live Linux host.
+
+To add a CA to the system bundle and have `SSL_CERT_FILE` reflect it automatically,
+copy the PEM file to `/usr/local/share/ca-certificates/` and run
+`sudo update-ca-certificates` (Debian/Ubuntu), or copy it to
+`/etc/pki/ca-trust/source/anchors/` and run `sudo update-ca-trust` (RHEL/Fedora).
+
+#### Windows
+
+Windows users with `HMC_TRUST_SYSTEM_STORE=true` (the default) get the Windows Certificate
+Store automatically via `truststore` — no export is needed.
+
+If you need a static PEM bundle (for example when `HMC_TRUST_SYSTEM_STORE=false`), export
+the Trusted Root CAs from the Windows Certificate Store with PowerShell:
+
+```powershell
+# Run in PowerShell (5 or 7). -Encoding UTF8 is required; the default
+# in Windows PowerShell 5 is UTF-16 LE, which OpenSSL cannot read.
+$certs = Get-ChildItem -Path Cert:\LocalMachine\Root
+foreach ($cert in $certs) {
+    $pem = [Convert]::ToBase64String($cert.Export('Cert'), [Base64FormattingOptions]::InsertLineBreaks)
+    "-----BEGIN CERTIFICATE-----`n$pem`n-----END CERTIFICATE-----" | Out-File -Append -Encoding UTF8 system-ca-bundle.pem
+}
+$env:SSL_CERT_FILE = "$PWD\system-ca-bundle.pem"
+```
+
+Alternatively, use `certutil` to export individual certificates and convert them with
+OpenSSL as described in [Build a PEM bundle](#build-a-pem-bundle).
 
 ### Use a directory instead of a file
 
