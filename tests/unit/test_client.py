@@ -1089,6 +1089,10 @@ async def test_get_managed_system_fallback_failure_raises_actionable_error(
         with pytest.raises(HMCError, match="could not be resolved") as exc_info:
             await hmc.get_managed_system(uuid)
     assert exc_info.value.status_code == 500
+    message = str(exc_info.value)
+    assert "X-HMC-Schema-Version pin (HMC_SCHEMA_VERSION)" in message
+    assert "unset HMC_SCHEMA_VERSION" in message
+    assert "firmware" not in message
     if expect_quick_all_cause:
         assert "quick/All failed" in str(exc_info.value.__cause__)
 

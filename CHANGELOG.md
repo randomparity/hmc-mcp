@@ -42,6 +42,15 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
 
 ### Changed
 
+- The HTTP 500 "Nested path contains null property" errors from a managed-system read by UUID
+  and from the management-console read now name an `X-HMC-Schema-Version` pin as the likely
+  cause and tell the operator to unset `HMC_SCHEMA_VERSION`, instead of advising a firmware
+  update (#1648).
+
+- Release and live-testing runbooks now use the authorized release-window command,
+  claimed-set gate and tag-time snapshot validation, with explicit recovery and
+  promotion review. Ordinary development needs no live rerun (#1514).
+
 - Round2 live testing preserves the configured partition and disk while provisioning
   temporary owned fixtures. Recovery independently compares a fresh system/VIOS baseline
   and original partition properties; missing legacy witnesses fail closed (#1513).
