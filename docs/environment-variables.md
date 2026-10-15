@@ -18,8 +18,9 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
 | `HMC_PROFILE` | string | _(none)_ | Named profile to load from `~/.config/hmcpctl/config.toml` (or platform equivalent); a value that is not a profile key is resolved through the top-level `nicknames` table. Selects the connection when no explicit `--host`/`HMC_HOST` is set |
 | `HMC_SSH_KEY_FILE` | path | _(none)_ | Path to an SSH private key file; when set, SSH commands use key-based auth instead of password auth |
 | `HMC_SSH_VERIFY_HOST_KEY` | bool | `true` | Verify SSH host keys against the process user's `~/.ssh/known_hosts`. Set `false` only for an explicit bypass; every connection warns. Profile key: `ssh_verify_host_key`. See [SSH trust setup](HMC_HINTS.md#ssh-host-key-trust) |
-| `HMC_VERIFY_SSL` | bool | `false` | Verify the HMC TLS certificate. HMCs ship self-signed certs; set to `true` only after trusting the HMC's CA through `SSL_CERT_FILE` or `SSL_CERT_DIR`, or by enabling the system trust store; see [TLS trust](configuration.md#tls-trust) |
-| `HMC_TRUST_SYSTEM_STORE` | bool | `true` | When `true` and `HMC_VERIFY_SSL=true`, use the operating-system trust store (macOS Keychain, Windows Credential Store, Linux CA bundle) via `truststore` instead of only the `certifi` roots. An explicit `SSL_CERT_FILE` takes precedence. Set `false` to use only `SSL_CERT_FILE` / `SSL_CERT_DIR` and the bundled roots. Ignored when `HMC_VERIFY_SSL=false`. TOML key: `trust_system_store`. See [TLS trust](configuration.md#tls-trust) (ADR 0222) |
+| `HMC_VERIFY_SSL` | bool | `false` | Verify the HMC TLS certificate. HMCs ship self-signed certs; set to `true` only after trusting the HMC's CA through `HMC_CA_BUNDLE`, `SSL_CERT_FILE` or `SSL_CERT_DIR`, or by enabling the system trust store; see [TLS trust](configuration.md#tls-trust) |
+| `HMC_CA_BUNDLE` | path | _(none)_ | Path to a PEM file containing the CA certificate(s) to trust for the HMC TLS connection. When set and `HMC_VERIFY_SSL=true`, takes precedence over `SSL_CERT_FILE`, `SSL_CERT_DIR`, and `HMC_TRUST_SYSTEM_STORE`. Ignored when `HMC_VERIFY_SSL=false`. TOML key: `ca_bundle`. CLI flag: `--ca-bundle`. See [TLS trust](configuration.md#tls-trust) (ADR 0223) |
+| `HMC_TRUST_SYSTEM_STORE` | bool | `true` | When `true` and `HMC_VERIFY_SSL=true`, use the operating-system trust store (macOS Keychain, Windows Credential Store, Linux CA bundle) via `truststore` instead of only the `certifi` roots. An explicit `SSL_CERT_FILE` or `HMC_CA_BUNDLE` takes precedence. Set `false` to use only `SSL_CERT_FILE` / `SSL_CERT_DIR` and the bundled roots. Ignored when `HMC_VERIFY_SSL=false`. TOML key: `trust_system_store`. See [TLS trust](configuration.md#tls-trust) (ADR 0222) |
 | `HMC_TIMEOUT` | float | `180.0` | HTTP request timeout in seconds. A `ManagedSystem` feed read on a large HMC has taken longer than 60 s (#1202) |
 | `HMC_UPLOAD_TIMEOUT` | positive float | `600.0` | Seconds the ISO upload (`hmc_upload_iso` / `hmcpctl storage upload-iso`) waits for the HMC's response after it has streamed the last byte. The HMC answers only once it has taken the whole file, and the wait grows with the ISO's size. The wait is never shorter than `HMC_TIMEOUT`; the upload's connect and write waits stay at `HMC_TIMEOUT`. TOML profile key: `upload_timeout`. See ADR 0177 (amended by #1055) |
 | `HMC_MAX_RESPONSE_BYTES` | positive integer | `33554432` (32 MiB) | Maximum HMC REST response size in bytes, including successful and error replies. Exact-boundary responses are accepted; larger declared or streamed bodies are refused. Raise for unusually large inventories only when memory permits: this bounds response bytes, not total process memory. Zero is invalid and cannot disable the ceiling. TOML profile key: `max_response_bytes`. Error-body diagnostics keep their separate 4096-byte cap |
@@ -61,8 +62,9 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
      words "where the setting came from"; that clause is the anchor, and this note must
      stay one `- **` bullet. -->
 - **TLS verification** (`HMC_VERIFY_SSL`): HMCs ship self-signed certificates,
-  so TLS verification is off by default. To verify the HMC certificate, either
-  set `HMC_TRUST_SYSTEM_STORE=true` (the default) and `HMC_VERIFY_SSL=true` to
+  so TLS verification is off by default. To verify the HMC certificate, set
+  `HMC_CA_BUNDLE` to a PEM file and `HMC_VERIFY_SSL=true` (highest precedence),
+  or set `HMC_TRUST_SYSTEM_STORE=true` (the default) and `HMC_VERIFY_SSL=true` to
   consult the OS trust store, or trust the CA through `SSL_CERT_FILE` or
   `SSL_CERT_DIR` ([TLS trust](configuration.md#tls-trust)) and set
   `HMC_VERIFY_SSL=true` — otherwise credentials are at risk of

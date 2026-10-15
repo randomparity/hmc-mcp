@@ -4469,3 +4469,101 @@ def test_tls_audit_record_still_names_verify_ssl_source_not_trust_system_store(
 
     assert len(caught) == 1
     assert caught[0]["source"] == "environment:HMC_VERIFY_SSL"
+
+
+# ---------------------------------------------------------------------------
+# ADR 0223: ca_bundle — first-class CA-path setting
+# ---------------------------------------------------------------------------
+#
+# _new_http_client passes verify=<path|SSLContext|bool> to httpx.AsyncClient.
+# We reuse _patch_async_client / _CapturingAsyncClient from ADR 0222's section.
+
+
+def test_ca_bundle_set_passes_path_as_verify(monkeypatch):
+    """ca_bundle set and verify_ssl=True passes the path string to AsyncClient."""
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.delenv("SSL_CERT_DIR", raising=False)
+    captured = _patch_async_client(monkeypatch)
+    HMCClient(make_config(verify_ssl=True, ca_bundle="/path/to/hmc-ca.pem"))
+    assert len(captured) >= 1
+    assert captured[0] == "/path/to/hmc-ca.pem"
+
+
+def test_ca_bundle_wins_over_ssl_cert_file(monkeypatch):
+    """When ca_bundle is set, SSL_CERT_FILE is ignored for verify=."""
+    monkeypatch.setenv("SSL_CERT_FILE", "/some/other/bundle.pem")
+    captured = _patch_async_client(monkeypatch)
+    HMCClient(make_config(verify_ssl=True, ca_bundle="/hmc-specific.pem"))
+    assert len(captured) >= 1
+    # Must be the ca_bundle path, not a bool or SSLContext
+    assert captured[0] == "/hmc-specific.pem"
+
+
+def test_ca_bundle_wins_over_trust_system_store(monkeypatch):
+    """When ca_bundle is set, trust_system_store is bypassed (no SSLContext)."""
+    import ssl
+
+    import truststore
+
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.delenv("SSL_CERT_DIR", raising=False)
+    captured = _patch_async_client(monkeypatch)
+    HMCClient(
+        make_config(
+            verify_ssl=True,
+            trust_system_store=True,
+            ca_bundle="/hmc-specific.pem",
+        )
+    )
+    assert len(captured) >= 1
+    # Must be the path string, not a truststore.SSLContext
+    assert not isinstance(captured[0], ssl.SSLContext)
+    assert not isinstance(captured[0], truststore.SSLContext)
+    assert captured[0] == "/hmc-specific.pem"
+
+
+def test_ca_bundle_ignored_when_verify_ssl_false(monkeypatch):
+    """ca_bundle has no effect when verify_ssl=False."""
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.delenv("SSL_CERT_DIR", raising=False)
+    captured = _patch_async_client(monkeypatch)
+    HMCClient(make_config(verify_ssl=False, ca_bundle="/hmc-specific.pem"))
+    assert len(captured) >= 1
+    # verify_ssl=False → verify=False regardless of ca_bundle
+    assert captured[0] is False
+
+
+def test_ca_bundle_none_falls_through_to_trust_system_store(monkeypatch):
+    """When ca_bundle is None, the ADR 0222 trust_system_store path is used."""
+    import ssl
+
+    import truststore
+
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.delenv("SSL_CERT_DIR", raising=False)
+    captured = _patch_async_client(monkeypatch)
+    HMCClient(make_config(verify_ssl=True, trust_system_store=True, ca_bundle=None))
+    assert len(captured) >= 1
+    assert isinstance(captured[0], ssl.SSLContext)
+    assert isinstance(captured[0], truststore.SSLContext)
+
+
+def test_tls_audit_record_still_names_verify_ssl_source_not_ca_bundle(
+    monkeypatch,
+):
+    """ADR 0223: ca_bundle changes the trust source, not the audit verify_ssl source."""
+    monkeypatch.delenv("HMC_VERIFY_SSL", raising=False)
+    monkeypatch.setenv("HMC_VERIFY_SSL", "false")
+    caught = _capture_audit()
+
+    HMCClient(
+        HMCConfig(
+            host="hmc.test",
+            user="hscroot",
+            password="abc123",  # pragma: allowlist secret
+            ca_bundle="/hmc-specific.pem",
+        )
+    )
+
+    assert len(caught) == 1
+    assert caught[0]["source"] == "environment:HMC_VERIFY_SSL"
