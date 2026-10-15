@@ -1580,7 +1580,7 @@ def test_octet_after_an_escape_ending_in_hex_is_a_leak(encode: Any, value: str) 
     in JSON text, is reported by `_LIVE_HEX_RUN`'s escape start, not the joined octet."""
     tok = export.Tokenizer({}, set())
     body = encode(f"<MACAddress>{value}</MACAddress>")
-    assert tok.leaks(body) == [body[body.index(">") + 1 : body.index("</")]]
+    assert body[body.index(">") + 1 : body.index("</")] in tok.leaks(body)
 
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
@@ -2168,11 +2168,12 @@ def test_colon_positional_records_are_not_ipv6() -> None:
 
 
 #: Colon-separated hex after an escape whose letter is a hex digit, and what the export
-#: writes in its place, after the escape. The MAC rules zero a MAC element; the IPv6
-#: rule redacts the rest, an HMC record too, as the letter may open an address.
+#: writes in its place, after the escape. The MAC rules zero a MAC, in an element or in
+#: free text (#1669); the IPv6 rule redacts the rest, an HMC record too, as the letter
+#: may open an address.
 AFTER_HEX_ESCAPE = [
     ("<MACAddress>{}</MACAddress>", "0A:1B:2C:3D:4E:5F", "00:00:00:00:00:00"),
-    ("mac {}", "0A:1B:2C:3D:4E:5F", "2001:db8::1"),
+    ("mac {}", "0A:1B:2C:3D:4E:5F", "00:00:00:00:00:00"),
     ("addr {}", "fe80::1:2", "2001:db8::1"),
     ("slot {}", "1:0:1:3", "2001:db8::1"),
 ]
@@ -2192,9 +2193,17 @@ def test_ipv6_rule_keeps_a_json_escape_letter_in_a_tool_record(
 
 
 @pytest.mark.parametrize("before", ["\b", "\f"])
-@pytest.mark.parametrize(("template", "value", "exported"), AFTER_HEX_ESCAPE[1:])
+@pytest.mark.parametrize(
+    ("template", "value", "exported", "rewritten"),
+    [
+        # Written again, the escape's letter is literal and joined to the MAC, so the
+        # MAC rule keeps it and the IPv6 rule redacts it.
+        ("mac {}", "0A:1B:2C:3D:4E:5F", "00:00:00:00:00:00", "2001:db8::1"),
+        *((*row, row[-1]) for row in AFTER_HEX_ESCAPE[2:]),
+    ],
+)
 def test_ipv6_rule_keeps_an_escape_letter_in_json_text(
-    before: str, template: str, value: str, exported: str
+    before: str, template: str, value: str, exported: str, rewritten: str
 ) -> None:
     """A REST body that is JSON holds the escape `\\b`; a tool record value that is JSON
     is written again by the export, as `\\\\b`. A MAC element in either fails closed,
@@ -2202,9 +2211,10 @@ def test_ipv6_rule_keeps_an_escape_letter_in_json_text(
     raw = json.dumps(template.format(before + value))
     tool = {"kind": "tool", "step": "t", "tool": "t", "ok": True, "data": {"raw": raw}}
     corpus = export.tokenize_records(_records(_rest("/e", raw), tool))
-    expected = json.dumps(template.format(before + exported))
-    assert corpus[-2]["body"] == expected
-    assert corpus[-1]["record"]["data"]["raw"] == expected
+    assert corpus[-2]["body"] == json.dumps(template.format(before + exported))
+    assert corpus[-1]["record"]["data"]["raw"] == json.dumps(
+        template.format(before + rewritten)
+    )
 
 
 @pytest.mark.parametrize("before", ["\n", "\t", "\\\b"])
@@ -2243,6 +2253,126 @@ def test_ipv6_rule_after_many_escapes_does_not_backtrack() -> None:
     pattern = export._IPV6_CANDIDATE
     without = re.compile(rf"(?i)(?P<escape>(?!))(?P<address>{pattern})?|\b{pattern}")
     assert _cost_ratio(export._IPV6, without, export._ipv6, body) < 10
+
+
+#: Free-text MACs in each separator style and a 16-hex WWN, and what the export writes.
+FREE_TEXT_VALUES = [
+    ("0A:1B:2C:3D:4E:5F", "00:00:00:00:00:00"),
+    ("0a-1b-2c-3d-4e-5f", "00-00-00-00-00-00"),
+    ("0a1b.2c3d.4e5f", "0000.0000.0000"),
+    ("0123456789abcdef", "<REDACTED-DEVID>"),
+]
+#: The free-text MAC and WWN scrub rules and backstops, found by their starts.
+FREE_TEXT_RULES = [
+    rule
+    for rule in [rule for rule, _ in export.IDENTIFIER_RULES]
+    + list(export.ALWAYS_LEAKS)
+    if export._SCRUB_START in rule.pattern or export._LEAK_START in rule.pattern
+]
+#: Every JSON escape a value can follow, as the raw character it encodes.
+#: `json.dumps` writes the control character `\x01` as `\u0001`.
+ESCAPED_CHARACTERS = ["\n", "\r", "\t", "\f", "\b", "\x01"]
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("escaped", ESCAPED_CHARACTERS, ids=ascii)
+@pytest.mark.parametrize(("value", "scrubbed"), FREE_TEXT_VALUES)
+def test_free_text_value_after_a_json_escape_is_scrubbed(
+    encode: Any, escaped: str, value: str, scrubbed: str
+) -> None:
+    """`\\b` read an escape's letter as part of the value (#1669); the escape stays."""
+    tok = export.Tokenizer({}, set())
+    body = encode(f"hdr{escaped}{value} x")
+    assert tok.leaks(body) == [value]
+    out = tok.tokenize(body)
+    assert out == encode(f"hdr{escaped}{scrubbed} x")
+    assert out is not None
+    assert tok.leaks(out) == []
+    if encode is json.dumps:
+        assert json.loads(out) == f"hdr{escaped}{scrubbed} x"
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize(
+    ("before", "after"), [("g", ""), ("1", ""), ("", "1"), ("", "g")]
+)
+@pytest.mark.parametrize("escaped", ESCAPED_CHARACTERS, ids=ascii)
+@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES])
+def test_free_text_value_inside_a_longer_run_is_not_matched(
+    encode: Any, escaped: str, value: str, before: str, after: str
+) -> None:
+    """Neither the free-text scrub rules nor their backstops match. The IPv6 rule still
+    reads a colon MAC joined to a word as an address."""
+    body = encode(f"hdr{escaped}{before}{value}{after} x")
+    assert [rule.pattern for rule in FREE_TEXT_RULES if rule.search(body)] == []
+
+
+#: A colon MAC is left out: after the letter, the IPv6 rule replaces it as an address.
+@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES[1:]])
+def test_value_after_an_escaped_backslash_and_n_fails_closed(value: str) -> None:
+    """`\\\\n` is a backslash and the letter `n`, so the scrub rules read the value as
+    joined to a word and keep it; the backstops read the `\\n` as an escape and report
+    it, so the export refuses rather than leaking (#1669)."""
+    tok = export.Tokenizer({}, set())
+    body = json.dumps(f"hdr\\n{value} x")
+    assert tok.tokenize(body) == body
+    assert tok.leaks(body) == [value]
+
+
+@pytest.mark.parametrize(
+    ("raw", "scrubbed"),
+    [
+        ("\\" + "0A:1B:2C:3D:4E:5F", "\\00:00:00:00:00:00"),
+        ("\\\\" + "0a-1b-2c-3d-4e-5f", "\\\\00-00-00-00-00-00"),
+        ("\\\n0a1b.2c3d.4e5f", "\\\n0000.0000.0000"),
+        ("\\\b0123456789abcdef", "\\\b<REDACTED-DEVID>"),
+        ("\\f0:1B:2C:3D:4E:5F", "\\00:00:00:00:00:00"),
+    ],
+)
+def test_value_after_escaped_backslashes_keeps_every_backslash(
+    raw: str, scrubbed: str
+) -> None:
+    """Backslashes pair off from the first: an escaped one keeps the value apart from
+    what precedes it, and a real escape after the pairs is kept whole."""
+    tok = export.Tokenizer({}, set())
+    out = tok.tokenize(json.dumps(f"hdr{raw} x"))
+    assert out is not None
+    assert json.loads(out) == f"hdr{scrubbed} x"
+    assert tok.leaks(out) == []
+
+
+@pytest.mark.parametrize(("value", "scrubbed"), FREE_TEXT_VALUES)
+def test_value_after_a_literal_backslash_in_raw_text_is_scrubbed(
+    value: str, scrubbed: str
+) -> None:
+    """Raw text has no escapes: a lone backslash before a digit, as in a Windows path,
+    keeps the value apart from what precedes it."""
+    tok = export.Tokenizer({}, set())
+    assert tok.tokenize(f"C:\\{value} x") == f"C:\\{scrubbed} x"
+
+
+@pytest.mark.parametrize(
+    "raw", ["\f0-1B-2C-3D-4E-5F", "\b0-1B-2C-3D-4E-5F", "\f123456789abcdef", "\\\f0-1B"]
+)
+def test_escape_letter_is_never_read_as_the_first_hex_digit(raw: str) -> None:
+    """The `f` of `\\f` is not a hex digit of what follows: the rules wrote `\\0...` and
+    `\\<REDACTED-DEVID>`, which is not JSON."""
+    tok = export.Tokenizer({}, set())
+    body = json.dumps(f"hdr{raw} x")
+    assert tok.tokenize(body) == body
+    assert tok.leaks(body) == []
+
+
+def test_free_text_rules_after_a_long_backslash_run_do_not_backtrack() -> None:
+    """A backslash run is read from its first backslash, once, so the scrub rules and
+    backstops cost about what they do when no escape or backslash run can start a value
+    (#1669)."""
+    body = ("\\" * 20_000 + "u00e9 \\n\\t\\f\\b0a1b \\\\\\b0:1B ") * 5
+    assert len(FREE_TEXT_RULES) == 8
+    for rule in FREE_TEXT_RULES:
+        pattern = rule.pattern.replace(export._SCRUB_START, r"(?<![\w\\])")
+        pattern = pattern.replace(export._LEAK_START, r"(?<![\w\\])")
+        assert _cost_ratio(rule, re.compile(pattern, rule.flags), "", body) < 10
 
 
 def test_tool_record_the_rules_turn_into_invalid_json_fails_closed(
@@ -2498,7 +2628,9 @@ def test_lun_address_is_not_a_wwn() -> None:
 
 
 def test_surviving_16_hex_wwn_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
-    rules = tuple(r for r in export.IDENTIFIER_RULES if r[0].pattern != export._WWN_16)
+    rules = tuple(
+        r for r in export.IDENTIFIER_RULES if export._WWN_16 not in r[0].pattern
+    )
     monkeypatch.setattr(export, "IDENTIFIER_RULES", rules)
     with pytest.raises(export.LeakError):
         export.tokenize_records(_records(_ssh("lsmap", "disk@5005076800000001,0")))

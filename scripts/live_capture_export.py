@@ -100,7 +100,9 @@ BUILT_IN_ACCOUNTS = {"root", "hscroot", "hscpe", "admin"}
 
 Replacement = str | Callable[[re.Match[str]], str]
 
-_WWN_16 = r"\b(?![0-9a-fA-F]{2}0{14}\b)[0-9a-fA-F]{16}\b"
+#: A 16-hex WWN, other than a LUN address: two digits and fourteen zeros. Its start is
+#: the rule's: `_SCRUB_START` or `_LEAK_START`.
+_WWN_16 = r"(?![0-9a-fA-F]{2}0{14}\b)[0-9a-fA-F]{16}\b"
 
 #: Elements whose whole text is a device identifier.
 _DEVICE_ID_ELEMENTS = (
@@ -280,6 +282,28 @@ _AFTER_ESCAPE = "|".join(f"(?<={escape})" for escape in _JSON_ESCAPES)
 #: `n` or `u0041` reads the same, and so does an escape of a word character such as
 #: `\u00e9`: over-scrubbing, never a leak.
 _KEY_START = rf"(?:(?<!\w)|{_AFTER_ESCAPE})"
+#: Where a free-text MAC or WWN the scrub rules replace starts: after a character that
+#: is neither a word character nor a backslash, or after a backslash run read from its
+#: first backslash, so pairs are escaped backslashes (#1669). The run is pairs alone,
+#: pairs and a JSON escape, or pairs and a lone backslash before anything but an
+#: escape letter, as in raw text. It is the `escape` group, which the rule writes back.
+#: The letter of a `\f` or `\b` escape is never read as the value's first hex digit and
+#: dropped; after an escaped backslash, an `n` is a letter the value is joined to. The
+#: run is matched only from its first backslash, so it is scanned once.
+_SCRUB_START = (
+    r"(?:(?<![\w\\])|(?<!\\)(?P<escape>(?:\\\\)++"
+    r"|(?:\\\\)*+\\(?:[bfnrt]|u[0-9A-Fa-f]{4}|(?![bfnrtu]))))"
+)
+#: Where a backstop reads a free-text MAC or WWN as starting: as `_SCRUB_START`, but
+#: after any `_AFTER_ESCAPE`, even an escaped backslash and an `n`, so a value the scrub
+#: rules read as joined to that letter fails closed (#1669).
+_LEAK_START = rf"(?:(?<![\w\\])|{_AFTER_ESCAPE})"
+#: Free-text MACs in each separator style, and the placeholder each is replaced with.
+_MAC_FORMS = (
+    (r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b", "00:00:00:00:00:00"),
+    (r"(?:[0-9A-Fa-f]{2}-){5}[0-9A-Fa-f]{2}\b", "00-00-00-00-00-00"),
+    (r"(?:[0-9A-Fa-f]{4}\.){2}[0-9A-Fa-f]{4}\b", "0000.0000.0000"),
+)
 #: A MAC separator and the hex digit after it.
 _MAC_SEPARATOR = r"[-.:][0-9A-Fa-f]"
 #: The digits after a `\\u` where a separated MAC's first octets stay: fewer than an
@@ -516,19 +540,27 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
         re.compile(rf"(<(?>{_NS_PREFIX}(?i:\w*MACAddress\w*+)){_TAG_TAIL})([^<]+)"),
         _mac_element,
     ),
-    (re.compile(r"(?i)\b(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\b"), "00:00:00:00:00:00"),
+    *(
+        (re.compile(rf"{_SCRUB_START}{form}"), rf"\g<escape>{placeholder}")
+        for form, placeholder in _MAC_FORMS
+    ),
     (re.compile(r"(?i)(mac_addr=)[0-9a-f]{12}"), r"\g<1>000000000000"),
     (_IPV6, _ipv6),
     # Any other 16-hex token is a WWN: a `disk@<target WWPN>` path, an
     # `AIX-VDASD-<hex>` descriptor. A LUN address (`81` and fourteen zeros) is not.
-    (re.compile(_WWN_16), "<REDACTED-DEVID>"),
+    (re.compile(rf"{_SCRUB_START}{_WWN_16}"), r"\g<escape><REDACTED-DEVID>"),
 )
 #: Shapes that may never appear in a tokenized output, whatever was collected.
 ALWAYS_LEAKS = (
     re.compile(rf"\b(?!{re.escape(PLACEHOLDER_IP)}\b)(?:\d{{1,3}}\.){{3}}\d{{1,3}}\b"),
     re.compile(r"U[0-9A-Za-z]{4}\.[0-9A-Za-z]{3}\.[0-9A-Za-z]{7}"),
     re.compile(r"-L[0-9A-F]{8,}"),
-    re.compile(_WWN_16),
+    re.compile(rf"{_LEAK_START}{_WWN_16}"),
+    # A free-text MAC the scrub rules missed; only the placeholder they write is kept.
+    *(
+        re.compile(rf"{_LEAK_START}(?!{re.escape(placeholder)}\b){form}")
+        for form, placeholder in _MAC_FORMS
+    ),
     re.compile(r"(?i)x-api-session=(?!<REDACTED)\w"),
     re.compile(r"\b(?:ssh-(?:rsa|ed25519|dss)|ecdsa-sha2-[\w-]+) +AAAA"),
     # A private token joined to a word left part of that word (a lab name's suffix)
