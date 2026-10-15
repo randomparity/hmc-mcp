@@ -27,7 +27,11 @@ from defusedxml import ElementTree as DET
 
 from hmcpctl.audit import sink as audit_sink
 from hmcpctl.client import core as client_core
-from hmcpctl.client.core import HMCClient, TLSVerificationDisabledWarning
+from hmcpctl.client.core import (
+    HMCClient,
+    HMCVerifySSLDefaultWarning,
+    TLSVerificationDisabledWarning,
+)
 from hmcpctl.config import HMCConfig
 from hmcpctl.errors import HMCError, HMCTransportError
 from hmcpctl.jobs import build_job_request
@@ -586,6 +590,44 @@ async def test_logon_silent_when_verify_ssl_enabled(mock_hmc):
         async with HMCClient(make_config(verify_ssl=True)):
             pass
     assert not [w for w in caught if "verification" in str(w.message)]
+
+
+def test_startup_warning_fires_when_verify_ssl_defaults_to_false(monkeypatch):
+    """Field-default verify_ssl=false emits the pre-1.0 startup warning."""
+    monkeypatch.delenv("HMC_VERIFY_SSL", raising=False)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", HMCVerifySSLDefaultWarning)
+        HMCClient(
+            HMCConfig(
+                host="hmc.test",
+                user="hscroot",
+                password="abc123",  # pragma: allowlist secret
+            )
+        )
+    assert any(
+        warning.category is HMCVerifySSLDefaultWarning and "1.0" in str(warning.message)
+        for warning in caught
+    )
+
+
+def test_startup_warning_silent_when_verify_ssl_explicitly_false():
+    """Explicit verify_ssl=false does not emit the startup warning."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", HMCVerifySSLDefaultWarning)
+        HMCClient(make_config(verify_ssl=False))
+    assert not [
+        warning for warning in caught if warning.category is HMCVerifySSLDefaultWarning
+    ]
+
+
+def test_startup_warning_silent_when_verify_ssl_true():
+    """verify_ssl=true does not emit the startup warning."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", HMCVerifySSLDefaultWarning)
+        HMCClient(make_config(verify_ssl=True))
+    assert not [
+        warning for warning in caught if warning.category is HMCVerifySSLDefaultWarning
+    ]
 
 
 @pytest.mark.asyncio
