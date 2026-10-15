@@ -121,20 +121,28 @@ _ADDRESS_ELEMENTS = "NetworkAddress|IPAddress|PrimaryIPAddress|IPv6Address"
 #: fallback backtracking; each unclosed opening still scans to the next `>`.
 _ATTRS = r"""(?:[^>"'<]|"[^"<]*"|'[^'<]*')*"""
 _TAG_TAIL = rf"(?:{_ATTRS}(?<!/)>|(?!{_ATTRS}/>)[^>]*+>|[^>]*+(?<!/)>)"
-#: The `\u` escape `json.dumps` writes for a non-ASCII character, as in `ns\u00e9:`;
-#: each further `json.dumps` doubles its backslash. An ASCII escape (`\u0022`) never
-#: extends a prefix.
-_NAME_ESCAPE = r"\\++u(?!00[0-7])[0-9A-Fa-f]{4}"
-#: Any number of namespace prefixes, `a:b:` too. A prefix character is an ASCII word
-#: character, `.` or `-`, or any non-ASCII character, raw or escaped. That includes a
-#: non-ASCII space such as `\u00a0` or `\u3000` (#1623): only an ASCII space separates
-#: XML names, so a prefix holding one is malformed, and taking it scrubs the value rather
-#: than hiding it. A prefix is given back when the element name does not follow it:
-#: `<SerialNumber:x>` is still a `SerialNumber`. A scrub rule takes the prefix and name
-#: as one atomic group: the tag tail after the name ends at the same `>` whichever
-#: prefix matched, and retrying each one would scan the tail again per segment of
-#: `<SerialNumber:SerialNumber:...`.
-_NS_PREFIX = rf"(?:(?:[\w.-]|[^\x00-\x7f]|{_NAME_ESCAPE})++:)*"
+#: What ends a namespace prefix inside a tag: XML's own spaces, the tag and attribute
+#: delimiters, and the `:` after each prefix. Any other character is taken, so a
+#: malformed prefix is scrubbed rather than exported (#1623): an allowlist of XML name
+#: characters let `<a!b:SerialNumber>` or a non-ASCII space hide the element from the
+#: scrub rule and the backstop alike.
+_PREFIX_ENDS = "\t\n\r \"'/:<=>"
+_PREFIX_END_CLASS = "".join(f"\\x{ord(c):02x}" for c in _PREFIX_ENDS)
+#: A backslash run, as `json.dumps` writes one at any depth, is taken unless a `\u`
+#: escape of a `_PREFIX_ENDS` character follows it: `\u0020` or `\u003e` ends a prefix
+#: as a space or `>` would. Every other character after the run is read as itself, so
+#: `\"` ends one, and `\n` does not: in a raw body a backslash is just a character.
+_NAME_ESCAPE = r"\\++(?!u(?i:{}))".format(
+    "|".join(f"{ord(c):04x}" for c in _PREFIX_ENDS)
+)
+#: Any number of namespace prefixes, `a:b:` and an empty `:` too. A prefix is given
+#: back when the element name does not follow it: `<SerialNumber:x>` is still a
+#: `SerialNumber`. A scrub rule takes the prefix and name as one atomic group: the tag
+#: tail after the name ends at the same `>` whichever prefix matched, and retrying each
+#: one would scan the tail again per segment of `<SerialNumber:SerialNumber:...`. The
+#: two branches of a segment start with different characters, and each segment ends at
+#: the first `:`, so a prefix matches one way only.
+_NS_PREFIX = rf"(?:(?:[^{_PREFIX_END_CLASS}\\]|{_NAME_ESCAPE})*+:)*"
 #: Elements whose whole text a rule replaces: the element name pattern, the text the
 #: rule writes and, optionally, the keywords it keeps as evidence. The same entry builds
 #: the scrub rule and its `leaks()` backstop. Names match in any case, after any
