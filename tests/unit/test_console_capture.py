@@ -906,6 +906,7 @@ def test_capture_tool_resolves_identity_and_forwards_bounds(
         duration_seconds=12.5,
         max_bytes=4096,
         idle_timeout_seconds=3.5,
+        on_chunk=None,
     )
     context.__aexit__.assert_awaited_once()
     assert resolve_system_name.await_count == int(system_selector != system_name)

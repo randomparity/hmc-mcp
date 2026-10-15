@@ -128,6 +128,23 @@ def lpars_capture_console(
     """
     _check_bounds(duration_seconds, max_bytes, idle_timeout_seconds)
     sink = _open_sink(output)
+    write_error: list[OSError] = []
+
+    def _stream_chunk(chunk: bytes) -> None:
+        """Write *chunk* to the sink as it arrives.
+
+        Write errors are recorded and suppressed so the capture completes and
+        the vterm is properly released before the caller handles the failure
+        (issue #1674).  Once a write has failed, later chunks are skipped.
+        """
+        if write_error:
+            return
+        try:
+            sink.write(chunk)
+            sink.flush()
+        except OSError as exc:
+            write_error.append(exc)
+
     try:
         capture = with_client(
             lambda hmc: capture_lpar_console_by_selector(
@@ -137,23 +154,28 @@ def lpars_capture_console(
                 duration_seconds=duration_seconds,
                 max_bytes=max_bytes,
                 idle_timeout_seconds=idle_timeout_seconds,
+                on_chunk=_stream_chunk,
             )
         )
     except BaseException:
         _discard(sink, output)
         raise
     _report(capture)
-    try:
-        sink.write(capture.data)
-        sink.flush()
-        if output is not None:
-            sink.close()
-    except BaseException as exc:
+    if write_error:
         _discard(sink, output)
-        if not isinstance(exc, OSError):
-            raise
-        err_console.print(f"Error: could not write console bytes: {exc}", markup=False)
-        raise typer.Exit(_exit_code(capture, write_failed=True)) from exc
+        err_console.print(
+            f"Error: could not write console bytes: {write_error[0]}", markup=False
+        )
+        raise typer.Exit(_exit_code(capture, write_failed=True)) from write_error[0]
+    if output is not None:
+        try:
+            sink.close()
+        except OSError as exc:
+            _discard(sink, output)
+            err_console.print(
+                f"Error: could not write console bytes: {exc}", markup=False
+            )
+            raise typer.Exit(_exit_code(capture, write_failed=True)) from exc
     code = _exit_code(capture, write_failed=False)
     if code:
         raise typer.Exit(code)
