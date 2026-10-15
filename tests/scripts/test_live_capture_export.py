@@ -640,17 +640,79 @@ def test_element_name_case_and_prefix_are_scrubbed(
     assert tok.leaks(scrubbed) == []
 
 
-#: What ends a prefix: a space, a tag end, a quote, and in `json.dumps` text a `\"`,
-#: an escaped ASCII character and an escaped non-ASCII space (#1588).
-PREFIX_GAPS = [" ", ">", '"', '\\"', "\\u0020", "\\u003e", "\\u00a0", "\\u3000"]
+#: What ends a prefix: XML's spaces, a tag end, a quote, `/` and `=`, and in
+#: `json.dumps` text a `\"` and an escape of any of those (#1588, #1623).
+PREFIX_GAPS = [" ", "\t", "\n", "\r", ">", '"', "'", "/", "="]
+PREFIX_GAPS += ['\\"', "\\u0020", "\\u0009", "\\u003e", "\\u002F", "\\u003d"]
 
 
 @pytest.mark.parametrize("gap", PREFIX_GAPS)
 def test_namespace_prefix_does_not_span_a_tag(gap: str) -> None:
-    """A prefix is name characters only: `x:SerialNumber` in another tag is not one."""
+    """A prefix ends at a tag delimiter: `x:SerialNumber` in another tag is not one."""
     tok = export.Tokenizer({}, set())
     body = f"<Note{gap}x:SerialNumber>SYN-77Q</Note>"
     assert tok.tokenize(body) == body
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("element", ["SerialNumber", "MACAddress"])
+@pytest.mark.parametrize(
+    "markup",
+    ["<!--x:{}-->", "<![CDATA[x:{}]]>", "<?x:{}?>"],
+    ids=["comment", "cdata", "pi"],
+)
+def test_markup_that_opens_no_element_is_not_scrubbed(
+    markup: str, element: str, encode: Any
+) -> None:
+    """A prefix never starts with `!` or `?`, so the text after this markup is kept."""
+    tok = export.Tokenizer({}, set())
+    body = encode(f"<Note>{markup.format(element)}FEED</Note>")
+    assert tok.tokenize(body) == body
+
+
+#: What a prefix holds: every ASCII character but a gap, `:` or `<`, a backslash
+#: included, every non-ASCII character Python's `\s` matches, and zero-width ones it
+#: does not. None is an XML name character, but taking one into the prefix scrubs a
+#: malformed tag where ending the prefix at it exported the value (#1623).
+PREFIX_CHARS = [
+    *(chr(c) for c in range(0x80) if chr(c) not in " \t\n\r>\"'/=:<"),
+    *(chr(c) for c in range(0x80, 0x110000) if re.fullmatch(r"\s", chr(c))),
+    "\u180e",
+    "\u200b",
+    "\ufeff",
+]
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize(
+    "prefix",
+    [*(f"a{c}b:" for c in PREFIX_CHARS), ":", "ns::", "\\:"],
+    ids=lambda prefix: "-".join(f"{ord(c):02X}" for c in prefix),
+)
+@pytest.mark.parametrize(
+    ("element", "value", "written"),
+    [
+        ("X-API-Session", "SYN-77Q", SESSION),
+        ("PublicSSHKeyValue", "SYN-77Q", SSH_KEY),
+        ("IPAddress", "SYN-77Q", ADDRESS),
+        ("SerialNumber", "SYN-77Q", SERIAL),
+        ("WWPN", "SYN-77Q", DEVID),
+        ("MACAddress", "0A1B2C3D4E5F", "000000000000"),  # pragma: allowlist secret
+    ],
+)
+def test_namespace_prefix_with_any_other_character_is_scrubbed(
+    element: str, value: str, written: str, prefix: str, encode: Any
+) -> None:
+    """Regression #1623: `a`, U+1680, `b` or `a!b` as a prefix hid a value from both checks."""
+    tok = export.Tokenizer({}, set())
+    name = f"{prefix}{element}"
+    body = encode(f'<Root><{name} kb="CUR">{value}</{name}></Root>')
+    assert tok.leaks(body) == [value]
+    scrubbed = tok.tokenize(body)
+    assert scrubbed == body.replace(
+        value, _escaped(written) if encode is str else written
+    )
+    assert tok.leaks(scrubbed) == []
 
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
@@ -1042,6 +1104,10 @@ def _cost_ratio(
         "ns:v1:X-API-Session",
         "ns-1:PublicSSHKeyValue",
         r"ns\u00e9:IPAddress",
+        "a\u3000b:SerialNumber",
+        "a!b:WWPN",
+        r"ns\\x::X-API-Session",
+        r"a\u1680b:MACAddress",
     ],
 )
 def test_many_unclosed_openings_do_not_backtrack(element: str) -> None:
@@ -1117,7 +1183,16 @@ def _cpu_time(rule: re.Pattern[str], replacement: Any, body: str) -> float:
     return min(runs)
 
 
-@pytest.mark.parametrize("element", ["SerialNumber", "IPAddress", "MACAddress"])
+@pytest.mark.parametrize(
+    "element",
+    [
+        "SerialNumber",
+        "IPAddress",
+        "MACAddress",
+        "SerialNumber\u3000",
+        "SerialNumber\\!",
+    ],
+)
 def test_one_opening_with_many_prefixes_does_not_backtrack(element: str) -> None:
     """Regression #1588: giving back each prefix re-ran the tag tail once per segment.
 
