@@ -370,22 +370,36 @@ def test_serial_keyword_not_after_its_opening_tag_is_a_leak(body: str) -> None:
         export.tokenize_records(_records(_rest("/e", body)))
 
 
-#: `lssyscfg -r lpar` fields around a virtual serial, unquoted and as a quoted CSV field.
-VIRTUAL_SERIAL_FIELDS = [
-    "name=lpar-A1,virtual_serial_num={},serial_num=<REDACTED-DEVID>",
-    'name=lpar-A1,"virtual_serial_num={}",state=Running',
-    "name=lpar-A1,virtual_serial_num={}\nname=lpar-A2",
-    "name=lpar-A1,VIRTUAL_SERIAL_NUM={}",
+#: CLI serial fields that hold `none` or `auto` until a serial is assigned (#1618, #1637).
+KEYWORD_SERIAL_KEYS = [
+    "virtual_serial_num",
+    "logical_serial_num",
+    "cluster_serial_num",
+    "peer_collective_serial_num",
+]
+#: `lssyscfg` fields around such a serial, unquoted and as a quoted CSV field.
+KEYWORD_SERIAL_FIELDS = [
+    "name=lpar-A1,{key}={value},serial_num=<REDACTED-DEVID>",
+    'name=lpar-A1,"{key}={value}",state=Running',
+    "name=lpar-A1,{key}={value}\nname=lpar-A2",
+    "name=lpar-A1,{KEY}={value}",
 ]
 
 
+def _serial_fields(fields: str, key: str, value: str) -> str:
+    return fields.format(key=key, KEY=key.upper(), value=value)
+
+
+@pytest.mark.parametrize("key", KEYWORD_SERIAL_KEYS)
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
-@pytest.mark.parametrize("fields", VIRTUAL_SERIAL_FIELDS)
+@pytest.mark.parametrize("fields", KEYWORD_SERIAL_FIELDS)
 @pytest.mark.parametrize("value", ["SYN0001", "None", "nonesuch", "autoSYN0001"])
-def test_virtual_serial_field_is_scrubbed(value: str, fields: str, encode: Any) -> None:
-    """#1618: `\\bserial_num` has no boundary inside `virtual_serial_num` to match at."""
+def test_keyword_serial_field_is_scrubbed(
+    value: str, fields: str, encode: Any, key: str
+) -> None:
+    """#1618, #1637: `\\bserial_num` has no boundary inside these keys to match at."""
     tok = export.Tokenizer({}, set())
-    body = encode(fields.format(value))
+    body = encode(_serial_fields(fields, key, value))
     scrubbed = tok.tokenize(body)
     if encode is str:
         assert scrubbed == body.replace(value, DEVID)
@@ -394,55 +408,64 @@ def test_virtual_serial_field_is_scrubbed(value: str, fields: str, encode: Any) 
     assert tok.leaks(body)
 
 
+@pytest.mark.parametrize("key", KEYWORD_SERIAL_KEYS)
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
 @pytest.mark.parametrize(
     "fields",
     [
-        *VIRTUAL_SERIAL_FIELDS,
-        "virtual_serial_num={}",
-        "x=1,virtual_serial_num={}\r\nx=1",
+        *KEYWORD_SERIAL_FIELDS,
+        "{key}={value}",
+        "x=1,{key}={value}\r\nx=1",
     ],
 )
 @pytest.mark.parametrize("keyword", ["none", "auto"])
-def test_virtual_serial_keyword_is_kept_as_evidence(
-    keyword: str, fields: str, encode: Any
+def test_keyword_serial_keyword_is_kept_as_evidence(
+    keyword: str, fields: str, encode: Any, key: str
 ) -> None:
-    """`none` and `auto` stand in for a virtual serial, as in `VirtualSerialNumber`."""
+    """`none` and `auto` stand in for a serial, as in `VirtualSerialNumber`."""
     tok = export.Tokenizer({}, set())
-    body = encode(fields.format(keyword))
+    body = encode(_serial_fields(fields, key, keyword))
     assert tok.tokenize(body) == body
     assert tok.leaks(body) == []
 
 
+@pytest.mark.parametrize("key", KEYWORD_SERIAL_KEYS)
 @pytest.mark.parametrize(
     "body",
     [
-        '"virtual_serial_num=none,SYN0001"',
-        "virtual_serial_num=none SYN0001",
-        "virtual_serial_num=auto\\SYN0001",
+        '"{key}=none,SYN0001"',
+        "{key}=none SYN0001",
+        "{key}=auto\\SYN0001",
+        "{key}=none\rSYN0001",
     ],
 )
-def test_virtual_serial_keyword_is_kept_only_as_the_whole_value(body: str) -> None:
+def test_keyword_serial_keyword_is_kept_only_as_the_whole_value(
+    body: str, key: str
+) -> None:
     """A quoted field runs to its closing quote; anything after a keyword is a serial."""
+    body = body.format(key=key)
     corpus = export.tokenize_records(_records(_ssh("lssyscfg -r lpar", body)))
     assert "SYN0001" not in corpus[-1]["stdout"]
 
 
+@pytest.mark.parametrize("key", KEYWORD_SERIAL_KEYS)
 @pytest.mark.parametrize(
     "body",
     [
-        'name=lpar-A1,virtual_serial_num=none"SYN0001",state=Running',
-        '"virtual_serial_num=auto"SYN0001"',
+        'name=lpar-A1,{key}=none"SYN0001",state=Running',
+        '"{key}=auto"SYN0001"',
     ],
 )
-def test_virtual_serial_keyword_before_a_quote_in_the_value_fails_closed(
-    body: str,
+def test_keyword_serial_keyword_before_a_quote_in_the_value_fails_closed(
+    body: str, key: str
 ) -> None:
     """A quote ends a value only where a field ends; the backstop sees what follows."""
+    body = body.format(key=key)
     with pytest.raises(export.LeakError):
         export.tokenize_records(_records(_ssh("lssyscfg -r lpar", body)))
 
 
+@pytest.mark.parametrize("key", KEYWORD_SERIAL_KEYS)
 @pytest.mark.parametrize(
     "wrap", [lambda v: {"raw": v}, lambda v: [v]], ids=["{}", "[]"]
 )
@@ -453,47 +476,52 @@ def test_virtual_serial_keyword_before_a_quote_in_the_value_fails_closed(
         ("SYN0001", "<REDACTED-DEVID>"),
     ],
 )
-def test_virtual_serial_last_in_a_json_object_or_array_exports(
-    value: str, written: str, wrap: Any
+def test_keyword_serial_last_in_a_json_object_or_array_exports(
+    value: str, written: str, wrap: Any, key: str
 ) -> None:
     """The scanned corpus closes such a string with `"}` or `"]`, not with a separator."""
     tool = {"kind": "tool", "step": "t", "tool": "t", "ok": True}
-    tool["data"] = wrap(f"name=lpar-A1,virtual_serial_num={value}")
+    tool["data"] = wrap(f"name=lpar-A1,{key}={value}")
     corpus = export.tokenize_records(_records(tool))
-    assert corpus[-1]["record"]["data"] == wrap(
-        f"name=lpar-A1,virtual_serial_num={written}"
-    )
+    assert corpus[-1]["record"]["data"] == wrap(f"name=lpar-A1,{key}={written}")
 
 
+@pytest.mark.parametrize("key", KEYWORD_SERIAL_KEYS)
 @pytest.mark.parametrize(
     "text",
     [
-        "x virtual_serial_num=SYN0001",
-        json.dumps("x\nvirtual_serial_num=SYN0001"),
-        "ns_virtual_serial_num=SYN0001",
-        "virtual_serial_num=none,virtual_serial_num=SYN0001",
-        "virtual_serial_num=<REDACTED-DEVID>SYN0001",
-        'virtual_serial_num="SYN0001"',
+        "x {key}=SYN0001",
+        json.dumps("x\n{key}=SYN0001"),
+        "ns_{key}=SYN0001",
+        "{key}=none,{key}=SYN0001",
+        "{key}=<REDACTED-DEVID>SYN0001",
+        '{key}="SYN0001"',
+        "{key}=none\rSYN0001",
+        json.dumps("x\n{key}=auto\rSYN0001"),
     ],
 )
-def test_virtual_serial_backstop_reports_a_value_the_rules_missed(text: str) -> None:
+def test_keyword_serial_backstop_reports_a_value_the_rules_missed(
+    text: str, key: str
+) -> None:
     """The backstop needs no word boundary, which `json.dumps` text hides behind `\\n`."""
-    leak = text[text.rindex("virtual_serial_num=") :].removesuffix('"')
+    text = text.format(key=key)
+    leak = text[text.rindex(f"{key}=") :].removesuffix('"')
     assert export.Tokenizer({}, set()).leaks(text) == [leak]
 
 
+@pytest.mark.parametrize("key", KEYWORD_SERIAL_KEYS)
 @pytest.mark.parametrize(
     "text",
     [
-        "virtual_serial_num=<REDACTED-DEVID>,x=1",
-        "virtual_serial_num=&lt;REDACTED-DEVID&gt;",
-        "virtual_serial_num=,x=1",
-        'x,"virtual_serial_num=",y',
+        "{key}=<REDACTED-DEVID>,x=1",
+        "{key}=&lt;REDACTED-DEVID&gt;",
+        "{key}=,x=1",
+        'x,"{key}=",y',
     ],
 )
-def test_virtual_serial_backstop_passes_the_token(text: str) -> None:
+def test_keyword_serial_backstop_passes_the_token(text: str, key: str) -> None:
     """What the rules write, in a body or an XML body, and an empty value, are no leak."""
-    assert export.Tokenizer({}, set()).leaks(text) == []
+    assert export.Tokenizer({}, set()).leaks(text.format(key=key)) == []
 
 
 @pytest.mark.parametrize(
