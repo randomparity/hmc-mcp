@@ -349,31 +349,45 @@ _IPV6_CANDIDATE = r"(?:fe80|[0-9a-f]{1,4})(?::[0-9a-f]{0,4}){2,7}\b"
 #: an address after `\n`, which no word boundary precedes, is still read as one. The
 #: escape may be written after an escaped backslash: `json.dumps` text of a value that
 #: is itself JSON writes the value's `\f` as `\\f`. Backslashes pair off from the left,
-#: so the letter after `\\\\` and the escape after `\\` in `\\\f` are matched too.
+#: so the letter after `\\\\` and the escape after `\\` in `\\\f` are matched too. After
+#: `\b` or `\f` the candidate may open with a colon, as `_ipv6` also reads the letter.
 _IPV6 = re.compile(
     r"(?i)(?P<escape>\\\\?(?:[bfnrt]|u[0-9a-f]{4})|\\\\)"
-    rf"(?P<address>{_IPV6_CANDIDATE})?"
+    rf"(?P<address>{_IPV6_CANDIDATE}|(?<=\\[bf])(?::[0-9a-f]{{0,4}}){{2,7}}\b)?"
     rf"|\b{_IPV6_CANDIDATE}"
 )
 
 
-def _ipv6(match: re.Match[str]) -> str:
-    """Redact an IPv6 address, but not a colon-separated HMC record such as `1:0:1:3`.
+def _is_ipv6(text: str) -> bool:
+    """Whether *text* is an IPv6 address, not a colon-separated HMC record `1:0:1:3`.
 
     An address has a `::`, a group of three or more digits, a hex letter, or the
-    link-local prefix; SR-IOV and slot records are short decimal fields only. A JSON
-    escape before the address is kept.
+    link-local prefix; SR-IOV and slot records are short decimal fields only.
     """
-    escape, text = match.group("escape", "address")
-    if escape is None:
-        escape, text = "", match.group(0)
-    if text is not None and (
+    return (
         "::" in text
         or text.lower().startswith("fe80")
         or any(
             len(g) >= 3 or re.search("[a-f]", g, re.IGNORECASE) for g in text.split(":")
         )
-    ):
+    )
+
+
+def _ipv6(match: re.Match[str]) -> str:
+    """Redact an IPv6 address, keeping a JSON escape before it.
+
+    The letter of `\\b` or `\\f` is a hex digit, and where the backslash is literal, as
+    in raw XML or `\\\\b` in JSON text, it opens the address: so the candidate is an
+    address when it is one with the letter too. Not when it holds only zeros, as a MAC
+    the MAC rules zeroed does: the letter, kept as it is, is all that is left of it.
+    """
+    escape, text = match.group("escape", "address")
+    if escape is None:
+        escape, text = "", match.group(0)
+    if text is None:
+        return escape
+    hex_letter = escape[-2:].lower() in (r"\b", r"\f") and text.strip("0:")
+    if _is_ipv6(text) or (hex_letter and _is_ipv6(escape[-1] + text)):
         return escape + "2001:db8::1"
     return match.group(0)
 

@@ -2064,13 +2064,13 @@ def test_colon_positional_records_are_not_ipv6() -> None:
 
 
 #: Colon-separated hex after an escape whose letter is a hex digit, and what the export
-#: writes in its place. The MAC rules zero a MAC element; the IPv6 rule redacts an
-#: address and keeps an HMC record, after the escape either way.
+#: writes in its place, after the escape. The MAC rules zero a MAC element; the IPv6
+#: rule redacts the rest, an HMC record too, as the letter may open an address.
 AFTER_HEX_ESCAPE = [
     ("<MACAddress>{}</MACAddress>", "0A:1B:2C:3D:4E:5F", "00:00:00:00:00:00"),
     ("mac {}", "0A:1B:2C:3D:4E:5F", "2001:db8::1"),
     ("addr {}", "fe80::1:2", "2001:db8::1"),
-    ("slot {}", "1:0:1:3", "1:0:1:3"),
+    ("slot {}", "1:0:1:3", "2001:db8::1"),
 ]
 
 
@@ -2111,6 +2111,26 @@ def test_ipv6_address_after_a_json_escape_is_redacted(before: str) -> None:
     corpus = export.tokenize_records(_records(_rest("/e", json.dumps(raw)), tool))
     assert corpus[-2]["body"] == json.dumps(f"addr {before}2001:db8::1")
     assert corpus[-1]["record"]["data"]["raw"] == f"addr {before}2001:db8::1"
+
+
+@pytest.mark.parametrize(
+    ("value", "exported"),
+    [("C:\\b1:2:3:4:5:6:7:8", "C:\\b2001:db8::1"), ("C:\\f::abc", "C:\\f2001:db8::1")],
+)
+def test_address_after_a_literal_backslash_and_hex_letter_is_redacted(
+    value: str, exported: str
+) -> None:
+    """In raw XML, and as `\\\\b` in JSON text, the letter opens the address."""
+    tool = {
+        "kind": "tool",
+        "step": "t",
+        "tool": "t",
+        "ok": True,
+        "data": {"raw": value},
+    }
+    corpus = export.tokenize_records(_records(_rest("/e", f"<a>{value}</a>"), tool))
+    assert corpus[-2]["body"] == f"<a>{exported}</a>"
+    assert corpus[-1]["record"]["data"]["raw"] == exported
 
 
 def test_ipv6_rule_after_many_escapes_does_not_backtrack() -> None:
