@@ -280,9 +280,9 @@ _MAC_SEPARATOR = r"[-.:][0-9A-Fa-f]"
 #: escape holds, or four before a separator that are not the `0030` or `0000` the MAC
 #: element rule writes there. Each check reads at most six characters ahead. Four
 #: digits before any other separator, or at the end of the value, are a leak only after
-#: `_LITERAL_U`: elsewhere they read as an escape such as `\\u00e9`. In a REST body, a
-#: non-ASCII character before a separator and a hex digit is a leak, as the export
-#: writes it as such an escape.
+#: a literal `\\u`, which `_LITERAL_U` reports: elsewhere they read as an escape such as
+#: `\\u00e9`. In a REST body, a non-ASCII character before a separator and a hex digit is
+#: a leak, as the export writes it as such an escape.
 _AFTER_LITERAL_U = (
     r"(?<=\\u)(?:(?=[0-9A-Fa-f]{1,3}(?![0-9A-Za-z]))0*+[1-9A-Fa-f]"
     rf"|(?!00[03]0)(?=[0-9A-Fa-f]{{4}}{_MAC_SEPARATOR}))"
@@ -292,8 +292,9 @@ _AFTER_LITERAL_U = (
 #: escape and keeps its digits before a space, comma, slash or tab, or at the end of the
 #: value (#1642). Digits with a non-zero one that no ASCII letter or digit follows are a
 #: leak, unless they are the `0030` the rule writes. A literal `\\f` or `\\b` needs no
-#: such branch: `_AFTER_ESCAPE` starts a run after any `\\\\`. The backslashes are
-#: matched from the first, so a run of them is scanned once.
+#: such branch: `_AFTER_ESCAPE` starts a run after any `\\\\`. In a REST body that is
+#: JSON text, the scan reads a real escape as a literal one, so that body fails closed.
+#: The backslashes are matched from the first, so a run of them is scanned once.
 _LITERAL_U = r"(?<!\\)(?:\\\\)++u(?!00[03]0)0*+[1-9A-Fa-f][0-9A-Fa-f]*+(?![0-9A-Za-z])"
 #: A whole hex run directly before a MAC separator and hex, or directly after hex and a
 #: separator: an octet, even when a word character adjoins its other end, as in
