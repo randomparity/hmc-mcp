@@ -235,16 +235,19 @@ Use `HMC_HOST`, `HMC_USER`, and `HMC_PASSWORD` for single-HMC setups without a p
   `X-HMC-Schema-Version` at all. Set it only to pin schema negotiation
   explicitly — for example while debugging a read path.
 
-  Pinning `V1_0` breaks inventory reads on V10R3. On a V10R3 SP1060 HMC, the
-  full `ManagedSystem` feed returned HTTP 200 without the header and HTTP 500
-  with `X-HMC-Schema-Version: V1_0`, in the same session. The 500 body read
+  Pinning `V1_0` can make a V10R3 HMC fail to serialize managed-system
+  inventory. On one V10R3 SP1060 HMC, the full `ManagedSystem` feed returned
+  HTTP 200 without the header and HTTP 500 with
+  `X-HMC-Schema-Version: V1_0`, in the same session. The 500 body read
   `Nested path contains null property , currentProperty=Uuid
   nestedPath=VirtualPersistentMemoryVolume/Uuid/Value/Value`. Unpinned, that
-  HMC answered at its native schema (`V1_17_0`). See #1646. Only the feed was
-  probed: whether single-system reads or other HMC releases fail the same way
-  is not established. An earlier capture (2026-09-23) also recorded `V1_0`
-  returning 500 on `ManagementConsole` and an empty `VolumeGroup` listing;
-  those two observations are unverified.
+  HMC answered at its native schema (`V1_17_0`). See #1646. Only that feed was
+  probed. `hmcpctl` lists systems through `ManagedSystem/quick/All` and reads
+  one system through `ManagedSystem/{uuid}`; whether either fails under the
+  pin, or whether other HMC releases behave the same way, is not established.
+  An earlier capture (2026-09-23) also recorded, with `V1_0` pinned, a 500 on
+  `ManagementConsole` and an empty `VolumeGroup` listing; those two
+  observations are unverified.
 
   When it is set, the header goes per call site, not per HTTP method. UOM
   requests carry it unless their own call site passes
