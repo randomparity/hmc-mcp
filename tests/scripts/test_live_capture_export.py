@@ -963,9 +963,19 @@ def test_namespace_prefix_with_any_other_character_is_scrubbed(
     assert tok.leaks(scrubbed) == []
 
 
-#: Prefixes the scrub rules end or refuse: a quote, `=`, the literal text `\u0020`, and
-#: a leading `!` or `?`. No rule scrubs the value, so only the backstop stops it (#1660).
-UNSCRUBBED_PREFIXES = ['a"b:', "a'b:", "a=b:", "a\\u0020b:", "!x:", "?x:", "!:"]
+#: Prefixes the scrub rules end or refuse: one of XML's spaces, a quote, `=`, the literal
+#: text `\u0020`, and a leading `!` or `?`. No rule scrubs the value, so only the
+#: backstop stops it (#1660).
+UNSCRUBBED_PREFIXES = [
+    *(f"a{space}b:" for space in " \t\n\r"),
+    'a"b:',
+    "a'b:",
+    "a=b:",
+    "a\\u0020b:",
+    "!x:",
+    "?x:",
+    "!:",
+]
 
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
@@ -984,12 +994,18 @@ UNSCRUBBED_PREFIXES = ['a"b:', "a'b:", "a=b:", "a\\u0020b:", "!x:", "?x:", "!:"]
 def test_value_behind_a_malformed_closing_name_is_a_leak(
     element: str, value: str, prefix: str, encode: Any
 ) -> None:
-    """Regression #1660: these names hid a value from the scrub rules and backstop alike."""
+    """Regression #1660: these names hid a value from the scrub rules and backstop alike.
+
+    `json.dumps` writes a tab, line feed or carriage return as an escape the scrub rule
+    takes into an opening tag's prefix, so there the value is scrubbed instead.
+    """
     tok = export.Tokenizer({}, set())
     name = f"{prefix}{element}"
     scrubbed = tok.tokenize(encode(f"<Root><{name}>{value}</{name}></Root>"))
     assert scrubbed is not None
-    assert tok.leaks(scrubbed) == [value]
+    escaped = encode is json.dumps and prefix[1] in "\t\n\r"
+    assert tok.leaks(scrubbed) == ([] if escaped else [value])
+    assert (value in scrubbed) is not escaped
 
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
@@ -1667,7 +1683,9 @@ def test_many_unclosed_openings_do_not_backtrack(element: str) -> None:
         assert _cost_ratio(rule, scan, replacement, body) < 10
 
 
-@pytest.mark.parametrize("segment", ["a:", '!"=:', "SerialNumberx:", "IPAddress_:"])
+@pytest.mark.parametrize(
+    "segment", ["a:", '!"=:', "a b\t:", "SerialNumberx:", "IPAddress_:"]
+)
 def test_closing_tag_with_many_prefixes_does_not_backtrack(segment: str) -> None:
     """Each closing prefix segment ends at its first `:`, so a closing tag of many
     segments that never names the element costs about what the scrub rules' prefix

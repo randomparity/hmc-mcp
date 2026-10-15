@@ -146,12 +146,12 @@ _NAME_ESCAPE = r"\\++(?!u(?i:{}))".format(
 #: the first `:`, so a prefix matches one way only. A prefix never starts with `!` or
 #: `?`: a comment, CDATA section or processing instruction opens no element.
 _NS_PREFIX = rf"(?![!?])(?:(?:[^{_PREFIX_END_CLASS}\\]|{_NAME_ESCAPE})*+:)*"
-#: The namespace prefixes of a closing tag, which holds no attributes: anything but a tag
-#: delimiter or one of XML's spaces is taken, so a name with a quote, `=`, a `\u0020` or
+#: The namespace prefixes of a closing tag. It holds no attributes, so anything but a tag
+#: delimiter is taken, XML's spaces too: a name with a space, a quote, `=`, a `\u0020` or
 #: a leading `!` or `?` still ends a value the backstops read (#1660). A comment, CDATA
 #: section or processing instruction never starts with `</`. Each segment ends at the
 #: first `:`, so a prefix matches one way only.
-_CLOSING_PREFIX = r"(?:[^\t\n\r :<>]*+:)*"
+_CLOSING_PREFIX = r"(?:[^:<>]*+:)*"
 #: Elements whose whole text a rule replaces: the element name pattern, the text the
 #: rule writes and, optionally, the keywords it keeps as evidence. The same entry builds
 #: the scrub rule and its `leaks()` backstop. Names match in any case, after any
