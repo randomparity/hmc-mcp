@@ -112,6 +112,16 @@ def main(
             "An explicit SSL_CERT_FILE takes precedence. On by default."
         ),
     ),
+    ca_bundle: str | None = typer.Option(
+        None,
+        "--ca-bundle",
+        envvar="HMC_CA_BUNDLE",
+        help=(
+            "Path to a PEM file with the CA certificate(s) to trust for the HMC TLS "
+            "connection. When set and --verify-ssl is on, takes precedence over "
+            "SSL_CERT_FILE and --trust-system-store."
+        ),
+    ),
     profile: str | None = typer.Option(
         None,
         "--profile",
@@ -125,6 +135,7 @@ def main(
         "password",
         "verify_ssl",
         "trust_system_store",
+        "ca_bundle",
         "profile",
     )
     command_line_options = frozenset(
@@ -138,6 +149,7 @@ def main(
         password=password,
         verify_ssl=verify_ssl,
         trust_system_store=trust_system_store,
+        ca_bundle=ca_bundle,
         profile=profile,
         command_line_options=command_line_options,
     )
