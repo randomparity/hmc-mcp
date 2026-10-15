@@ -261,7 +261,10 @@ _AFTER_LITERAL_U = (
 #: A whole hex run that a MAC separator and hex follow, or that follows hex and a
 #: separator: an octet, even joined to a word, as in `G0A:1B` or `5FG` (#1640). Each
 #: starts only where a run does, so a run is scanned once.
-_JOINED_OCTET = rf"(?<![0-9A-Fa-f])[0-9A-Fa-f]++(?={_MAC_SEPARATOR})|(?<=[0-9A-Fa-f][-.:])[0-9A-Fa-f]++"
+_JOINED_OCTET = (
+    rf"(?<![0-9A-Fa-f])[0-9A-Fa-f]++(?={_MAC_SEPARATOR})"
+    r"|(?<=[0-9A-Fa-f][-.:])[0-9A-Fa-f]++"
+)
 #: A `_JOINED_OCTET` with a non-zero digit. The first starts as a joined six-digit run
 #: does, so never on an escape's letter or digits.
 _LIVE_JOINED_OCTET = (
