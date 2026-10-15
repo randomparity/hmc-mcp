@@ -182,7 +182,7 @@ _SERIAL_ELEMENT = (
 #: quoted field loses the `\` of its closing `\"`, which fails the export as broken JSON:
 #: over-scrubbing, never a leak.
 _KEYWORD_SERIAL_KEY = "(?:virtual|logical|cluster|peer_collective)_serial_num"
-_SERIAL_KEPT = "(?-i:none|auto)"
+_SERIAL_KEPT_RE = "(?-i:none|auto)"
 _VALUE_END = r"(?:[,\n]|\r(?=\n)|\\n|\\r(?=\\n)|$)"
 _FIELD_END = rf'(?={_VALUE_END}|"(?:{_VALUE_END}|[}}\]])|\\"(?:{_VALUE_END}|"))'
 
@@ -383,14 +383,14 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     (
         re.compile(
             rf'(?i)"(unique_id|udid|wwpns?|wwnn|serial_num|{_KEYWORD_SERIAL_KEY}'
-            rf'(?!={_SERIAL_KEPT}\\?"))=[^"\n]*"'
+            rf'(?!={_SERIAL_KEPT_RE}\\?"))=[^"\n]*"'
         ),
         r'"\g<1>=<REDACTED-DEVID>"',
     ),
     (
         re.compile(
             rf"(?i)\b(unique_id|udid|wwpns?|wwnn|serial_num|{_KEYWORD_SERIAL_KEY}"
-            rf"(?!={_SERIAL_KEPT}{_FIELD_END}))=[^,\n\"]+"
+            rf"(?!={_SERIAL_KEPT_RE}{_FIELD_END}))=[^,\n\"]+"
         ),
         r"\g<1>=<REDACTED-DEVID>",
     ),
@@ -442,7 +442,7 @@ ALWAYS_LEAKS = (
     # is needed, and `json.dumps` text hides one behind a `\n` escape.
     re.compile(
         rf"(?i){_KEYWORD_SERIAL_KEY}="
-        rf"(?!(?:<REDACTED-DEVID>|&lt;REDACTED-DEVID&gt;|{_SERIAL_KEPT}){_FIELD_END})"
+        rf"(?!(?:<REDACTED-DEVID>|&lt;REDACTED-DEVID&gt;|{_SERIAL_KEPT_RE}){_FIELD_END})"
         r'"?[^,\n"]+'
     ),
 )
