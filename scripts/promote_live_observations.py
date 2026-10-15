@@ -320,7 +320,8 @@ def _refuse_weaker(operation: str, evidence: list, observation: dict) -> None:
             raise PromotionError(
                 f"passing observation for {operation} lacks assertions held by the "
                 f"evidence it would replace: {missing}; rerun the scenario so they "
-                "hold, or retire the stored row in a reviewed commit before the window"
+                "hold, or retire the stored row in a reviewed commit before the next "
+                "live window"
             )
 
 
