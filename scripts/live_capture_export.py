@@ -168,8 +168,10 @@ _SERIAL_ELEMENT = (
 )
 
 #: `virtual_serial_num=` holds the same serial, or the same keywords, in `lssyscfg -r
-#: lpar` output (#1618). A keyword is kept only as the field's whole value, in its
-#: documented case. A value ends at a field separator, a line end or the end of the
+#: lpar` output (#1618), as do `logical_serial_num=` there and `cluster_serial_num=` and
+#: `peer_collective_serial_num=` in `lssyscfg -r sys` output (#1637). `\bserial_num` has
+#: no boundary inside any of them to match at, so each is named. A keyword is kept only
+#: as the field's whole value, in its documented case. A value ends at a field separator, a line end or the end of the
 #: text, `json.dumps`'s `\n` and `\r` escapes included, or at a quote, raw or escaped,
 #: that one of those follows; a raw quote also before a JSON `}` or `]`, and `\"` before
 #: the quote that closes a JSON string. A quote with anything else after it is in the
@@ -177,7 +179,8 @@ _SERIAL_ELEMENT = (
 #: kept the keyword before it. The scrub rules themselves read no escape, so in
 #: `json.dumps` text a value runs on over a `\n` and a quoted field loses the `\` of its
 #: closing `\"`, which fails the export as broken JSON: over-scrubbing, never a leak.
-_VIRTUAL_SERIAL_KEPT = "(?-i:none|auto)"
+_KEYWORD_SERIAL_KEY = "(?:virtual|logical|cluster|peer_collective)_serial_num"
+_SERIAL_KEPT = "(?-i:none|auto)"
 _VALUE_END = r"(?:[,\r\n]|\\[nr]|$)"
 _FIELD_END = rf'(?={_VALUE_END}|"(?:{_VALUE_END}|[}}\]])|\\"(?:{_VALUE_END}|"))'
 
@@ -377,15 +380,15 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     # A quoted CSV field holds every value up to its closing quote: "wwpns=a,b".
     (
         re.compile(
-            r'(?i)"(unique_id|udid|wwpns?|wwnn|serial_num|virtual_serial_num'
-            rf'(?!={_VIRTUAL_SERIAL_KEPT}\\?"))=[^"\n]*"'
+            rf'(?i)"(unique_id|udid|wwpns?|wwnn|serial_num|{_KEYWORD_SERIAL_KEY}'
+            rf'(?!={_SERIAL_KEPT}\\?"))=[^"\n]*"'
         ),
         r'"\g<1>=<REDACTED-DEVID>"',
     ),
     (
         re.compile(
-            r"(?i)\b(unique_id|udid|wwpns?|wwnn|serial_num|virtual_serial_num"
-            rf"(?!={_VIRTUAL_SERIAL_KEPT}{_FIELD_END}))=[^,\n\"]+"
+            rf"(?i)\b(unique_id|udid|wwpns?|wwnn|serial_num|{_KEYWORD_SERIAL_KEY}"
+            rf"(?!={_SERIAL_KEPT}{_FIELD_END}))=[^,\n\"]+"
         ),
         r"\g<1>=<REDACTED-DEVID>",
     ),
@@ -433,11 +436,11 @@ ALWAYS_LEAKS = (
         )
     ),
     _MAC_LEAK,
-    # A virtual serial the key=value rules missed, quoted too: no word boundary is
-    # needed, and `json.dumps` text hides one behind a `\n` escape.
+    # A keyword-holding serial the key=value rules missed, quoted too: no word boundary
+    # is needed, and `json.dumps` text hides one behind a `\n` escape.
     re.compile(
-        r"(?i)virtual_serial_num="
-        rf"(?!(?:<REDACTED-DEVID>|&lt;REDACTED-DEVID&gt;|{_VIRTUAL_SERIAL_KEPT}){_FIELD_END})"
+        rf"(?i){_KEYWORD_SERIAL_KEY}="
+        rf"(?!(?:<REDACTED-DEVID>|&lt;REDACTED-DEVID&gt;|{_SERIAL_KEPT}){_FIELD_END})"
         r'"?[^,\n"]+'
     ),
 )
