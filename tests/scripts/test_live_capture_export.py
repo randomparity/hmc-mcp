@@ -436,6 +436,7 @@ def test_keyword_serial_keyword_is_kept_as_evidence(
         '"{key}=none,SYN0001"',
         "{key}=none SYN0001",
         "{key}=auto\\SYN0001",
+        "{key}=none\rSYN0001",
     ],
 )
 def test_keyword_serial_keyword_is_kept_only_as_the_whole_value(
@@ -495,6 +496,8 @@ def test_keyword_serial_last_in_a_json_object_or_array_exports(
         "{key}=none,{key}=SYN0001",
         "{key}=<REDACTED-DEVID>SYN0001",
         '{key}="SYN0001"',
+        "{key}=none\rSYN0001",
+        json.dumps("x\n{key}=auto\rSYN0001"),
     ],
 )
 def test_keyword_serial_backstop_reports_a_value_the_rules_missed(

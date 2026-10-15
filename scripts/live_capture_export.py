@@ -172,16 +172,18 @@ _SERIAL_ELEMENT = (
 #: `peer_collective_serial_num=` in `lssyscfg -r sys` output (#1637). `\bserial_num` has
 #: no boundary inside any of them to match at, so each is named. A keyword is kept only
 #: as the field's whole value, in its documented case. A value ends at a field separator,
-#: a line end or the end of the text, `json.dumps`'s `\n` and `\r` escapes included, or
-#: at a quote, raw or escaped, that one of those follows; a raw quote also before a JSON `}` or `]`, and `\"` before
-#: the quote that closes a JSON string. A quote with anything else after it is in the
-#: value, and the unquoted rule and the backstop read it so even where the quoted rule
-#: kept the keyword before it. The scrub rules themselves read no escape, so in
-#: `json.dumps` text a value runs on over a `\n` and a quoted field loses the `\` of its
-#: closing `\"`, which fails the export as broken JSON: over-scrubbing, never a leak.
+#: a line feed, a carriage return before one, or the end of the text, `json.dumps`'s
+#: `\n` and `\r` escapes on the same terms; any other carriage return is in the value.
+#: It also ends at a quote, raw or escaped, that one of those follows; a raw quote also
+#: before a JSON `}` or `]`, and `\"` before the quote that closes a JSON string. A quote
+#: with anything else after it is in the value, and the unquoted rule and the backstop
+#: read it so even where the quoted rule kept the keyword before it. The scrub rules
+#: themselves read no escape, so in `json.dumps` text a value runs on over a `\n` and a
+#: quoted field loses the `\` of its closing `\"`, which fails the export as broken JSON:
+#: over-scrubbing, never a leak.
 _KEYWORD_SERIAL_KEY = "(?:virtual|logical|cluster|peer_collective)_serial_num"
 _SERIAL_KEPT = "(?-i:none|auto)"
-_VALUE_END = r"(?:[,\r\n]|\\[nr]|$)"
+_VALUE_END = r"(?:[,\n]|\r(?=\n)|\\n|\\r(?=\\n)|$)"
 _FIELD_END = rf'(?={_VALUE_END}|"(?:{_VALUE_END}|[}}\]])|\\"(?:{_VALUE_END}|"))'
 
 
