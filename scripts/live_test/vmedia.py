@@ -1110,8 +1110,12 @@ class _RoundTrip:
             return None
         return created
 
-    async def mount_and_unmount(self, baseline: _Baseline) -> tuple[bool, bool]:
-        """Mount, try the guarded delete, unmount; returns (mounted, delete refused)."""
+    async def mount_and_unmount(self, baseline: _Baseline) -> tuple[bool, bool | None]:
+        """Mount, try the guarded delete, unmount; returns (mounted, delete refused).
+
+        The refusal is None when the guard refused but the listing after it
+        could not be read: unverified, not a guard that let the delete through.
+        """
         config = self.config
         st_m, data_m = self.note(
             "hmc_mount_optical_media",
@@ -1162,12 +1166,18 @@ class _RoundTrip:
             [_DELETE_REFUSED_WHILE_MOUNTED],
         )
         _, _, still = await self.media("after the guarded delete")
-        refused = (
-            isinstance(data_d, CallFailure)
-            and _DELETE_REFUSED_WHILE_MOUNTED.matches(data_d)
-            and still is not None
-            and self.name in still
-        )
+        refused: bool | None = False
+        if isinstance(data_d, CallFailure) and _DELETE_REFUSED_WHILE_MOUNTED.matches(
+            data_d
+        ):
+            refused = None if still is None else self.name in still
+        if refused is None:
+            self.state.skip(
+                19,
+                "hmc_delete_optical_media (refusal unverified)",
+                f"the media listing after the guarded delete could not be read, so "
+                f"{self.name} staying in the repository is unconfirmed",
+            )
 
         st_u, data_u = self.note(
             "hmc_unmount_optical_media",
@@ -1248,7 +1258,7 @@ class _RoundTrip:
         baseline: _Baseline,
         created: tuple[bool, ...],
         mounted: bool,
-        refused: bool,
+        refused: bool | None,
     ) -> None:
         st_d, data_d = self.note(
             "hmc_delete_optical_media",
@@ -1274,8 +1284,13 @@ class _RoundTrip:
             operation="media.delete",
             scenario=ROUND_TRIP_SCENARIO,
             assertions=[
-                # Only a mounted medium can show the guard refusing.
-                *([Assertion("refused-while-mounted", refused)] if mounted else []),
+                # Only a mounted medium can show the guard refusing, and only a
+                # readable listing can confirm the refusal kept it.
+                *(
+                    [Assertion("refused-while-mounted", refused)]
+                    if mounted and refused is not None
+                    else []
+                ),
                 Assertion("delete-accepted", st_d == "PASS"),
                 Assertion("media-absent", absent),
                 Assertion("media-equal-baseline", equal),
