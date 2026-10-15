@@ -1229,6 +1229,19 @@ def test_octet_joined_to_a_word_is_a_leak(encode: Any, value: str) -> None:
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
 @pytest.mark.parametrize(
+    "value",
+    ["\f0A:00:00:00:00:00", "\bA1:00:00:00:00:00", "é0A:00:00:00:00:00"],
+)
+def test_octet_after_an_escape_ending_in_hex_is_a_leak(encode: Any, value: str) -> None:
+    """A run after an escape whose last character is a hex digit, as in `\\f` or `\\u00e9`
+    in JSON text, is reported by `_LIVE_HEX_RUN`'s escape start, not the joined octet."""
+    tok = export.Tokenizer({}, set())
+    body = encode(f"<MACAddress>{value}</MACAddress>")
+    assert tok.leaks(body) == [body[body.index(">") + 1 : body.index("</")]]
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize(
     "value", ["none", "auto", "auto-negotiate", "ALL", "G0A", "G0A:x"]
 )
 def test_mac_element_text_without_a_separated_octet_is_kept(
