@@ -106,7 +106,7 @@ _WWN_16 = r"\b(?![0-9a-fA-F]{2}0{14}\b)[0-9a-fA-F]{16}\b"
 _DEVICE_ID_ELEMENTS = (
     "VolumeUniqueID|UniqueDeviceID|MediaUDID|DescriptorPage83|GroupSerialID|UDID|UniqueID"
     "|SerialNumberOfDisk|DeviceSerialNumber|WorldWidePortName|WWPN|PortWWPN"
-    "|WorldWideNodeName|WWNN"
+    "|WorldWideNodeName|WWNN|WWPNPrefix"
 )
 _ADDRESS_ELEMENTS = "NetworkAddress|IPAddress|PrimaryIPAddress|IPv6Address"
 #: The rest of an opening tag, up to a `>` that does not close it as `/>`. A self-closing
@@ -121,19 +121,31 @@ _ADDRESS_ELEMENTS = "NetworkAddress|IPAddress|PrimaryIPAddress|IPv6Address"
 #: fallback backtracking; each unclosed opening still scans to the next `>`.
 _ATTRS = r"""(?:[^>"'<]|"[^"<]*"|'[^'<]*')*"""
 _TAG_TAIL = rf"(?:{_ATTRS}(?<!/)>|(?!{_ATTRS}/>)[^>]*+>|[^>]*+(?<!/)>)"
-#: The `\u` escape `json.dumps` writes for a non-ASCII name character, as in `ns\u00e9:`;
-#: each further `json.dumps` doubles its backslash. An ASCII or whitespace escape
-#: (`\u0022`, `\u00a0`) never extends a prefix.
-_NAME_ESCAPE = r"\\++u(?!00[0-7]|(?i:{}))[0-9A-Fa-f]{{4}}".format(
-    "|".join(f"{c:04x}" for c in range(0x80, 0x10000) if chr(c).isspace())
+#: What ends a namespace prefix inside a tag: XML's own spaces, the tag and attribute
+#: delimiters, and the `:` after each prefix. Any other character is taken, so a
+#: malformed prefix is scrubbed rather than exported (#1623): an allowlist of XML name
+#: characters let `<a!b:SerialNumber>` or a non-ASCII space hide the element from the
+#: scrub rule and the backstop alike.
+_PREFIX_ENDS = "\t\n\r \"'/:<=>"
+_PREFIX_END_CLASS = "".join(f"\\x{ord(c):02x}" for c in _PREFIX_ENDS)
+#: A backslash run, as `json.dumps` writes one at any depth, is taken unless a `\u`
+#: escape of a `_PREFIX_ENDS` character follows it: `\u0020` or `\u003e` ends a prefix
+#: as a space or `>` would. Every other character after the run is read as itself, so
+#: `\"` ends one, and `\n`, `\r` and `\t` do not: in a raw body a backslash is just a
+#: character. So the literal text `\u0020` in a raw body ends a prefix too, as it does in
+#: `json.dumps` text, where the two cannot be told apart.
+_NAME_ESCAPE = r"\\++(?!u(?i:{}))".format(
+    "|".join(f"{ord(c):04x}" for c in _PREFIX_ENDS)
 )
-#: Any number of namespace prefixes, `a:b:` too. A prefix character is an ASCII word
-#: character, `.` or `-`, or any non-ASCII character but a space, raw or escaped. A prefix
-#: is given back when the element name does not follow it: `<SerialNumber:x>` is still a
+#: Any number of namespace prefixes, `a:b:` and an empty `:` too. A prefix is given
+#: back when the element name does not follow it: `<SerialNumber:x>` is still a
 #: `SerialNumber`. A scrub rule takes the prefix and name as one atomic group: the tag
 #: tail after the name ends at the same `>` whichever prefix matched, and retrying each
-#: one would scan the tail again per segment of `<SerialNumber:SerialNumber:...`.
-_NS_PREFIX = rf"(?:(?:[\w.-]|[^\x00-\x7f\s]|{_NAME_ESCAPE})++:)*"
+#: one would scan the tail again per segment of `<SerialNumber:SerialNumber:...`. The
+#: two branches of a segment start with different characters, and each segment ends at
+#: the first `:`, so a prefix matches one way only. A prefix never starts with `!` or
+#: `?`: a comment, CDATA section or processing instruction opens no element.
+_NS_PREFIX = rf"(?![!?])(?:(?:[^{_PREFIX_END_CLASS}\\]|{_NAME_ESCAPE})*+:)*"
 #: Elements whose whole text a rule replaces: the element name pattern, the text the
 #: rule writes and, optionally, the keywords it keeps as evidence. The same entry builds
 #: the scrub rule and its `leaks()` backstop. Names match in any case, after any
@@ -156,17 +168,24 @@ _SERIAL_ELEMENT = (
 )
 
 #: `virtual_serial_num=` holds the same serial, or the same keywords, in `lssyscfg -r
-#: lpar` output (#1618). A keyword is kept only as the field's whole value, in its
-#: documented case. A value ends at a field separator, a line end or the end of the
-#: text, `json.dumps`'s `\n` and `\r` escapes included, or at a quote, raw or escaped,
-#: that one of those follows; a raw quote also before a JSON `}` or `]`, and `\"` before
-#: the quote that closes a JSON string. A quote with anything else after it is in the
-#: value, and the unquoted rule and the backstop read it so even where the quoted rule
-#: kept the keyword before it. The scrub rules themselves read no escape, so in
-#: `json.dumps` text a value runs on over a `\n` and a quoted field loses the `\` of its
-#: closing `\"`, which fails the export as broken JSON: over-scrubbing, never a leak.
-_VIRTUAL_SERIAL_KEPT = "(?-i:none|auto)"
-_VALUE_END = r"(?:[,\r\n]|\\[nr]|$)"
+#: lpar` output (#1618), as do `logical_serial_num=` there and `cluster_serial_num=` and
+#: `peer_collective_serial_num=` in `lssyscfg -r sys` output (#1637). `\bserial_num` has
+#: no boundary inside any of them to match at, so each is named. A keyword is kept only
+#: as the field's whole value, in its documented case. A value ends at a field separator,
+#: a line feed, a carriage return before one, or the end of the text, `json.dumps`'s
+#: `\n` and `\r` escapes on the same terms; any other carriage return is in the value.
+#: It also ends at a quote, raw or escaped, that one of those follows; a raw quote also
+#: before a JSON `}` or `]`, and `\"` before the quote that closes a JSON string. A quote
+#: with anything else after it is in the value, and the unquoted rule and the backstop
+#: read it so even where the quoted rule kept the keyword before it. The scrub rules
+#: themselves read no escape, so in `json.dumps` text a value runs on over a `\n` and a
+#: quoted field loses the `\` of its closing `\"`, which fails the export as broken JSON:
+#: over-scrubbing, never a leak.
+_KEYWORD_SERIAL_KEY = "(?:virtual|logical|cluster|peer_collective)_serial_num"
+#: The other keys the key=value rules scrub, which keep no keyword.
+_DEVICE_ID_KEY = "(?:unique_id|udid|wwpns?|wwnn|serial_num)"
+_SERIAL_KEPT_RE = "(?-i:none|auto)"
+_VALUE_END = r"(?:[,\n]|\r(?=\n)|\\n|\\r(?=\\n)|$)"
 _FIELD_END = rf'(?={_VALUE_END}|"(?:{_VALUE_END}|[}}\]])|\\"(?:{_VALUE_END}|"))'
 
 
@@ -221,6 +240,12 @@ _JSON_ESCAPES = (r"\\\\", r"\\[bfnrt]", r"\\u[0-9A-Fa-f]{4}")
 #: A run starts after a JSON escape, as after a separator, but never on the escape's
 #: own letter or digits.
 _AFTER_ESCAPE = "|".join(f"(?<={escape})" for escape in _JSON_ESCAPES)
+#: Where an unquoted key=value key starts: after a non-word character or a JSON escape,
+#: whose letter or digits `\b` reads as part of the key, as in `\nserial_num` (#1638);
+#: never inside a longer key such as `virtual_serial_num`. A literal backslash before
+#: `n` or `u0041` reads the same, and so does an escape of a word character such as
+#: `\u00e9`: over-scrubbing, never a leak.
+_KEY_START = rf"(?:(?<!\w)|{_AFTER_ESCAPE})"
 #: A MAC separator and the hex digit after it.
 _MAC_SEPARATOR = r"[-.:][0-9A-Fa-f]"
 #: The digits after a `\\u` where a separated MAC's first octets stay: fewer than an
@@ -365,15 +390,15 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     # A quoted CSV field holds every value up to its closing quote: "wwpns=a,b".
     (
         re.compile(
-            r'(?i)"(unique_id|udid|wwpns?|wwnn|serial_num|virtual_serial_num'
-            rf'(?!={_VIRTUAL_SERIAL_KEPT}\\?"))=[^"\n]*"'
+            rf'(?i)"({_DEVICE_ID_KEY}|{_KEYWORD_SERIAL_KEY}'
+            rf'(?!={_SERIAL_KEPT_RE}\\?"))=[^"\n]*"'
         ),
         r'"\g<1>=<REDACTED-DEVID>"',
     ),
     (
         re.compile(
-            r"(?i)\b(unique_id|udid|wwpns?|wwnn|serial_num|virtual_serial_num"
-            rf"(?!={_VIRTUAL_SERIAL_KEPT}{_FIELD_END}))=[^,\n\"]+"
+            rf"(?i){_KEY_START}({_DEVICE_ID_KEY}|{_KEYWORD_SERIAL_KEY}"
+            rf"(?!={_SERIAL_KEPT_RE}{_FIELD_END}))=[^,\n\"]+"
         ),
         r"\g<1>=<REDACTED-DEVID>",
     ),
@@ -421,11 +446,17 @@ ALWAYS_LEAKS = (
         )
     ),
     _MAC_LEAK,
-    # A virtual serial the key=value rules missed, quoted too: no word boundary is
-    # needed, and `json.dumps` text hides one behind a `\n` escape.
+    # A device id or serial the key=value rules missed, quoted too, where they start.
     re.compile(
-        r"(?i)virtual_serial_num="
-        rf"(?!(?:<REDACTED-DEVID>|&lt;REDACTED-DEVID&gt;|{_VIRTUAL_SERIAL_KEPT}){_FIELD_END})"
+        rf"(?i){_KEY_START}{_DEVICE_ID_KEY}="
+        rf"(?!(?:<REDACTED-DEVID>|&lt;REDACTED-DEVID&gt;){_FIELD_END})"
+        r'"?[^,\n"]+'
+    ),
+    # A keyword-holding serial the key=value rules missed, quoted too: no word boundary
+    # is needed, and `json.dumps` text hides one behind a `\n` escape.
+    re.compile(
+        rf"(?i){_KEYWORD_SERIAL_KEY}="
+        rf"(?!(?:<REDACTED-DEVID>|&lt;REDACTED-DEVID&gt;|{_SERIAL_KEPT_RE}){_FIELD_END})"
         r'"?[^,\n"]+'
     ),
 )
@@ -695,7 +726,6 @@ def _key(name: str) -> str:
 #: rules see only XML elements and `key=value` fields, never this JSON form.
 _DEVICE_ID_KEYS = {_key(n) for n in _DEVICE_ID_ELEMENTS.split("|")} | {
     "wwpns",
-    "wwpnprefix",
     "logicalunitudid",
     "luudid",
     "tierudid",

@@ -354,6 +354,78 @@ def test_merge_confirmed_gap_preserves_reviewed_implementation():
         )
 
 
+def _media_delete(evidence):
+    return {
+        "operations": [
+            {
+                "operation": "media.delete",
+                "implementation": {"state": "implemented", "missing_scope": []},
+                "evidence": evidence,
+            }
+        ]
+    }
+
+
+_HELD = ["refused-while-mounted", "delete-accepted", "media-absent"]
+_STORED = {
+    "id": "old",
+    "channel": "live",
+    "result": "passed",
+    "scenario": "st19-optical-round-trip",
+    "observed_at": "2026-10-13T00:00:00Z",
+    "assertions": _HELD,
+}
+
+
+def _promote_media_delete(stored, assertions, **change):
+    catalog = _media_delete([stored])
+    new = {**_STORED, "id": "new", "assertions": assertions, **change}
+    promotion._merge(catalog, {"media.delete": [("round2", new)]}, [], [])
+    return catalog["operations"][0]["evidence"]
+
+
+def test_refuse_passing_observation_with_strict_subset_of_assertions():
+    catalog = _media_delete([_STORED])
+    weaker = {**_STORED, "id": "new", "assertions": _HELD[1:]}
+    with pytest.raises(
+        promotion.PromotionError,
+        match="media.delete lacks assertions .*: refused-while-mounted; rerun",
+    ):
+        promotion._merge(catalog, {"media.delete": [("round2", weaker)]}, [], [])
+    assert catalog["operations"][0]["evidence"] == [_STORED]
+
+
+@pytest.mark.parametrize(
+    "assertions",
+    [
+        _HELD,
+        [*_HELD, "media-equal-baseline"],
+        # A set that is not a subset still replaces: alternative ids such as
+        # lpar.py's sync-disable/sync-enable reads are disjoint.
+        ["delete-accepted", "media-equal-baseline"],
+        ["media-equal-baseline"],
+    ],
+)
+def test_replace_with_equal_superset_or_non_subset_assertions(assertions):
+    assert _promote_media_delete(_STORED, assertions) == [
+        {**_STORED, "id": "new", "assertions": assertions}
+    ]
+
+
+@pytest.mark.parametrize(
+    ("stored", "change"),
+    [
+        ({**_STORED, "result": "failed"}, {}),
+        ({**_STORED, "channel": "automated"}, {}),
+        (_STORED, {"scenario": "st19-other-scenario"}),
+        (_STORED, {"result": "failed"}),
+    ],
+)
+def test_subset_only_guards_passed_live_evidence_of_the_same_scenario(stored, change):
+    evidence = _promote_media_delete(stored, _HELD[1:], **change)
+    assert evidence[-1]["id"] == "new"
+
+
 def test_reject_missing_and_duplicate_arms(candidate):
     root, claims, results, *_ = candidate
     for inputs in ([], [results, results]):

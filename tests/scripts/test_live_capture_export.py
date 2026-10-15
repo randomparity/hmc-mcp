@@ -370,22 +370,36 @@ def test_serial_keyword_not_after_its_opening_tag_is_a_leak(body: str) -> None:
         export.tokenize_records(_records(_rest("/e", body)))
 
 
-#: `lssyscfg -r lpar` fields around a virtual serial, unquoted and as a quoted CSV field.
-VIRTUAL_SERIAL_FIELDS = [
-    "name=lpar-A1,virtual_serial_num={},serial_num=<REDACTED-DEVID>",
-    'name=lpar-A1,"virtual_serial_num={}",state=Running',
-    "name=lpar-A1,virtual_serial_num={}\nname=lpar-A2",
-    "name=lpar-A1,VIRTUAL_SERIAL_NUM={}",
+#: CLI serial fields that hold `none` or `auto` until a serial is assigned (#1618, #1637).
+KEYWORD_SERIAL_KEYS = [
+    "virtual_serial_num",
+    "logical_serial_num",
+    "cluster_serial_num",
+    "peer_collective_serial_num",
+]
+#: `lssyscfg` fields around such a serial, unquoted and as a quoted CSV field.
+KEYWORD_SERIAL_FIELDS = [
+    "name=lpar-A1,{key}={value},serial_num=<REDACTED-DEVID>",
+    'name=lpar-A1,"{key}={value}",state=Running',
+    "name=lpar-A1,{key}={value}\nname=lpar-A2",
+    "name=lpar-A1,{KEY}={value}",
 ]
 
 
+def _serial_fields(fields: str, key: str, value: str) -> str:
+    return fields.format(key=key, KEY=key.upper(), value=value)
+
+
+@pytest.mark.parametrize("key", KEYWORD_SERIAL_KEYS)
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
-@pytest.mark.parametrize("fields", VIRTUAL_SERIAL_FIELDS)
+@pytest.mark.parametrize("fields", KEYWORD_SERIAL_FIELDS)
 @pytest.mark.parametrize("value", ["SYN0001", "None", "nonesuch", "autoSYN0001"])
-def test_virtual_serial_field_is_scrubbed(value: str, fields: str, encode: Any) -> None:
-    """#1618: `\\bserial_num` has no boundary inside `virtual_serial_num` to match at."""
+def test_keyword_serial_field_is_scrubbed(
+    value: str, fields: str, encode: Any, key: str
+) -> None:
+    """#1618, #1637: `\\bserial_num` has no boundary inside these keys to match at."""
     tok = export.Tokenizer({}, set())
-    body = encode(fields.format(value))
+    body = encode(_serial_fields(fields, key, value))
     scrubbed = tok.tokenize(body)
     if encode is str:
         assert scrubbed == body.replace(value, DEVID)
@@ -394,55 +408,65 @@ def test_virtual_serial_field_is_scrubbed(value: str, fields: str, encode: Any) 
     assert tok.leaks(body)
 
 
+@pytest.mark.parametrize("key", KEYWORD_SERIAL_KEYS)
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
 @pytest.mark.parametrize(
     "fields",
     [
-        *VIRTUAL_SERIAL_FIELDS,
-        "virtual_serial_num={}",
-        "x=1,virtual_serial_num={}\r\nx=1",
+        *KEYWORD_SERIAL_FIELDS,
+        "{key}={value}",
+        "x=1,{key}={value}\r\nx=1",
+        "hdr\n{key}={value}",
     ],
 )
 @pytest.mark.parametrize("keyword", ["none", "auto"])
-def test_virtual_serial_keyword_is_kept_as_evidence(
-    keyword: str, fields: str, encode: Any
+def test_keyword_serial_keyword_is_kept_as_evidence(
+    keyword: str, fields: str, encode: Any, key: str
 ) -> None:
-    """`none` and `auto` stand in for a virtual serial, as in `VirtualSerialNumber`."""
+    """`none` and `auto` stand in for a serial, as in `VirtualSerialNumber`."""
     tok = export.Tokenizer({}, set())
-    body = encode(fields.format(keyword))
+    body = encode(_serial_fields(fields, key, keyword))
     assert tok.tokenize(body) == body
     assert tok.leaks(body) == []
 
 
+@pytest.mark.parametrize("key", KEYWORD_SERIAL_KEYS)
 @pytest.mark.parametrize(
     "body",
     [
-        '"virtual_serial_num=none,SYN0001"',
-        "virtual_serial_num=none SYN0001",
-        "virtual_serial_num=auto\\SYN0001",
+        '"{key}=none,SYN0001"',
+        "{key}=none SYN0001",
+        "{key}=auto\\SYN0001",
+        "{key}=none\rSYN0001",
     ],
 )
-def test_virtual_serial_keyword_is_kept_only_as_the_whole_value(body: str) -> None:
+def test_keyword_serial_keyword_is_kept_only_as_the_whole_value(
+    body: str, key: str
+) -> None:
     """A quoted field runs to its closing quote; anything after a keyword is a serial."""
+    body = body.format(key=key)
     corpus = export.tokenize_records(_records(_ssh("lssyscfg -r lpar", body)))
     assert "SYN0001" not in corpus[-1]["stdout"]
 
 
+@pytest.mark.parametrize("key", KEYWORD_SERIAL_KEYS)
 @pytest.mark.parametrize(
     "body",
     [
-        'name=lpar-A1,virtual_serial_num=none"SYN0001",state=Running',
-        '"virtual_serial_num=auto"SYN0001"',
+        'name=lpar-A1,{key}=none"SYN0001",state=Running',
+        '"{key}=auto"SYN0001"',
     ],
 )
-def test_virtual_serial_keyword_before_a_quote_in_the_value_fails_closed(
-    body: str,
+def test_keyword_serial_keyword_before_a_quote_in_the_value_fails_closed(
+    body: str, key: str
 ) -> None:
     """A quote ends a value only where a field ends; the backstop sees what follows."""
+    body = body.format(key=key)
     with pytest.raises(export.LeakError):
         export.tokenize_records(_records(_ssh("lssyscfg -r lpar", body)))
 
 
+@pytest.mark.parametrize("key", KEYWORD_SERIAL_KEYS)
 @pytest.mark.parametrize(
     "wrap", [lambda v: {"raw": v}, lambda v: [v]], ids=["{}", "[]"]
 )
@@ -453,47 +477,130 @@ def test_virtual_serial_keyword_before_a_quote_in_the_value_fails_closed(
         ("SYN0001", "<REDACTED-DEVID>"),
     ],
 )
-def test_virtual_serial_last_in_a_json_object_or_array_exports(
-    value: str, written: str, wrap: Any
+def test_keyword_serial_last_in_a_json_object_or_array_exports(
+    value: str, written: str, wrap: Any, key: str
 ) -> None:
     """The scanned corpus closes such a string with `"}` or `"]`, not with a separator."""
     tool = {"kind": "tool", "step": "t", "tool": "t", "ok": True}
-    tool["data"] = wrap(f"name=lpar-A1,virtual_serial_num={value}")
+    tool["data"] = wrap(f"name=lpar-A1,{key}={value}")
     corpus = export.tokenize_records(_records(tool))
-    assert corpus[-1]["record"]["data"] == wrap(
-        f"name=lpar-A1,virtual_serial_num={written}"
-    )
+    assert corpus[-1]["record"]["data"] == wrap(f"name=lpar-A1,{key}={written}")
 
 
+@pytest.mark.parametrize("key", KEYWORD_SERIAL_KEYS)
 @pytest.mark.parametrize(
     "text",
     [
-        "x virtual_serial_num=SYN0001",
-        json.dumps("x\nvirtual_serial_num=SYN0001"),
-        "ns_virtual_serial_num=SYN0001",
-        "virtual_serial_num=none,virtual_serial_num=SYN0001",
-        "virtual_serial_num=<REDACTED-DEVID>SYN0001",
-        'virtual_serial_num="SYN0001"',
+        "x {key}=SYN0001",
+        json.dumps("x\n{key}=SYN0001"),
+        "ns_{key}=SYN0001",
+        "{key}=none,{key}=SYN0001",
+        "{key}=<REDACTED-DEVID>SYN0001",
+        '{key}="SYN0001"',
+        "{key}=none\rSYN0001",
+        json.dumps("x\n{key}=auto\rSYN0001"),
     ],
 )
-def test_virtual_serial_backstop_reports_a_value_the_rules_missed(text: str) -> None:
+def test_keyword_serial_backstop_reports_a_value_the_rules_missed(
+    text: str, key: str
+) -> None:
     """The backstop needs no word boundary, which `json.dumps` text hides behind `\\n`."""
-    leak = text[text.rindex("virtual_serial_num=") :].removesuffix('"')
+    text = text.format(key=key)
+    leak = text[text.rindex(f"{key}=") :].removesuffix('"')
     assert export.Tokenizer({}, set()).leaks(text) == [leak]
 
 
+@pytest.mark.parametrize("key", KEYWORD_SERIAL_KEYS)
 @pytest.mark.parametrize(
     "text",
     [
-        "virtual_serial_num=<REDACTED-DEVID>,x=1",
-        "virtual_serial_num=&lt;REDACTED-DEVID&gt;",
-        "virtual_serial_num=,x=1",
-        'x,"virtual_serial_num=",y',
+        "{key}=<REDACTED-DEVID>,x=1",
+        "{key}=&lt;REDACTED-DEVID&gt;",
+        "{key}=,x=1",
+        'x,"{key}=",y',
     ],
 )
-def test_virtual_serial_backstop_passes_the_token(text: str) -> None:
+def test_keyword_serial_backstop_passes_the_token(text: str, key: str) -> None:
     """What the rules write, in a body or an XML body, and an empty value, are no leak."""
-    assert export.Tokenizer({}, set()).leaks(text) == []
+    assert export.Tokenizer({}, set()).leaks(text.format(key=key)) == []
+
+
+#: The other keys the key=value rules scrub, which keep no keyword (#1638).
+DEVICE_ID_KEYS = ["unique_id", "udid", "wwpn", "wwpns", "wwnn", "serial_num"]
+
+
+@pytest.mark.parametrize("key", [*DEVICE_ID_KEYS, *KEYWORD_SERIAL_KEYS])
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize(
+    "separator",
+    ["\n", "\r", "\t", "\f", "\b", "\x00", "\u2028"],
+    ids=["lf", "cr", "tab", "ff", "bs", "nul", "ls"],
+)
+def test_key_value_field_at_a_line_start_is_scrubbed(
+    separator: str, encode: Any, key: str
+) -> None:
+    """#1638: `\\b` reads the letter of a `json.dumps` `\\n` escape as part of the key,
+    and the digits of a `\\u2028` one."""
+    tok = export.Tokenizer({}, set())
+    body = encode(f"hdr{separator}{key}=SYN0001")
+    scrubbed = tok.tokenize(body)
+    assert scrubbed == body.replace("SYN0001", DEVID)
+    assert tok.leaks(scrubbed) == []
+    assert tok.leaks(body)
+
+
+@pytest.mark.parametrize("key", DEVICE_ID_KEYS)
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("separator", ["\n", "\r", "\t"], ids=["lf", "cr", "tab"])
+@pytest.mark.parametrize("prefix", ["x", "ns_", "virtual_", "port", "lun"])
+def test_key_value_key_inside_a_longer_key_is_left(
+    prefix: str, separator: str, encode: Any, key: str
+) -> None:
+    """A key is matched after an escape, never inside a longer key such as `ns_udid`."""
+    tok = export.Tokenizer({}, set())
+    body = encode(f"hdr{separator}{prefix}{key}=none")
+    assert tok.tokenize(body) == body
+    assert tok.leaks(body) == []
+
+
+@pytest.mark.parametrize("key", DEVICE_ID_KEYS)
+@pytest.mark.parametrize(
+    "text",
+    [
+        "x {key}=SYN0001",
+        json.dumps("x\n{key}=SYN0001"),
+        json.dumps("x\r{key}=SYN0001"),
+        json.dumps("x\t{key}=SYN0001"),
+        "{KEY}=SYN0001",
+        "{key}=none",
+        "{key}=<REDACTED-DEVID>SYN0001",
+        '{key}="SYN0001"',
+    ],
+)
+def test_device_id_backstop_reports_a_value_the_rules_missed(
+    text: str, key: str
+) -> None:
+    """Every key the rules scrub has a backstop, at the same boundary (#1638)."""
+    text = text.format(key=key, KEY=key.upper())
+    start = text.lower().rindex(f"{key}=")
+    assert export.Tokenizer({}, set()).leaks(text) == [text[start:].removesuffix('"')]
+
+
+@pytest.mark.parametrize("key", DEVICE_ID_KEYS)
+@pytest.mark.parametrize(
+    "text",
+    [
+        "{key}=<REDACTED-DEVID>,x=1",
+        "{key}=&lt;REDACTED-DEVID&gt;",
+        json.dumps("x\n{key}=<REDACTED-DEVID>\n"),
+        'x,"{key}=<REDACTED-DEVID>",y',
+        "{key}=,x=1",
+        "ns_{key}=SYN0001",
+    ],
+)
+def test_device_id_backstop_passes_the_token(text: str, key: str) -> None:
+    """What the rules write, an empty value and a longer key are no leak."""
+    assert export.Tokenizer({}, set()).leaks(text.format(key=key)) == []
 
 
 @pytest.mark.parametrize(
@@ -585,6 +692,7 @@ SCRUBBED_ELEMENTS = [
     ("VirtualSerialNumber", SERIAL),
     ("UniqueDeviceID", DEVID),
     ("ns:WWPN", DEVID),
+    ("WWPNPrefix", DEVID),
 ]
 #: Names the scrub rules matched only in their declared case and after a `\w+:` prefix
 #: (#1572, #1588), or after no prefix at all: neither may hide the value.
@@ -603,6 +711,8 @@ VARIANT_ELEMENTS = [
     ("uniquedeviceid", DEVID),
     ("ns-1:UniqueDeviceID", DEVID),
     ("ns.v1:wwpn", DEVID),
+    ("wwpnprefix", DEVID),
+    ("ns-1:WWPNPrefix", DEVID),
     # #1588: a prefix `json.dumps` writes with a `\u` escape, a non-ASCII name character
     # that is not a word character, and more than one prefix.
     *(
@@ -640,17 +750,79 @@ def test_element_name_case_and_prefix_are_scrubbed(
     assert tok.leaks(scrubbed) == []
 
 
-#: What ends a prefix: a space, a tag end, a quote, and in `json.dumps` text a `\"`,
-#: an escaped ASCII character and an escaped non-ASCII space (#1588).
-PREFIX_GAPS = [" ", ">", '"', '\\"', "\\u0020", "\\u003e", "\\u00a0", "\\u3000"]
+#: What ends a prefix: XML's spaces, a tag end, a quote, `/` and `=`, and in
+#: `json.dumps` text a `\"` and an escape of any of those (#1588, #1623).
+PREFIX_GAPS = [" ", "\t", "\n", "\r", ">", '"', "'", "/", "="]
+PREFIX_GAPS += ['\\"', "\\u0020", "\\u0009", "\\u003e", "\\u002F", "\\u003d"]
 
 
 @pytest.mark.parametrize("gap", PREFIX_GAPS)
 def test_namespace_prefix_does_not_span_a_tag(gap: str) -> None:
-    """A prefix is name characters only: `x:SerialNumber` in another tag is not one."""
+    """A prefix ends at a tag delimiter: `x:SerialNumber` in another tag is not one."""
     tok = export.Tokenizer({}, set())
     body = f"<Note{gap}x:SerialNumber>SYN-77Q</Note>"
     assert tok.tokenize(body) == body
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("element", ["SerialNumber", "MACAddress"])
+@pytest.mark.parametrize(
+    "markup",
+    ["<!--x:{}-->", "<![CDATA[x:{}]]>", "<?x:{}?>"],
+    ids=["comment", "cdata", "pi"],
+)
+def test_markup_that_opens_no_element_is_not_scrubbed(
+    markup: str, element: str, encode: Any
+) -> None:
+    """A prefix never starts with `!` or `?`, so the text after this markup is kept."""
+    tok = export.Tokenizer({}, set())
+    body = encode(f"<Note>{markup.format(element)}FEED</Note>")
+    assert tok.tokenize(body) == body
+
+
+#: What a prefix holds: every ASCII character but a gap, `:` or `<`, a backslash
+#: included, every non-ASCII character Python's `\s` matches, and zero-width ones it
+#: does not. None is an XML name character, but taking one into the prefix scrubs a
+#: malformed tag where ending the prefix at it exported the value (#1623).
+PREFIX_CHARS = [
+    *(chr(c) for c in range(0x80) if chr(c) not in " \t\n\r>\"'/=:<"),
+    *(chr(c) for c in range(0x80, 0x110000) if re.fullmatch(r"\s", chr(c))),
+    "\u180e",
+    "\u200b",
+    "\ufeff",
+]
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize(
+    "prefix",
+    [*(f"a{c}b:" for c in PREFIX_CHARS), ":", "ns::", "\\:"],
+    ids=lambda prefix: "-".join(f"{ord(c):02X}" for c in prefix),
+)
+@pytest.mark.parametrize(
+    ("element", "value", "written"),
+    [
+        ("X-API-Session", "SYN-77Q", SESSION),
+        ("PublicSSHKeyValue", "SYN-77Q", SSH_KEY),
+        ("IPAddress", "SYN-77Q", ADDRESS),
+        ("SerialNumber", "SYN-77Q", SERIAL),
+        ("WWPN", "SYN-77Q", DEVID),
+        ("MACAddress", "0A1B2C3D4E5F", "000000000000"),  # pragma: allowlist secret
+    ],
+)
+def test_namespace_prefix_with_any_other_character_is_scrubbed(
+    element: str, value: str, written: str, prefix: str, encode: Any
+) -> None:
+    """Regression #1623: `a`, U+1680, `b` or `a!b` as a prefix hid a value from both checks."""
+    tok = export.Tokenizer({}, set())
+    name = f"{prefix}{element}"
+    body = encode(f'<Root><{name} kb="CUR">{value}</{name}></Root>')
+    assert tok.leaks(body) == [value]
+    scrubbed = tok.tokenize(body)
+    assert scrubbed == body.replace(
+        value, _escaped(written) if encode is str else written
+    )
+    assert tok.leaks(scrubbed) == []
 
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
@@ -692,6 +864,31 @@ def test_scrubbed_element_value_is_not_a_leak(
     assert (
         tok.leaks(encode(f'<Root><{element} kb="CUR">{value}</{element}></Root>')) == []
     )
+
+
+#: A `WWPNPrefix` as a `ManagedSystem` entry carries it, in a 12-hex-digit shape that no
+#: WWN or MAC rule reads.
+WWPN_PREFIX = "c050760abcde"  # pragma: allowlist secret
+WWPN_PREFIX_BODY = (
+    f'<IOAdapter><WWPNPrefix kb="CUD">{WWPN_PREFIX}</WWPNPrefix></IOAdapter>'
+)
+
+
+def test_wwpn_prefix_is_scrubbed_from_a_rest_body() -> None:
+    """Regression #1639: a system's WWPN prefix was exported as captured."""
+    corpus = export.tokenize_records(_records(_rest("/e", WWPN_PREFIX_BODY)))
+    assert corpus[-1]["body"] == WWPN_PREFIX_BODY.replace(WWPN_PREFIX, _escaped(DEVID))
+
+
+def test_wwpn_prefix_is_scrubbed_from_tool_json() -> None:
+    """Regression #1639: the same prefix inside a tool's `json.dumps` output."""
+    tool = {"kind": "tool", "step": "t", "tool": "t", "ok": True}
+    corpus = export.tokenize_records(
+        _records({**tool, "data": {"raw": WWPN_PREFIX_BODY}})
+    )
+    assert corpus[-1]["record"]["data"] == {
+        "raw": WWPN_PREFIX_BODY.replace(WWPN_PREFIX, DEVID)
+    }
 
 
 #: Input the scrub rules leave unscrubbed: a `/>` ends the opening tag, a `<` inside the
@@ -1042,6 +1239,10 @@ def _cost_ratio(
         "ns:v1:X-API-Session",
         "ns-1:PublicSSHKeyValue",
         r"ns\u00e9:IPAddress",
+        "a\u3000b:SerialNumber",
+        "a!b:WWPN",
+        r"ns\\x::X-API-Session",
+        r"a\u1680b:MACAddress",
     ],
 )
 def test_many_unclosed_openings_do_not_backtrack(element: str) -> None:
@@ -1078,6 +1279,24 @@ def test_mac_leak_check_after_many_backslash_u_does_not_backtrack() -> None:
     )
     assert without.pattern != export._MAC_LEAK.pattern
     assert _cost_ratio(export._MAC_LEAK, without, "", body) < 10
+
+
+def test_key_start_after_many_escapes_does_not_backtrack() -> None:
+    """Each escape lookbehind reads at most six characters, so a key=value rule and its
+    backstop cost about what they do with `\\b` alone (#1638)."""
+    body = "\\nserial_nu\\tudi\\u00e9wwpn\\\\unique_id\\fwwnn " * 5_000
+    rules = [
+        (rule, replacement)
+        for rule, replacement in export.IDENTIFIER_RULES
+        if export._KEY_START in rule.pattern
+    ]
+    rules += [
+        (rule, "") for rule in export.ALWAYS_LEAKS if export._KEY_START in rule.pattern
+    ]
+    assert len(rules) == 2
+    for rule, replacement in rules:
+        bounded = re.compile(rule.pattern.replace(export._KEY_START, r"\b"), rule.flags)
+        assert _cost_ratio(rule, bounded, replacement, body) < 10
 
 
 @pytest.mark.parametrize(
@@ -1117,7 +1336,16 @@ def _cpu_time(rule: re.Pattern[str], replacement: Any, body: str) -> float:
     return min(runs)
 
 
-@pytest.mark.parametrize("element", ["SerialNumber", "IPAddress", "MACAddress"])
+@pytest.mark.parametrize(
+    "element",
+    [
+        "SerialNumber",
+        "IPAddress",
+        "MACAddress",
+        "SerialNumber\u3000",
+        "SerialNumber\\!",
+    ],
+)
 def test_one_opening_with_many_prefixes_does_not_backtrack(element: str) -> None:
     """Regression #1588: giving back each prefix re-ran the tag tail once per segment.
 
@@ -1597,6 +1825,8 @@ def test_built_in_accounts_are_not_names() -> None:
         ("volume_unique_id", "<REDACTED-DEVID>"),
         ("udid", "<REDACTED-DEVID>"),
         ("WWPNs", "<REDACTED-DEVID>"),
+        ("WWPNPrefix", "<REDACTED-DEVID>"),
+        ("wwpn_prefix", "<REDACTED-DEVID>"),
         ("LogicalUnitUDID", "<REDACTED-DEVID>"),
         ("SerialNumber", "<REDACTED-SERIAL>"),
         ("LogicalSerialNumber", "<REDACTED-SERIAL>"),
