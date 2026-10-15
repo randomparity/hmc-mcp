@@ -130,9 +130,10 @@ _NAME_ESCAPE = r"\\++u(?!00[0-7])[0-9A-Fa-f]{4}"
 #: non-ASCII space such as `\u00a0` or `\u3000` (#1623): only an ASCII space separates
 #: XML names, so a prefix holding one is malformed, and taking it scrubs the value rather
 #: than hiding it. A prefix is given back when the element name does not follow it:
-#: `<SerialNumber:x>` is still a `SerialNumber`. A scrub rule takes the prefix and name as one atomic group: the tag
-#: tail after the name ends at the same `>` whichever prefix matched, and retrying each
-#: one would scan the tail again per segment of `<SerialNumber:SerialNumber:...`.
+#: `<SerialNumber:x>` is still a `SerialNumber`. A scrub rule takes the prefix and name
+#: as one atomic group: the tag tail after the name ends at the same `>` whichever
+#: prefix matched, and retrying each one would scan the tail again per segment of
+#: `<SerialNumber:SerialNumber:...`.
 _NS_PREFIX = rf"(?:(?:[\w.-]|[^\x00-\x7f]|{_NAME_ESCAPE})++:)*"
 #: Elements whose whole text a rule replaces: the element name pattern, the text the
 #: rule writes and, optionally, the keywords it keeps as evidence. The same entry builds
