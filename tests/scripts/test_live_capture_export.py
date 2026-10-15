@@ -910,6 +910,83 @@ def test_mac_after_a_literal_backslash_u_is_zeroed_whole() -> None:
     assert corpus[-1]["body"] == body.replace(MAC, "003000000000")
 
 
+#: A separated MAC after a literal `\\u`, and what a REST body and a tool record export.
+#: Its first octets are fewer digits than an escape holds, or exactly four, which raw
+#: XML reads as the MAC's and JSON text as an escape's. Two backslashes are an escaped
+#: one in JSON text, so the four digits after them are the MAC's in both (#1622).
+SEPARATED_AFTER_U = [
+    ("\\u0A:1B:2C:3D:4E:5F", "\\u00:00:00:00:00:00", "\\u00:00:00:00:00:00"),
+    ("\\u0A-1B-2C-3D-4E-5F", "\\u00-00-00-00-00-00", "\\u00-00-00-00-00-00"),
+    ("\\u0A1B:2C:3D:4E:5F", "\\u0030:00:00:00:00", "\\u0000:00:00:00:00"),
+    ("\\u0a1b.2c3d.4e5f", "\\u0030.0000.0000", "\\u0000.0000.0000"),
+    ("\\u0A1B-2C3D-4E5F", "\\u0030-0000-0000", "\\u0000-0000-0000"),
+    ("\\\\u0a1b.2c3d.4e5f", "\\\\u0000.0000.0000", "\\\\u0000.0000.0000"),
+]
+
+
+@pytest.mark.parametrize(("value", "rest", "tool"), SEPARATED_AFTER_U)
+def test_separated_mac_after_a_literal_backslash_u_is_zeroed(
+    value: str, rest: str, tool: str
+) -> None:
+    """Regression #1622: `\\u0A:1B:...` exported `\\u0A`, and `\\u0a1b.2c3d...` `\\u0a1b`."""
+    raw = f"<MACAddress>{value}</MACAddress>"
+    record = {
+        "kind": "tool",
+        "step": "t",
+        "tool": "t",
+        "ok": True,
+        "data": {"raw": raw},
+    }
+    corpus = export.tokenize_records(_records(_rest("/e", raw), record))
+    assert corpus[-2]["body"] == f"<MACAddress>{rest}</MACAddress>"
+    assert corpus[-1]["record"]["data"]["raw"] == f"<MACAddress>{tool}</MACAddress>"
+
+
+@pytest.mark.parametrize("before", ["ਛ", "é", "\n", "\\"])
+def test_separated_mac_after_a_json_escape_in_a_tool_record_is_zeroed(
+    before: str,
+) -> None:
+    """A real escape before a separator is zeroed as one before a joined MAC is."""
+    raw = f"<MACAddress>{before}.2c3d.4e5f</MACAddress>"
+    tool = {"kind": "tool", "step": "t", "tool": "t", "ok": True, "data": {"raw": raw}}
+    corpus = export.tokenize_records(_records(tool))
+    kept = before if before in "\n\\" else "0"
+    assert (
+        corpus[-1]["record"]["data"]["raw"]
+        == f"<MACAddress>{kept}.0000.0000</MACAddress>"
+    )
+
+
+def test_separated_mac_after_a_non_ascii_character_in_a_rest_body_fails_closed() -> (
+    None
+):
+    """The export is JSON, where `ਛ` is written as the escape `\\u0a1b`: four digits."""
+    body = "<Adapter><MACAddress>ਛ.2c3d.4e5f</MACAddress></Adapter>"
+    with pytest.raises(export.LeakError):
+        export.tokenize_records(_records(_rest("/e", body)))
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "\\u0A:00:00:00:00:00",
+        "\\u0a1b.0000.0000",
+        "\\u0A1B:00:00:00:00",
+        "\\\\u0a1b.0000.0000",
+        "\\u000b:00:00:00:00",
+        "\\u0A1B-0000-0000",
+    ],
+)
+def test_octets_surviving_a_literal_backslash_u_are_a_leak(
+    encode: Any, value: str
+) -> None:
+    """What main exported for #1622's values; the scrub rule's `0030` and `0000` are not."""
+    tok = export.Tokenizer({}, set())
+    body = encode(f"<MACAddress>{value}</MACAddress>")
+    assert tok.leaks(body) == [body[body.index(">") + 1 : body.index("</")]]
+
+
 def test_mac_after_an_escape_that_follows_a_backslash_stays_valid_json() -> None:
     """`\\\\\\f` is a backslash then a form feed: the `f` is still an escape's letter."""
     tok = export.Tokenizer({}, set())
@@ -990,6 +1067,17 @@ def test_many_unclosed_openings_do_not_backtrack(element: str) -> None:
     for rule, replacement in tail_rules:
         scan = re.compile(rule.pattern.replace(export._TAG_TAIL, "[^>]*+>"), rule.flags)
         assert _cost_ratio(rule, scan, replacement, body) < 10
+
+
+def test_mac_leak_check_after_many_backslash_u_does_not_backtrack() -> None:
+    """The `\\u` check runs at each position of a MAC element's text; it reads ahead a
+    bounded distance, so it costs about what the check without it does (#1622)."""
+    body = "<MACAddress>" + "\\u0A1Bx\\u0Ax\\u0A1B.x\\u0030." * 5_000 + "</MACAddress>"
+    without = re.compile(
+        export._MAC_LEAK.pattern.replace(export._AFTER_LITERAL_U, "(?!)")
+    )
+    assert without.pattern != export._MAC_LEAK.pattern
+    assert _cost_ratio(export._MAC_LEAK, without, "", body) < 10
 
 
 @pytest.mark.parametrize(
