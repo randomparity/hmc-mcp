@@ -146,23 +146,29 @@ _NAME_ESCAPE = r"\\++(?!u(?i:{}))".format(
 #: the first `:`, so a prefix matches one way only. A prefix never starts with `!` or
 #: `?`: a comment, CDATA section or processing instruction opens no element.
 _NS_PREFIX = rf"(?![!?])(?:(?:[^{_PREFIX_END_CLASS}\\]|{_NAME_ESCAPE})*+:)*"
+#: The namespace prefixes of a closing tag, which holds no attributes: anything but a tag
+#: delimiter or one of XML's spaces is taken, so a name with a quote, `=`, a `\u0020` or
+#: a leading `!` or `?` still ends a value the backstops read (#1660). A comment, CDATA
+#: section or processing instruction never starts with `</`. Each segment ends at the
+#: first `:`, so a prefix matches one way only.
+_CLOSING_PREFIX = r"(?:[^\t\n\r :<>]*+:)*"
 #: Elements whose whole text a rule replaces: the element name pattern, the text the
 #: rule writes and, optionally, the keywords it keeps as evidence. The same entry builds
 #: the scrub rule and its `leaks()` backstop. Names match in any case, after any
 #: namespace prefix: neither is significant to whoever reads the value, so neither may
 #: hide it. A keyword is kept only as the element's whole text, in its documented case.
-_SESSION_ELEMENT = (rf"{_NS_PREFIX}(?i:X-API-Session)", "<REDACTED-SESSION>")
+_SESSION_ELEMENT = ("(?i:X-API-Session)", "<REDACTED-SESSION>")
 _SSH_KEY_ELEMENT = (
-    rf"{_NS_PREFIX}(?i:PublicSSHKeyValue|AuthorizedKeysValue)",
+    "(?i:PublicSSHKeyValue|AuthorizedKeysValue)",
     "<REDACTED-SSHKEY>",
 )
-_ADDRESS_ELEMENT = (rf"{_NS_PREFIX}(?i:{_ADDRESS_ELEMENTS})", PLACEHOLDER_IP)
-_DEVICE_ID_ELEMENT = (rf"{_NS_PREFIX}(?i:{_DEVICE_ID_ELEMENTS})", "<REDACTED-DEVID>")
+_ADDRESS_ELEMENT = (f"(?i:{_ADDRESS_ELEMENTS})", PLACEHOLDER_IP)
+_DEVICE_ID_ELEMENT = (f"(?i:{_DEVICE_ID_ELEMENTS})", "<REDACTED-DEVID>")
 #: A virtual serial number is assigned to a partition, which otherwise holds `none`, or
 #: `auto` while the HMC assigns one (#1593). Neither keyword is any serial, so the other
 #: serial elements keep them too.
 _SERIAL_ELEMENT = (
-    rf"{_NS_PREFIX}(?i:(?:Logical|Virtual)?SerialNumber)",
+    "(?i:(?:Logical|Virtual)?SerialNumber)",
     "<REDACTED-SERIAL>",
     "none|auto",
 )
@@ -227,7 +233,7 @@ def _element_rule(
     """
     kept = rf"(?!(?:{keep})<)" if keep else ""
     return (
-        re.compile(rf"(<(?>{element}\b)(?>{_TAG_TAIL})){kept}[^<]+"),
+        re.compile(rf"(<(?>{_NS_PREFIX}{element}\b)(?>{_TAG_TAIL})){kept}[^<]+"),
         rf"\g<1>{value}",
     )
 
@@ -252,14 +258,13 @@ def _element_leak(element: str, value: str, keep: str | None = None) -> re.Patte
     it to its end, as the scrub rule does.
     """
     written = re.escape(value.replace("<", "&lt;").replace(">", "&gt;"))
+    closing = rf"(?=</{_CLOSING_PREFIX}{element}\b)"
     kept = (
-        rf"(?P<kept><(?>{element}\b){_ATTRS}(?<!/)>(?:{keep})(?=</{element}\b))|"
+        rf"(?P<kept><(?>{_NS_PREFIX}{element}\b){_ATTRS}(?<!/)>(?:{keep}){closing})|"
         if keep
         else ""
     )
-    return re.compile(
-        rf"{kept}(?:(?<![^<>])(?!{written}<)[^<>]++|\]\]>)(?=</{element}\b)"
-    )
+    return re.compile(rf"{kept}(?:(?<![^<>])(?!{written}<)[^<>]++|\]\]>){closing}")
 
 
 #: The JSON escapes a value can follow: `\\`, `\n` or `\u00e9`. A lookbehind must be
@@ -336,8 +341,8 @@ _LIVE_HEX_RUN = (
 #: keeps. The closing tag is checked before the run is searched, and neither check
 #: backtracks out of the text run, so the scan stays linear.
 _MAC_LEAK = re.compile(
-    rf"(?:(?<![^<>])(?=[^<>]*+</{_NS_PREFIX}(?i:\w*MACAddress))(?=[^<>]*?{_LIVE_HEX_RUN})"
-    rf"[^<>]++|\]\]>(?=(?:\s|\\[nrt])*+</{_NS_PREFIX}(?i:\w*MACAddress)))"
+    rf"(?:(?<![^<>])(?=[^<>]*+</{_CLOSING_PREFIX}(?i:\w*MACAddress))(?=[^<>]*?{_LIVE_HEX_RUN})"
+    rf"[^<>]++|\]\]>(?=(?:\s|\\[nrt])*+</{_CLOSING_PREFIX}(?i:\w*MACAddress)))"
 )
 
 
