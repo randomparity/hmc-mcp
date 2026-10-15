@@ -417,13 +417,22 @@ def test_replace_with_equal_superset_or_non_subset_assertions(assertions):
     [
         ({**_STORED, "result": "failed"}, {}),
         ({**_STORED, "channel": "automated"}, {}),
-        (_STORED, {"scenario": "st19-other-scenario"}),
         (_STORED, {"result": "failed"}),
     ],
 )
-def test_subset_only_guards_passed_live_evidence_of_the_same_scenario(stored, change):
+def test_subset_only_guards_passed_live_evidence(stored, change):
     evidence = _promote_media_delete(stored, _HELD[1:], **change)
     assert evidence[-1]["assertions"] == _HELD[1:]
+
+
+def test_subset_guard_follows_an_observation_that_changed_scenario():
+    catalog = _media_delete([_STORED])
+    moved = {**_STORED, "scenario": "st19-other-scenario", "assertions": _HELD[1:]}
+    with pytest.raises(promotion.PromotionError, match="refused-while-mounted"):
+        promotion._merge(catalog, {"media.delete": [("round2", moved)]}, [], [])
+    stronger = {**moved, "assertions": [*_HELD, "media-equal-baseline"]}
+    promotion._merge(catalog, {"media.delete": [("round2", stronger)]}, [], [])
+    assert catalog["operations"][0]["evidence"] == [stronger]
 
 
 def test_subset_guard_ignores_stored_rows_of_other_observations():
@@ -440,6 +449,7 @@ _SHARED = {
     "result": "passed",
     "scenario": "st39-lpar-config",
     "observed_at": "2026-10-08T00:00:00Z",
+    "closure_fingerprint": "c" * 64,
     "assertions": ["memory-read-back", "processors-read-back", "weight-read-back"],
 }
 _DEDICATED = {
@@ -468,14 +478,12 @@ def _later(row, **change):
     return {**row, "observed_at": "2026-10-15T00:00:00Z", **change}
 
 
+_CLAIM = {"operation": "lpar.modify", "arm": "round2", "scenario": "st39-lpar-config"}
+
+
 def test_two_producers_in_one_scenario_each_keep_their_row():
-    claim = {
-        "operation": "lpar.modify",
-        "arm": "round2",
-        "scenario": "st39-lpar-config",
-    }
     both = [("round2", _later(_SHARED)), ("round2", _later(_DEDICATED))]
-    assert _lpar_modify(both, [claim]) == [
+    assert _lpar_modify(both, [_CLAIM]) == [
         _AUTOMATED,
         _later(_SHARED),
         _later(_DEDICATED),
@@ -500,18 +508,44 @@ def test_one_observation_from_two_arms_keeps_the_newest():
         )
 
 
-def test_claim_still_needs_its_own_passed_observation():
-    claim = {
-        "operation": "lpar.modify",
-        "arm": "round2",
-        "scenario": "st39-lpar-config",
+@pytest.mark.parametrize(
+    "newer",
+    [
+        (
+            "dedicated",
+            _later(_SHARED, observed_at="2026-10-15T00:00:01Z", result="failed"),
+        ),
+        (
+            "dedicated",
+            _later(_DEDICATED, observed_at="2026-10-15T00:00:01Z", result="failed"),
+        ),
+    ],
+)
+def test_refuse_claim_superseded_by_newer_evidence(newer):
+    # Readers would report the newer row; promotion refuses before the branch.
+    with pytest.raises(promotion.PromotionError, match="newer live observation"):
+        _lpar_modify([("round2", _later(_SHARED)), newer], [_CLAIM])
+
+
+def test_refuse_claim_superseded_by_a_newer_stored_row_of_another_closure():
+    # Promoting an older window: the stored dedicated row is newer and its
+    # closure differs from the candidate's.
+    older = {
+        **_SHARED,
+        "observed_at": "2026-10-07T00:00:00Z",
+        "closure_fingerprint": "d" * 64,
     }
+    with pytest.raises(promotion.PromotionError, match="newer live observation"):
+        _lpar_modify([("round2", older)], [_CLAIM])
+
+
+def test_claim_still_needs_its_own_passed_observation():
     rows = [
         ("round2", _later(_SHARED, result="failed")),
         ("dedicated", _later(_DEDICATED)),
     ]
     with pytest.raises(promotion.PromotionError, match="no eligible passed"):
-        _lpar_modify(rows, [claim])
+        _lpar_modify(rows, [_CLAIM])
 
 
 def test_reject_missing_and_duplicate_arms(candidate):

@@ -33,15 +33,17 @@ For non-registry recording labels, reuse source-declared release routes
 to validate operation/arm/scenario. Use the producer's second-resolution timestamp floor;
 reject missing, stale or mismatched results without copying their raw payloads. Reject
 stale/future evidence and duplicate ids within a sidecar; validate catalog-wide ids
-after selection. Multiple arms can observe the same observation (scenario and id): keep its
-latest timestamp/id (ties with differing content fail). Require each claim's newest
-operation/scenario observation in its named arm's supplied sidecar to be passed evidence.
-Replace a stored live row only when the window produced its observation again, keeping every
-other stored live row, non-live evidence and implementation (ADR 0212, amended by #1658).
-The strict-subset refusal compares a passing observation with the stored row it replaces.
-Readers take an operation's state from its newest live row by the same `(observed_at, id)`
-key, so a newer failed or stale row from another arm or scenario decides a claimed
-operation's state. After full validation and selection, omit unclaimed observations whose known
+after selection. Multiple arms can observe the same observation id (catalog-wide unique, so it
+also fixes the scenario): keep its latest timestamp (ties with differing content fail).
+Require each claim's newest operation/scenario observation in its named arm's supplied
+sidecar to be passed evidence. Replace a stored live row only when the window produced its
+id again, keeping every other stored live row, non-live evidence and implementation (ADR
+0212, amended by #1658). The strict-subset refusal compares a passing observation with the
+stored row of its id. Readers take an operation's state from its newest live row by
+`(observed_at, id)`, the selection key; a newer failed or stale row from another arm or
+scenario therefore decides a claimed operation's state, so promotion refuses a claim whose
+merged newest live row is not passed or carries another closure, before branch creation.
+After full validation and selection, omit unclaimed observations whose known
 operation lacks a catalog record, reporting its operation ID without raw data. Preserve that
 catalog absence; a missing claimed record still fails. Unknown operation IDs and malformed,
 stale or mismatched incidental rows fail before omission. This handles the sparse catalog

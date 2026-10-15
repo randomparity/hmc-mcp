@@ -91,12 +91,12 @@ its behavior. This ADR authorizes no live run or tag.
 ## Amendment (2026-10-15, #1658)
 
 Operation-keyed evidence holds one live row per producing observation, keyed by
-scenario and observation id, not one row per operation. Promotion replaces a
-stored live row only when the window produced that observation again; every
-other stored row is kept until a reviewed commit retires it. The strict-subset
-refusal compares a passing observation with the stored row it replaces. A
-claimed operation still needs a passed observation from its declared arm and
-scenario in the window.
+its catalog-wide unique observation id (which also fixes its scenario), not one
+row per operation. Promotion replaces a stored live row only when the window
+produced that observation again; every other stored row is kept until a
+reviewed commit retires it. The strict-subset refusal compares a passing
+observation with the stored row it replaces. A claimed operation still needs a
+passed observation from its declared arm and scenario in the window.
 
 Every reader takes an operation's state from its newest live row, ordered by
 `(observed_at, id)`: the release snapshot, `--require-current`,
@@ -104,7 +104,9 @@ Every reader takes an operation's state from its newest live row, ordered by
 Promotion selects with the same key, so a timestamp tie between two producers
 resolves identically everywhere. When a retained row is newer than the claimed
 observation — another arm or scenario observed the operation later — readers
-report that row, failed or stale included, because it is the newest evidence.
+report that row, failed or stale included, because it is the newest evidence;
+promotion refuses such a claim before creating its branch rather than leaving
+the release gate to fail on the promoted catalog.
 Two producers that record the same second are ordered by id, not by their
 position in the catalog.
 

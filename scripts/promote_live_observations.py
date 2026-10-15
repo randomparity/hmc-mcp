@@ -301,14 +301,11 @@ def _select(options: list[tuple[str, dict]], claim: dict | None) -> dict:
     return chosen[0]
 
 
-def _key(observation: dict) -> tuple[str, str]:
-    return observation["scenario"], observation["id"]
-
-
 def _refuse_weaker(operation: str, evidence: list, observation: dict) -> None:
     # No scenario declares its assertion set, and a passing observation records
     # only the assertions it held; a conditional one can drop out (ST19's
-    # refused-while-mounted). The stored row it replaces is the only baseline.
+    # refused-while-mounted). The stored row with its id, which it replaces, is
+    # the only baseline.
     # A refusal stops the whole window's promotion, by the same rule as every
     # other PromotionError.
     held = set(observation["assertions"])
@@ -317,7 +314,7 @@ def _refuse_weaker(operation: str, evidence: list, observation: dict) -> None:
             row["channel"] == "live"
             and row["result"] == "passed"
             and observation["result"] == "passed"
-            and _key(row) == _key(observation)
+            and row["id"] == observation["id"]
             and held < set(row["assertions"])
         ):
             missing = ", ".join(sorted(set(row["assertions"]) - held))
@@ -329,6 +326,24 @@ def _refuse_weaker(operation: str, evidence: list, observation: dict) -> None:
             )
 
 
+def _refuse_superseded_claim(operation: str, evidence: list, claimed: dict) -> None:
+    # Readers take the newest live row by this same key (ADR 0212). Refusing here,
+    # before the branch exists, replaces a late --require-current failure.
+    newest = max(
+        (row for row in evidence if row["channel"] == "live"),
+        key=lambda row: (row["observed_at"], row["id"]),
+    )
+    if (
+        newest["result"] != "passed"
+        or newest["closure_fingerprint"] != claimed["closure_fingerprint"]
+    ):
+        raise PromotionError(
+            f"claimed operation {operation} has a newer live observation "
+            f"{newest['id']} that is not current passed evidence; rerun its scenario "
+            "or retire the row in a reviewed commit"
+        )
+
+
 def _merge(catalog: dict, observations: dict, gaps: list, claims: list) -> None:
     records = {record["operation"]: record for record in catalog["operations"]}
     by_claim = {claim["operation"]: claim for claim in claims}
@@ -338,13 +353,15 @@ def _merge(catalog: dict, observations: dict, gaps: list, claims: list) -> None:
                 "operation needs a reviewed implementation catalog record"
             )
         options = observations.get(operation, [])
-        if operation in by_claim:
-            _select(options, by_claim[operation])
+        claimed = (
+            _select(options, by_claim[operation]) if operation in by_claim else None
+        )
         # Each producer keeps its own row: a window replaces the stored rows whose
         # observation it produced again and leaves every other stored row alone.
-        produced: dict[tuple[str, str], list] = defaultdict(list)
+        # Ids are catalog-wide unique, so an id names one observation and scenario.
+        produced: dict[str, list] = defaultdict(list)
         for arm, value in options:
-            produced[_key(value)].append((arm, value))
+            produced[value["id"]].append((arm, value))
         latest = [_select(produced[key], None) for key in sorted(produced)]
         if operation not in records:
             print(
@@ -356,11 +373,14 @@ def _merge(catalog: dict, observations: dict, gaps: list, claims: list) -> None:
         record = records[operation]
         for observation in latest:
             _refuse_weaker(operation, record["evidence"], observation)
-        record["evidence"] = [
+        evidence = [
             row
             for row in record["evidence"]
-            if row["channel"] != "live" or _key(row) not in produced
+            if row["channel"] != "live" or row["id"] not in produced
         ] + latest
+        if claimed:
+            _refuse_superseded_claim(operation, evidence, claimed)
+        record["evidence"] = evidence
     for operation, scope in gaps:
         if operation not in records:
             raise PromotionError("gap needs a reviewed implementation catalog record")
