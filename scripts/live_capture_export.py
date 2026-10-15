@@ -172,21 +172,49 @@ _SERIAL_ELEMENT = (
 #: `peer_collective_serial_num=` in `lssyscfg -r sys` output (#1637). `\bserial_num` has
 #: no boundary inside any of them to match at, so each is named. A keyword is kept only
 #: as the field's whole value, in its documented case. A value ends at a field separator,
-#: a line feed, a carriage return before one, or the end of the text, `json.dumps`'s
-#: `\n` and `\r` escapes on the same terms; any other carriage return is in the value.
-#: It also ends at a quote, raw or escaped, that one of those follows; a raw quote also
-#: before a JSON `}` or `]`, and `\"` before the quote that closes a JSON string. A quote
-#: with anything else after it is in the value, and the unquoted rule and the backstop
-#: read it so even where the quoted rule kept the keyword before it. The scrub rules
-#: themselves read no escape, so in `json.dumps` text a value runs on over a `\n` and a
-#: quoted field loses the `\` of its closing `\"`, which fails the export as broken JSON:
-#: over-scrubbing, never a leak.
+#: a line feed, a carriage return before one, a closing tag or the end of the text,
+#: `json.dumps`'s `\n` and `\r` escapes on the same terms; any other carriage return is
+#: in the value (#1641). It also ends at a quote, raw or escaped, that one of those
+#: follows; a raw quote also before a JSON `}` or `]`, and `\"` before the quote that
+#: closes a JSON string. A quote with anything else after it is in the value, and the
+#: unquoted rule and the backstop read it so even where the quoted rule kept the keyword
+#: before it. The unquoted rule reads no escape, so in `json.dumps` text a value runs on
+#: over a `\n`: over-scrubbing, never a leak. The quoted rule keeps the backslashes
+#: before its closing quote, so `json.dumps` text stays valid JSON (#1641).
 _KEYWORD_SERIAL_KEY = "(?:virtual|logical|cluster|peer_collective)_serial_num"
 #: The other keys the key=value rules scrub, which keep no keyword.
 _DEVICE_ID_KEY = "(?:unique_id|udid|wwpns?|wwnn|serial_num)"
 _SERIAL_KEPT_RE = "(?-i:none|auto)"
-_VALUE_END = r"(?:[,\n]|\r(?=\n)|\\n|\\r(?=\\n)|$)"
+_VALUE_END = r"(?:[,\n]|\r(?=\n)|</[\w.:-]++>|\\n|\\r(?=\\n)|$)"
 _FIELD_END = rf'(?={_VALUE_END}|"(?:{_VALUE_END}|[}}\]])|\\"(?:{_VALUE_END}|"))'
+#: The token the key=value rules write, in a body or an XML body.
+_KEY_VALUE_TOKEN = "(?:<REDACTED-DEVID>|&lt;REDACTED-DEVID&gt;)"
+#: The backslashes the quoted rule keeps before its closing quote, all but the last:
+#: that one is read as the `\` of an escaped quote or escape, as `_FIELD_END` reads it
+#: (#1641).
+_KEPT_BACKSLASHES = r"(?:\\(?=\\))*+"
+#: A quoted field's closing quote, then a space or tab between fields or XML attributes,
+#: or the end of a tag: the quoted rule scrubbed up to that quote (#1641). The backstops
+#: scan `json.dumps` text, where a quote inside a string is `\"` and a raw one opens or
+#: closes the string, so both quotes must be escaped: a field at the start of a string
+#: has no quote of its own. Any other text after the quote is read as part of the value,
+#: and so is the quote after a kept backslash: that one was in the value.
+_QUOTE_END = r'\\"(?: |\\t|/?>|\?>)'
+
+
+def _key_value_leak(start: str, key: str, kept: str = "") -> re.Pattern[str]:
+    """A *key* value the key=value rules missed, quoted too, after *start*.
+
+    The token they write passes before a field end, and before a `_QUOTE_END` when an
+    escaped quote opened the field; so does a *kept* keyword before a field end.
+    """
+    keyword = f"|{kept}{_FIELD_END}" if kept else ""
+    field_end = rf"(?:{_KEPT_BACKSLASHES}{_FIELD_END}|{_QUOTE_END})"
+    quoted = rf"(?!{_KEY_VALUE_TOKEN}{field_end}{keyword})"
+    unquoted = rf"(?!{_KEY_VALUE_TOKEN}{_KEPT_BACKSLASHES}{_FIELD_END}{keyword})"
+    return re.compile(
+        rf'(?i){start}(?:(?<=\\"){key}={quoted}|(?<!\\"){key}={unquoted})"?[^,\n"]+'
+    )
 
 
 def _element_rule(
@@ -405,18 +433,20 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     # and other short logical-unit segments stay.
     (re.compile(r"(?<=-)L[0-9A-F]{8,}(?=-L|\b)"), "L<REDACTED-DEVID>"),
     _element_rule(*_DEVICE_ID_ELEMENT),
-    # A quoted CSV field holds every value up to its closing quote: "wwpns=a,b".
+    # A quoted CSV field holds every value up to its closing quote: "wwpns=a,b". The
+    # backslashes before that quote stay, so `json.dumps`'s `\"` keeps its escape and an
+    # escaped backslash its pair. Each run is read once, possessively.
     (
         re.compile(
             rf'(?i)"({_DEVICE_ID_KEY}|{_KEYWORD_SERIAL_KEY}'
-            rf'(?!={_SERIAL_KEPT_RE}\\?"))=[^"\n]*"'
+            rf'(?!={_SERIAL_KEPT_RE}\\?"))=(?:[^"\n\\]++|\\++(?!"))*+(\\*+)"'
         ),
-        r'"\g<1>=<REDACTED-DEVID>"',
+        r'"\g<1>=<REDACTED-DEVID>\g<2>"',
     ),
     (
         re.compile(
             rf"(?i){_KEY_START}({_DEVICE_ID_KEY}|{_KEYWORD_SERIAL_KEY}"
-            rf"(?!={_SERIAL_KEPT_RE}{_FIELD_END}))=[^,\n\"]+"
+            rf"(?!={_SERIAL_KEPT_RE}{_FIELD_END}))=(?:[^,\n\r\"<]++|\r(?!\n))++"
         ),
         r"\g<1>=<REDACTED-DEVID>",
     ),
@@ -464,19 +494,11 @@ ALWAYS_LEAKS = (
         )
     ),
     _MAC_LEAK,
-    # A device id or serial the key=value rules missed, quoted too, where they start.
-    re.compile(
-        rf"(?i){_KEY_START}{_DEVICE_ID_KEY}="
-        rf"(?!(?:<REDACTED-DEVID>|&lt;REDACTED-DEVID&gt;){_FIELD_END})"
-        r'"?[^,\n"]+'
-    ),
-    # A keyword-holding serial the key=value rules missed, quoted too: no word boundary
-    # is needed, and `json.dumps` text hides one behind a `\n` escape.
-    re.compile(
-        rf"(?i){_KEYWORD_SERIAL_KEY}="
-        rf"(?!(?:<REDACTED-DEVID>|&lt;REDACTED-DEVID&gt;|{_SERIAL_KEPT_RE}){_FIELD_END})"
-        r'"?[^,\n"]+'
-    ),
+    # A device id or serial the key=value rules missed, where they start.
+    _key_value_leak(_KEY_START, _DEVICE_ID_KEY),
+    # A keyword-holding serial the key=value rules missed: no word boundary is needed,
+    # and `json.dumps` text hides one behind a `\n` escape.
+    _key_value_leak("", _KEYWORD_SERIAL_KEY, _SERIAL_KEPT_RE),
 )
 #: Elements whose values are fixed HMC vocabulary (task names such as `View HMC Logs`).
 #: A candidate name found inside one is HMC wording, never a private name.
