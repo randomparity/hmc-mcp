@@ -184,11 +184,6 @@ _SERIAL_ELEMENT = (
 _KEYWORD_SERIAL_KEY = "(?:virtual|logical|cluster|peer_collective)_serial_num"
 #: The other keys the key=value rules scrub, which keep no keyword.
 _DEVICE_ID_KEY = "(?:unique_id|udid|wwpns?|wwnn|serial_num)"
-#: Where an unquoted key starts: after a non-word character, or after a `json.dumps`
-#: `\n`, `\r` or `\t` escape, whose letter `\b` reads as part of the key (#1638); never
-#: inside a longer key such as `virtual_serial_num`. An escaped backslash before a
-#: literal `n` reads the same: over-scrubbing, never a leak.
-_KEY_START = r"(?:(?<!\w)|(?<=\\(?-i:[nrt])))"
 _SERIAL_KEPT_RE = "(?-i:none|auto)"
 _VALUE_END = r"(?:[,\n]|\r(?=\n)|\\n|\\r(?=\\n)|$)"
 _FIELD_END = rf'(?={_VALUE_END}|"(?:{_VALUE_END}|[}}\]])|\\"(?:{_VALUE_END}|"))'
@@ -245,6 +240,12 @@ _JSON_ESCAPES = (r"\\\\", r"\\[bfnrt]", r"\\u[0-9A-Fa-f]{4}")
 #: A run starts after a JSON escape, as after a separator, but never on the escape's
 #: own letter or digits.
 _AFTER_ESCAPE = "|".join(f"(?<={escape})" for escape in _JSON_ESCAPES)
+#: Where an unquoted key=value key starts: after a non-word character or a JSON escape,
+#: whose letter or digits `\b` reads as part of the key, as in `\nserial_num` (#1638);
+#: never inside a longer key such as `virtual_serial_num`. A literal backslash before
+#: `n` or `u0041` reads the same, and so does an escape of a word character such as
+#: `\u00e9`: over-scrubbing, never a leak.
+_KEY_START = rf"(?:(?<!\w)|{_AFTER_ESCAPE})"
 #: A MAC separator and the hex digit after it.
 _MAC_SEPARATOR = r"[-.:][0-9A-Fa-f]"
 #: The digits after a `\\u` where a separated MAC's first octets stay: fewer than an

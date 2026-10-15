@@ -531,11 +531,16 @@ DEVICE_ID_KEYS = ["unique_id", "udid", "wwpn", "wwpns", "wwnn", "serial_num"]
 
 @pytest.mark.parametrize("key", [*DEVICE_ID_KEYS, *KEYWORD_SERIAL_KEYS])
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
-@pytest.mark.parametrize("separator", ["\n", "\r", "\t"], ids=["lf", "cr", "tab"])
+@pytest.mark.parametrize(
+    "separator",
+    ["\n", "\r", "\t", "\f", "\b", "\x00", "\u2028"],
+    ids=["lf", "cr", "tab", "ff", "bs", "nul", "ls"],
+)
 def test_key_value_field_at_a_line_start_is_scrubbed(
     separator: str, encode: Any, key: str
 ) -> None:
-    """#1638: `\\b` reads the letter of a `json.dumps` `\\n` escape as part of the key."""
+    """#1638: `\\b` reads the letter of a `json.dumps` `\\n` escape as part of the key,
+    and the digits of a `\\u2028` one."""
     tok = export.Tokenizer({}, set())
     body = encode(f"hdr{separator}{key}=SYN0001")
     scrubbed = tok.tokenize(body)
@@ -547,7 +552,7 @@ def test_key_value_field_at_a_line_start_is_scrubbed(
 @pytest.mark.parametrize("key", DEVICE_ID_KEYS)
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
 @pytest.mark.parametrize("separator", ["\n", "\r", "\t"], ids=["lf", "cr", "tab"])
-@pytest.mark.parametrize("prefix", ["x", "ns_", "virtual_"])
+@pytest.mark.parametrize("prefix", ["x", "ns_", "virtual_", "port", "lun"])
 def test_key_value_key_inside_a_longer_key_is_left(
     prefix: str, separator: str, encode: Any, key: str
 ) -> None:
@@ -1249,9 +1254,9 @@ def test_mac_leak_check_after_many_backslash_u_does_not_backtrack() -> None:
 
 
 def test_key_start_after_many_escapes_does_not_backtrack() -> None:
-    """The escape lookbehind reads a fixed two characters, so a key=value rule and its
+    """Each escape lookbehind reads at most six characters, so a key=value rule and its
     backstop cost about what they do with `\\b` alone (#1638)."""
-    body = "\\nserial_nu\\tudi\\rwwpn\\nunique_id\\twwnn " * 5_000
+    body = "\\nserial_nu\\tudi\\u00e9wwpn\\\\unique_id\\fwwnn " * 5_000
     rules = [
         (rule, replacement)
         for rule, replacement in export.IDENTIFIER_RULES
