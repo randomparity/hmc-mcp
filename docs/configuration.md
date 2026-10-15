@@ -191,22 +191,25 @@ HMCs ship self-signed certificates, so TLS verification is off by default and
 `verify_ssl` setting source per process while it stays off. Reusable Python
 consumers can import that category from `hmcpctl.api` and filter it without
 suppressing unrelated `UserWarning`s. To verify the HMC certificate, trust its
-CA through `SSL_CERT_FILE` (see [TLS trust](#tls-trust)) and set
+CA through `HMC_CA_BUNDLE` or `SSL_CERT_FILE` (see [TLS trust](#tls-trust)) and set
 `HMC_VERIFY_SSL=true` (`--verify-ssl`) — otherwise the HMC credentials are at risk of
 man-in-the-middle interception.
 
 ## TLS trust
 
-With `HMC_VERIFY_SSL=true` the client determines what to trust from two sources, in this order:
+With `HMC_VERIFY_SSL=true` the client determines what to trust from three sources, in this order:
 
-1. **`SSL_CERT_FILE`** (or `SSL_CERT_DIR`): when set, the named bundle is used exclusively.
-   `REQUESTS_CA_BUNDLE` and `CURL_CA_BUNDLE` are ignored.
-2. **`HMC_TRUST_SYSTEM_STORE=true`** (the default): when no explicit bundle is set,
-   the operating-system trust store (macOS Keychain, Windows Credential Store, the Linux
-   CA bundle rebuilt by `update-ca-certificates` / `update-ca-trust`) is consulted via
-   the `truststore` library (ADR 0222).
-3. **Bundled `certifi` roots**: when `HMC_TRUST_SYSTEM_STORE=false` and neither `SSL_CERT_FILE`
-   nor `SSL_CERT_DIR` is set, only the CA roots bundled with the HTTP library are trusted.
+1. **`HMC_CA_BUNDLE`** (TOML key `ca_bundle`, CLI `--ca-bundle`): when set, the named PEM file
+   is used exclusively. Takes precedence over `SSL_CERT_FILE`, `SSL_CERT_DIR`, and
+   `HMC_TRUST_SYSTEM_STORE` (ADR 0223).
+2. **`SSL_CERT_FILE`** (or `SSL_CERT_DIR`): when set and `HMC_CA_BUNDLE` is not set, the named
+   bundle is used exclusively. `REQUESTS_CA_BUNDLE` and `CURL_CA_BUNDLE` are ignored.
+3. **`HMC_TRUST_SYSTEM_STORE=true`** (the default): when neither `HMC_CA_BUNDLE` nor an explicit
+   `SSL_CERT_FILE`/`SSL_CERT_DIR` is set, the operating-system trust store (macOS Keychain,
+   Windows Credential Store, the Linux CA bundle rebuilt by `update-ca-certificates` /
+   `update-ca-trust`) is consulted via the `truststore` library (ADR 0222).
+4. **Bundled `certifi` roots**: when `HMC_TRUST_SYSTEM_STORE=false` and none of the above are
+   set, only the CA roots bundled with the HTTP library are trusted.
 
 Set these variables in the environment of the process that runs `hmcpctl`, including the
 launcher of an MCP server. They need no root access and apply to every HMC that process
@@ -251,13 +254,15 @@ next `BEGIN` line, and the file then fails to load with `[X509] PEM lib`:
 
 ```bash
 for f in root-cert-1.pem intermediate-cert-2.pem; do cat "$f"; echo; done > hmc-ca-bundle.pem
-export SSL_CERT_FILE="$PWD/hmc-ca-bundle.pem"
+export HMC_CA_BUNDLE="$PWD/hmc-ca-bundle.pem"
 export HMC_VERIFY_SSL=true
 hmcpctl console info
 ```
 
-`SSL_CERT_FILE` replaces the bundled roots rather than adding to them. To trust a public
-CA as well, include it in the file.
+`HMC_CA_BUNDLE` replaces the bundled roots rather than adding to them. To trust a public
+CA as well, include it in the file. If you prefer not to use `HMC_CA_BUNDLE`, you can also
+set `SSL_CERT_FILE="$PWD/hmc-ca-bundle.pem"` (an environment-only alternative; `HMC_CA_BUNDLE`
+takes precedence when both are set).
 
 ### Reuse the system trust store
 
@@ -342,6 +347,10 @@ mkdir -p ca-dir && cp root-cert-1.pem ca-dir/
 ln -s root-cert-1.pem "ca-dir/$(openssl x509 -in root-cert-1.pem -noout -subject_hash).0"
 export SSL_CERT_DIR="$PWD/ca-dir"
 ```
+
+> **Windows:** `ln -s` and `openssl` are not available in PowerShell or Command Prompt.
+> Use `SSL_CERT_FILE` instead — see the [Windows export steps](#windows) in the section
+> above for how to build a PEM bundle and set `SSL_CERT_FILE`.
 
 A directory holding only unhashed `.pem` files trusts nothing. When both variables are
 set, `SSL_CERT_FILE` is used.

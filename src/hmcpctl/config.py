@@ -170,6 +170,15 @@ class HMCConfig(BaseSettings):
     verify_ssl: bool = Field(
         default=False, description="Verify the HMC TLS certificate"
     )
+    ca_bundle: str | None = Field(
+        default=None,
+        description=(
+            "Path to a PEM file containing the CA certificate(s) to trust for the HMC "
+            "TLS connection (HMC_CA_BUNDLE). When set and verify_ssl is true, this path "
+            "is passed directly to the HTTP client and takes precedence over SSL_CERT_FILE, "
+            "SSL_CERT_DIR, and HMC_TRUST_SYSTEM_STORE. Ignored when verify_ssl is false."
+        ),
+    )
     trust_system_store: bool = Field(
         default=True,
         description=(

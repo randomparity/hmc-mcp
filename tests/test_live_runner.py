@@ -6218,39 +6218,35 @@ async def test_st1_fallback_served_feed_reads_fail_rather_than_promote(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_st1_declared_limitation_is_a_gap_not_an_observation(monkeypatch):
-    state, observed = await _run_st1(
-        monkeypatch,
-        {
-            "hmc_list_systems": ("FAIL", _failure(_ST1_NULL_PROPERTY_500)),
-            "hmc_capacity_report": ("FAIL", _failure(_ST1_NULL_PROPERTY_500)),
-            "hmc_find_placement": ("FAIL", _failure(_ST1_NULL_PROPERTY_500)),
-        },
-    )
-
-    assert {"system.list", "capacity.report", "placement.find"}.isdisjoint(observed)
-    assert {
-        (gap["operation"], gap["missing_scope"]["variant"]) for gap in state.gaps
-    } == {
-        ("system.list", "firmware-inventory-serialization"),
-        ("capacity.report", "firmware-inventory-serialization"),
-        ("placement.find", "firmware-inventory-serialization"),
+async def test_st1_null_property_500_on_a_system_read_fails_closed(monkeypatch):
+    """No reachable system 500s on these reads (#1531), so one that does is a FAIL."""
+    reads = {
+        "hmc_list_systems": "system.list",
+        "hmc_capacity_report": "capacity.report",
+        "hmc_find_placement": "placement.find",
     }
+    dispatched = {}
+    responses = {tool: ("PASS", data) for tool, data in _st1_responses().items()}
+    responses |= {tool: ("FAIL", _failure(_ST1_NULL_PROPERTY_500)) for tool in reads}
+
+    async def scripted_call(_state, _client, tool, *, expected=(), **kwargs):
+        dispatched.setdefault(tool, list(expected))
+        if (
+            tool == "hmc_list_resources"
+            and kwargs["resource_type"] == "LogicalPartition"
+        ):
+            return "PASS", [{"UUID": _ST1_LPAR_UUID}]
+        return responses.get(tool, ("PASS", {}))
+
+    monkeypatch.setattr(runner.RunState, "call", scripted_call)
+    state = runner.RunState()
+    await connectivity.inventory_connectivity(None, state)
+
+    observed = {row["operation"]: row["observation"] for row in state.observations}
+    assert {observed[op]["result"] for op in reads.values()} == {"failed"}
+    assert all(dispatched[tool] == [] for tool in reads)
     rows = {row["tool"]: row["status"] for row in state.results}
-    assert rows["hmc_list_systems"] == "SKIP"
-
-
-@pytest.mark.asyncio
-async def test_st1_invalid_dispatch_is_never_the_declared_limitation(monkeypatch):
-    invalid = observation.CallFailure(
-        "InvalidDispatch", _ST1_NULL_PROPERTY_500, "", None, False
-    )
-
-    state, observed = await _run_st1(
-        monkeypatch, {"hmc_list_systems": ("FAIL", invalid)}
-    )
-
-    assert observed["system.list"]["result"] == "failed"
+    assert {rows[tool] for tool in reads} == {"FAIL"}
     assert not state.gaps
 
 
