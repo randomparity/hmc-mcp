@@ -191,24 +191,25 @@ _FIELD_END = rf'(?={_VALUE_END}|"(?:{_VALUE_END}|[}}\]])|\\"(?:{_VALUE_END}|"))'
 #: the quoted rule keeps before its closing quote, all but the last: that one is read as
 #: the `\` of an escaped quote or escape, as `_FIELD_END` reads it (#1641).
 _KEY_VALUE_TOKEN = r"(?:<REDACTED-DEVID>|&lt;REDACTED-DEVID&gt;)(?:\\(?=\\))*+"
-#: A quoted field's closing quote, raw or escaped, then a space or tab between fields or
-#: XML attributes, or the end of a tag: the quoted rule scrubbed up to that quote
-#: (#1641). The backstops pass the token there only when a quote opened the field; any
-#: other text after the quote is read as part of the value.
-_QUOTE_END = r'\\?"(?:[ \t]|\\t|/?>|\?>)'
+#: A quoted field's closing quote, then a space or tab between fields or XML attributes,
+#: or the end of a tag: the quoted rule scrubbed up to that quote (#1641). The backstops
+#: scan `json.dumps` text, where a quote inside a string is `\"` and a raw one opens or
+#: closes the string, so both quotes must be escaped: a field at the start of a string
+#: has no quote of its own. Any other text after the quote is read as part of the value.
+_QUOTE_END = r'\\"(?: |\\t|/?>|\?>)'
 
 
 def _key_value_leak(start: str, key: str, kept: str = "") -> re.Pattern[str]:
     """A *key* value the key=value rules missed, quoted too, after *start*.
 
-    The token they write passes before a field end, and before a `_QUOTE_END` when a
-    quote opened the field; so does a *kept* keyword before a field end.
+    The token they write passes before a field end, and before a `_QUOTE_END` when an
+    escaped quote opened the field; so does a *kept* keyword before a field end.
     """
     keyword = f"|{kept}{_FIELD_END}" if kept else ""
     quoted = rf"(?!{_KEY_VALUE_TOKEN}(?:{_FIELD_END}|{_QUOTE_END}){keyword})"
     unquoted = rf"(?!{_KEY_VALUE_TOKEN}{_FIELD_END}{keyword})"
     return re.compile(
-        rf'(?i){start}(?:(?<="){key}={quoted}|(?<!"){key}={unquoted})"?[^,\n"]+'
+        rf'(?i){start}(?:(?<=\\"){key}={quoted}|(?<!\\"){key}={unquoted})"?[^,\n"]+'
     )
 
 

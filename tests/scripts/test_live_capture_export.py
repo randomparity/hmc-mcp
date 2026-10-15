@@ -712,6 +712,26 @@ def test_backstop_reports_text_joined_after_a_closing_quote(
 
 
 @pytest.mark.parametrize("key", [*DEVICE_ID_KEYS, *KEYWORD_SERIAL_KEYS])
+@pytest.mark.parametrize(
+    "value", ['SYN0001" SYN0002', 'SYN0001"\tSYN0002', '" SYN0002"']
+)
+@pytest.mark.parametrize("kind", ["ssh", "tool"])
+def test_quote_in_a_field_at_the_start_of_a_string_fails_closed(
+    kind: str, value: str, key: str
+) -> None:
+    """The quote that opens a JSON string opens no field, so the text after a quote in
+    the value is still read as part of it (#1641)."""
+    text = f"{key}={value}"
+    record = (
+        _ssh("lssyscfg -r lpar", text)
+        if kind == "ssh"
+        else {"kind": "tool", "step": "t", "tool": "t", "ok": True, "data": text}
+    )
+    with pytest.raises(export.LeakError):
+        export.tokenize_records(_records(record))
+
+
+@pytest.mark.parametrize("key", [*DEVICE_ID_KEYS, *KEYWORD_SERIAL_KEYS])
 def test_key_value_after_text_in_an_xml_attribute_fails_closed(key: str) -> None:
     """The backstop cannot tell an attribute's closing quote from one in the value, so a
     field that no quote opened fails the export rather than pass the text after it."""
