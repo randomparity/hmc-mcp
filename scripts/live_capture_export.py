@@ -341,21 +341,55 @@ _MAC_LEAK = re.compile(
 )
 
 
-def _ipv6(match: re.Match[str]) -> str:
-    """Redact an IPv6 address, but not a colon-separated HMC record such as `1:0:1:3`.
+#: An IPv6 address, or a colon-separated HMC record `_ipv6` keeps, up to a word boundary.
+_IPV6_CANDIDATE = r"(?:fe80|[0-9a-f]{1,4})(?::[0-9a-f]{0,4}){2,7}\b"
+#: A JSON escape and the candidate directly after it, or a candidate at a word boundary.
+#: The escape is matched first, so a candidate never starts on its letter: the `b` of
+#: `\b0A:1B:...` is not rewritten into the invalid escape `\2001:db8::1` (#1643), and
+#: an address after `\n`, which no word boundary precedes, is still read as one. The
+#: escape may be written after an escaped backslash: `json.dumps` text of a value that
+#: is itself JSON writes the value's `\f` as `\\f`. Backslashes pair off from the left,
+#: so the letter after `\\\\` and the escape after `\\` in `\\\f` are matched too. After
+#: `\b` or `\f` the candidate may open with a colon, as `_ipv6` also reads the letter.
+_IPV6 = re.compile(
+    r"(?i)(?P<escape>\\\\?(?:[bfnrt]|u[0-9a-f]{4})|\\\\)"
+    rf"(?P<address>{_IPV6_CANDIDATE}|(?<=\\[bf])(?::[0-9a-f]{{0,4}}){{2,7}}\b)?"
+    rf"|\b{_IPV6_CANDIDATE}"
+)
+
+
+def _is_ipv6(text: str) -> bool:
+    """Whether *text* is an IPv6 address, not a colon-separated HMC record `1:0:1:3`.
 
     An address has a `::`, a group of three or more digits, a hex letter, or the
     link-local prefix; SR-IOV and slot records are short decimal fields only.
     """
-    text = match.group(0)
-    groups = text.split(":")
-    if (
+    return (
         "::" in text
         or text.lower().startswith("fe80")
-        or any(len(g) >= 3 or re.search("[a-f]", g, re.IGNORECASE) for g in groups)
-    ):
-        return "2001:db8::1"
-    return text
+        or any(
+            len(g) >= 3 or re.search("[a-f]", g, re.IGNORECASE) for g in text.split(":")
+        )
+    )
+
+
+def _ipv6(match: re.Match[str]) -> str:
+    """Redact an IPv6 address, keeping a JSON escape before it.
+
+    The letter of `\\b` or `\\f` is a hex digit, and where the backslash is literal, as
+    in raw XML or `\\\\b` in JSON text, it opens the address: so the candidate is an
+    address when it is one with the letter too. Not when it holds only zeros, as a MAC
+    the MAC rules zeroed does: the letter, kept as it is, is all that is left of it.
+    """
+    escape, text = match.group("escape", "address")
+    if escape is None:
+        escape, text = "", match.group(0)
+    if text is None:
+        return escape
+    hex_letter = escape[-2:].lower() in (r"\b", r"\f") and text.strip("0:")
+    if _is_ipv6(text) or (hex_letter and _is_ipv6(escape[-1] + text)):
+        return escape + "2001:db8::1"
+    return match.group(0)
 
 
 def _email(match: re.Match[str]) -> str:
@@ -478,7 +512,7 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     ),
     (re.compile(r"(?i)\b(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\b"), "00:00:00:00:00:00"),
     (re.compile(r"(?i)(mac_addr=)[0-9a-f]{12}"), r"\g<1>000000000000"),
-    (re.compile(r"(?i)\b(?:fe80|[0-9a-f]{1,4})(?::[0-9a-f]{0,4}){2,7}\b"), _ipv6),
+    (_IPV6, _ipv6),
     # Any other 16-hex token is a WWN: a `disk@<target WWPN>` path, an
     # `AIX-VDASD-<hex>` descriptor. A LUN address (`81` and fourteen zeros) is not.
     (re.compile(_WWN_16), "<REDACTED-DEVID>"),
@@ -540,7 +574,7 @@ class LeakError(ExportError):
 
 
 class BrokenBodyError(ExportError):
-    """Tokenizing turned a body that parsed as XML into one that does not."""
+    """Tokenizing turned XML or JSON text that parsed into text that does not."""
 
 
 # --- collection -------------------------------------------------------------
@@ -861,7 +895,15 @@ def _tokenize_record(tok: Tokenizer, record: dict[str, Any]) -> dict[str, Any]:
             k: v for k, v in record.items() if k not in ("_src", "step", "kind", "t")
         }
         rest = redact_identifier_keys(rest)
-        out["record"] = json.loads(tok.tokenize(json.dumps(rest, default=str)) or "{}")
+        try:
+            out["record"] = json.loads(
+                tok.tokenize(json.dumps(rest, default=str)) or "{}"
+            )
+        except json.JSONDecodeError as exc:
+            raise BrokenBodyError(
+                f"tokenizing broke the JSON of tool record {record['_src']} "
+                f"({exc.msg}); nothing written"
+            ) from exc
     return out
 
 
