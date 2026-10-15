@@ -2063,6 +2063,81 @@ def test_colon_positional_records_are_not_ipv6() -> None:
     assert corpus[-1]["stdout"] == "1:0:1:3:0:5:1\n"
 
 
+#: Colon-separated hex after an escape whose letter is a hex digit, and what the export
+#: writes in its place. The MAC rules zero a MAC element; the IPv6 rule redacts an
+#: address and keeps an HMC record, after the escape either way.
+AFTER_HEX_ESCAPE = [
+    ("<MACAddress>{}</MACAddress>", "0A:1B:2C:3D:4E:5F", "00:00:00:00:00:00"),
+    ("mac {}", "0A:1B:2C:3D:4E:5F", "2001:db8::1"),
+    ("addr {}", "fe80::1:2", "2001:db8::1"),
+    ("slot {}", "1:0:1:3", "1:0:1:3"),
+]
+
+
+@pytest.mark.parametrize("before", ["\b", "\f"])
+@pytest.mark.parametrize(("template", "value", "exported"), AFTER_HEX_ESCAPE)
+def test_ipv6_rule_keeps_a_json_escape_letter_in_a_tool_record(
+    before: str, template: str, value: str, exported: str
+) -> None:
+    """Regression #1643: `\\b0A:1B:...` became the invalid escape `\\2001:db8::1`, and
+    `json.loads` raised. A tool record is tokenized as `json.dumps` text."""
+    raw = template.format(before + value)
+    tool = {"kind": "tool", "step": "t", "tool": "t", "ok": True, "data": {"raw": raw}}
+    corpus = export.tokenize_records(_records(tool))
+    assert corpus[-1]["record"]["data"]["raw"] == template.format(before + exported)
+
+
+@pytest.mark.parametrize("before", ["\b", "\f"])
+@pytest.mark.parametrize(("template", "value", "exported"), AFTER_HEX_ESCAPE[1:])
+def test_ipv6_rule_keeps_an_escape_letter_in_json_text(
+    before: str, template: str, value: str, exported: str
+) -> None:
+    """A REST body that is JSON holds the escape `\\b`; a tool record value that is JSON
+    is written again by the export, as `\\\\b`. A MAC element in either fails closed,
+    as the leak scan reads the letter as a digit."""
+    raw = json.dumps(template.format(before + value))
+    tool = {"kind": "tool", "step": "t", "tool": "t", "ok": True, "data": {"raw": raw}}
+    corpus = export.tokenize_records(_records(_rest("/e", raw), tool))
+    expected = json.dumps(template.format(before + exported))
+    assert corpus[-2]["body"] == expected
+    assert corpus[-1]["record"]["data"]["raw"] == expected
+
+
+@pytest.mark.parametrize("before", ["\n", "\t", "\\\b"])
+def test_ipv6_address_after_a_json_escape_is_redacted(before: str) -> None:
+    """No word boundary follows the `n` of `\\n`, so the address after it was kept."""
+    raw = f"addr {before}fe80::1:2"
+    tool = {"kind": "tool", "step": "t", "tool": "t", "ok": True, "data": {"raw": raw}}
+    corpus = export.tokenize_records(_records(_rest("/e", json.dumps(raw)), tool))
+    assert corpus[-2]["body"] == json.dumps(f"addr {before}2001:db8::1")
+    assert corpus[-1]["record"]["data"]["raw"] == f"addr {before}2001:db8::1"
+
+
+def test_ipv6_rule_after_many_escapes_does_not_backtrack() -> None:
+    """Each escape is matched once, with at most one bounded candidate after it."""
+    body = "\\n1:0:1:3:0:5:1:2:0:1 \\t0:1 \\\\1:2:3 \\u00e9x " * 5_000
+    pattern = export._IPV6_CANDIDATE
+    without = re.compile(rf"(?i)(?P<escape>(?!))(?P<address>{pattern})?|\b{pattern}")
+    assert _cost_ratio(export._IPV6, without, export._ipv6, body) < 10
+
+
+def test_tool_record_the_rules_turn_into_invalid_json_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rule that breaks a JSON escape fails with the record named, not a traceback."""
+    rules = ((re.compile(r"\\n"), r"\\q"), *export.IDENTIFIER_RULES)
+    monkeypatch.setattr(export, "IDENTIFIER_RULES", rules)
+    tool = {
+        "kind": "tool",
+        "step": "t",
+        "tool": "t",
+        "ok": True,
+        "data": {"raw": "a\n"},
+    }
+    with pytest.raises(export.BrokenBodyError, match=r"tool record cap\.jsonl#5"):
+        export.tokenize_records(_records(tool))
+
+
 def test_replacements_never_put_a_digit_after_a_group_reference() -> None:
     """Regression: `\\1000000000000` is an octal escape and ate the <MACAddress> tag."""
     for _, replacement in (*export.SECRET_RULES, *export.IDENTIFIER_RULES):
