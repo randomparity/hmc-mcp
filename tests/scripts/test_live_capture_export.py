@@ -1170,15 +1170,13 @@ def test_mac_element_the_rule_misses_fails_closed(body: str) -> None:
         export.tokenize_records(_records(_rest("/e", body)))
 
 
-#: Values joined to a word the rule does not zero: a `0x`, a suffix, a suffix after a
-#: JSON escape, and a literal `\\u`, which JSON writes as `\\\\u`.
+#: Values joined to a word the rule does not zero: a `0x`, a suffix, and a suffix after
+#: a JSON escape.
 JOINED_MAC = [
     f"0x{MAC}",
     f"{MAC}h",
     f"\f{MAC}h",
     f"\u00e9{MAC}h",
-    f"\\u{MAC}",
-    f"\\\\u{MAC}",
 ]
 
 
@@ -1320,6 +1318,127 @@ def test_octets_surviving_a_literal_backslash_u_are_a_leak(
     tok = export.Tokenizer({}, set())
     body = encode(f"<MACAddress>{value}</MACAddress>")
     assert tok.leaks(body) == [body[body.index(">") + 1 : body.index("</")]]
+
+
+#: A literal `\\u` before four MAC digits and a space, comma, slash or tab, or at the end
+#: of the value, and before five or more, with what a REST body and a tool record
+#: export. JSON text writes the `\\u` as `\\\\u`, so a tool record zeroes the digits; a
+#: REST body keeps four, read as an escape, so it fails closed (#1642). Five or more are
+#: zeroed in both, and so are digits after two literal backslashes.
+LITERAL_U_DIGITS = [
+    ("\\u0A1B 2C3D 4E5F", None, "\\u0000 0000 0000"),
+    ("\\u0a1b,2c3d,4e5f", None, "\\u0000,0000,0000"),
+    ("\\u0A1B/2C3D/4E5F", None, "\\u0000/0000/0000"),
+    ("\\u0A1B\t2C3D\t4E5F", None, "\\u0000\t0000\t0000"),
+    ("2C3D 4E5F \\u0A1B", None, "0000 0000 \\u0000"),
+    ("\\u0A1B2 C3D4E5F", "\\u00300 0000000", "\\u00000 0000000"),
+    ("\\u0A1B2C 3D4E5F", "\\u003000 000000", "\\u000000 000000"),
+    (f"\\u{MAC}", "\\u003000000000", "\\u000000000000"),
+    ("\\\\u0A1B2C 3D4E5F", "\\\\u000000 000000", "\\\\u000000 000000"),
+    (f"\\\\u{MAC}", "\\\\u000000000000", "\\\\u000000000000"),
+]
+
+
+@pytest.mark.parametrize(("value", "rest", "tool"), LITERAL_U_DIGITS)
+def test_mac_digits_after_a_literal_backslash_u_are_zeroed_or_fail_closed(
+    value: str, rest: str | None, tool: str
+) -> None:
+    """Regression #1642: a REST body exported `\\u0A1B 0000 0000` with no leak reported,
+    and a tool record refused five or more digits that a REST body zeroed."""
+    raw = f"<MACAddress>{value}</MACAddress>"
+    record = {
+        "kind": "tool",
+        "step": "t",
+        "tool": "t",
+        "ok": True,
+        "data": {"raw": raw},
+    }
+    corpus = export.tokenize_records(_records(record))
+    assert corpus[-1]["record"]["data"]["raw"] == f"<MACAddress>{tool}</MACAddress>"
+    if rest is None:
+        with pytest.raises(export.LeakError):
+            export.tokenize_records(_records(_rest("/e", raw)))
+    else:
+        corpus = export.tokenize_records(_records(_rest("/e", raw)))
+        assert corpus[-1]["body"] == f"<MACAddress>{rest}</MACAddress>"
+
+
+#: What main exported for #1642's REST values, as JSON text holds them: the literal `\\u`
+#: is `\\\\u`. Raw, and again in `json.dumps` form, an even count of backslashes is
+#: before the `u`, so it is literal.
+LITERAL_U_LEAKS = [
+    "\\\\u0A1B 0000 0000",
+    "\\\\u0a1b,0000,0000",
+    "\\\\u0A1B/0000/0000",
+    "\\\\u0A1B\\t0000\\t0000",
+    "0000 0000 \\\\u0A1B",
+    "\\\\u000b",
+]
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("value", LITERAL_U_LEAKS)
+def test_digits_after_an_escaped_backslash_u_are_a_leak(
+    encode: Any, value: str
+) -> None:
+    tok = export.Tokenizer({}, set())
+    body = encode(f"<MACAddress>{value}</MACAddress>")
+    assert tok.leaks(body) == [body[body.index(">") + 1 : body.index("</")]]
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize(
+    "value", ["\\\\u0030 0000", "\\\\u003000 00", "\\\\u0000 0000", "\\\\u0A1Bx"]
+)
+def test_escaped_backslash_u_the_rule_writes_is_not_a_leak(
+    encode: Any, value: str
+) -> None:
+    """The `0030` and zeros the rule writes, and digits joined to a word, as elsewhere."""
+    tok = export.Tokenizer({}, set())
+    body = encode(f"<MACAddress>{value}</MACAddress>")
+    assert tok.leaks(body) == []
+
+
+@pytest.mark.parametrize(
+    ("value", "tool"),
+    [
+        ("\\fa1b.2c3d.4e5f", "\\0000.0000.0000"),
+        ("\\ba-1b-2c-3d-4e-5f", "\\00-00-00-00-00-00"),
+        ("\\fA1B2C3D4E5F", "\\000000000000"),
+    ],
+)
+def test_mac_digit_read_as_a_literal_escape_letter_fails_closed(
+    value: str, tool: str
+) -> None:
+    """A REST body keeps the `f` of a literal `\\fa1b` as an escape's letter; JSON text
+    writes it after `\\\\`, where `_AFTER_ESCAPE` starts a run. A tool record zeroes it."""
+    raw = f"<MACAddress>{value}</MACAddress>"
+    record = {
+        "kind": "tool",
+        "step": "t",
+        "tool": "t",
+        "ok": True,
+        "data": {"raw": raw},
+    }
+    corpus = export.tokenize_records(_records(record))
+    assert corpus[-1]["record"]["data"]["raw"] == f"<MACAddress>{tool}</MACAddress>"
+    with pytest.raises(export.LeakError):
+        export.tokenize_records(_records(_rest("/e", raw)))
+
+
+@pytest.mark.parametrize("value", ["ਛ 0000", "\\ਛ 0000", "\\\\ਛ 0000"])
+def test_real_escape_after_escaped_backslashes_is_not_a_leak(value: str) -> None:
+    """JSON text writes `ਛ` as the escape `\\u0a1b`, after any escaped backslashes: an odd
+    count before the `u`, so it keeps today's handling."""
+    tok = export.Tokenizer({}, set())
+    assert tok.leaks(json.dumps(f"<MACAddress>{value}</MACAddress>")) == []
+
+
+def test_mac_after_a_non_ascii_character_and_a_space_is_kept() -> None:
+    """`ਛ` is written as the escape `\\u0a1b` in the export, one backslash: not a MAC."""
+    body = "<Adapter><MACAddress>\u0a1b 2C3D 4E5F</MACAddress></Adapter>"
+    corpus = export.tokenize_records(_records(_rest("/e", body)))
+    assert corpus[-1]["body"] == body.replace("2C3D 4E5F", "0000 0000")
 
 
 #: Separated MACs with an octet joined to a word character, and the export: a run that
@@ -1485,6 +1604,15 @@ def test_mac_leak_check_after_many_backslash_u_does_not_backtrack() -> None:
     without = re.compile(
         export._MAC_LEAK.pattern.replace(export._AFTER_LITERAL_U, "(?!)")
     )
+    assert without.pattern != export._MAC_LEAK.pattern
+    assert _cost_ratio(export._MAC_LEAK, without, "", body) < 10
+
+
+def test_mac_leak_check_after_long_backslash_runs_does_not_backtrack() -> None:
+    """The literal `\\u` check matches a backslash run from its first backslash only, so
+    a long run costs about what the check without it does (#1642)."""
+    body = "<MACAddress>" + ("\\" * 5_000 + "u0A1Bx ") * 20 + "</MACAddress>"
+    without = re.compile(export._MAC_LEAK.pattern.replace(export._LITERAL_U, "(?!)"))
     assert without.pattern != export._MAC_LEAK.pattern
     assert _cost_ratio(export._MAC_LEAK, without, "", body) < 10
 

@@ -279,13 +279,22 @@ _MAC_SEPARATOR = r"[-.:][0-9A-Fa-f]"
 #: The digits after a `\\u` where a separated MAC's first octets stay: fewer than an
 #: escape holds, or four before a separator that are not the `0030` or `0000` the MAC
 #: element rule writes there. Each check reads at most six characters ahead. Four
-#: digits before any other separator, or at the end of the value, stay: they read as an
-#: escape such as `\\u00e9`. In a REST body, a non-ASCII character before a separator
-#: and a hex digit is a leak, as the export writes it as such an escape.
+#: digits before any other separator, or at the end of the value, are a leak only after
+#: `_LITERAL_U`: elsewhere they read as an escape such as `\\u00e9`. In a REST body, a
+#: non-ASCII character before a separator and a hex digit is a leak, as the export
+#: writes it as such an escape.
 _AFTER_LITERAL_U = (
     r"(?<=\\u)(?:(?=[0-9A-Fa-f]{1,3}(?![0-9A-Za-z]))0*+[1-9A-Fa-f]"
     rf"|(?!00[03]0)(?=[0-9A-Fa-f]{{4}}{_MAC_SEPARATOR}))"
 )
+#: A `u` after an even count of backslashes in JSON text, where each pair is one escaped
+#: backslash, so the `u` is literal: the MAC element rule reads raw XML's `\\u0A1B` as an
+#: escape and keeps its digits before a space, comma, slash or tab, or at the end of the
+#: value (#1642). Digits with a non-zero one that no ASCII letter or digit follows are a
+#: leak, unless they are the `0030` the rule writes. A literal `\\f` or `\\b` needs no
+#: such branch: `_AFTER_ESCAPE` starts a run after any `\\\\`. The backslashes are
+#: matched from the first, so a run of them is scanned once.
+_LITERAL_U = r"(?<!\\)(?:\\\\)++u(?!00[03]0)0*+[1-9A-Fa-f][0-9A-Fa-f]*+(?![0-9A-Za-z])"
 #: A whole hex run directly before a MAC separator and hex, or directly after hex and a
 #: separator: an octet, even when a word character adjoins its other end, as in
 #: `G0A:1B` or `:5FG` (#1640). A word character between the run and the separator, as
@@ -307,12 +316,12 @@ _LIVE_JOINED_OCTET = (
 #: `0x0A1B2C3D4E5F` or after a JSON escape, which `\b` reads as part of the value's
 #: word. A shorter run inside a word, such as the `A` of `ALL`, is not one. Both err
 #: towards failing closed: `TYPE_A` and a hex-letter word such as `FEEDBACK` count.
-#: So do the first octets of a separated MAC after a `\\u` (#1622), and a joined octet
-#: (#1640).
+#: So do the first octets of a separated MAC after a `\\u` (#1622), a joined octet
+#: (#1640), and the digits after a literal `\\u` (#1642).
 _LIVE_HEX_RUN = (
     rf"(?:(?:(?<![0-9A-Za-z\\])|{_AFTER_ESCAPE})0*+[1-9A-Fa-f][0-9A-Fa-f]*+(?![0-9A-Za-z])"
     rf"|(?:(?<![0-9A-Fa-f\\])(?<!\\u)|{_AFTER_ESCAPE})(?=[0-9A-Fa-f]{{6}})0*+[1-9A-Fa-f]"
-    rf"|{_LIVE_JOINED_OCTET}|{_AFTER_LITERAL_U})"
+    rf"|{_LIVE_JOINED_OCTET}|{_AFTER_LITERAL_U}|{_LITERAL_U})"
 )
 #: Text that ends at a closing MAC element tag and still holds a live hex run, or a CDATA
 #: section there, whitespace aside. Found as `_element_leak` finds a value, so a malformed
@@ -359,12 +368,13 @@ def _email(match: re.Match[str]) -> str:
 #: literal `\\u` before a MAC. A surrogate pair is one escape, so replacing the digits
 #: of its low half never strands the high one. An escape before a MAC separator takes an
 #: empty run, so its digits are zeroed: in raw XML they are a separated MAC's first
-#: octets. So are up to four digits after a `\\u` the scan did not match as an escape
-#: (#1622). So is a joined octet (#1640).
+#: octets. So are the digits after a `\\u` the scan did not match as an escape (#1622),
+#: however many: in JSON text five or more are the MAC's, as the escape and the run
+#: after it are in raw XML (#1642). So is a joined octet (#1640).
 _MAC_ELEMENT_RUN = re.compile(
     r"(?P<escape>\\u[dD][89abAB][0-9A-Fa-f]{2}\\u[dD][c-fC-F][0-9A-Fa-f]{2}"
     rf"|{'|'.join(_JSON_ESCAPES)})(?P<run>[0-9A-Fa-f]+\b|(?={_MAC_SEPARATOR}))?"
-    r"|(?<=\\u)[0-9A-Fa-f]{1,4}\b|\b[0-9A-Fa-f]+\b"
+    r"|(?<=\\u)[0-9A-Fa-f]+\b|\b[0-9A-Fa-f]+\b"
     rf"|{_JOINED_OCTET}"
 )
 _ESCAPE_DIGITS = re.compile(r"(?<=\\u)[0-9A-Fa-f]{4}")
