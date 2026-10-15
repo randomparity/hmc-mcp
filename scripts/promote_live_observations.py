@@ -301,10 +301,14 @@ def _select(options: list[tuple[str, dict]], claim: dict | None) -> dict:
     return chosen[0]
 
 
+def _key(observation: dict) -> tuple[str, str]:
+    return observation["scenario"], observation["id"]
+
+
 def _refuse_weaker(operation: str, evidence: list, observation: dict) -> None:
     # No scenario declares its assertion set, and a passing observation records
     # only the assertions it held; a conditional one can drop out (ST19's
-    # refused-while-mounted). The evidence being replaced is the only baseline.
+    # refused-while-mounted). The stored row it replaces is the only baseline.
     # A refusal stops the whole window's promotion, by the same rule as every
     # other PromotionError.
     held = set(observation["assertions"])
@@ -313,7 +317,7 @@ def _refuse_weaker(operation: str, evidence: list, observation: dict) -> None:
             row["channel"] == "live"
             and row["result"] == "passed"
             and observation["result"] == "passed"
-            and row["scenario"] == observation["scenario"]
+            and _key(row) == _key(observation)
             and held < set(row["assertions"])
         ):
             missing = ", ".join(sorted(set(row["assertions"]) - held))
@@ -333,7 +337,15 @@ def _merge(catalog: dict, observations: dict, gaps: list, claims: list) -> None:
             raise PromotionError(
                 "operation needs a reviewed implementation catalog record"
             )
-        observation = _select(observations.get(operation, []), by_claim.get(operation))
+        options = observations.get(operation, [])
+        if operation in by_claim:
+            _select(options, by_claim[operation])
+        # Each producer keeps its own row: a window replaces the stored rows whose
+        # observation it produced again and leaves every other stored row alone.
+        produced: dict[tuple[str, str], list] = defaultdict(list)
+        for arm, value in options:
+            produced[_key(value)].append((arm, value))
+        latest = [_select(produced[key], None) for key in sorted(produced)]
         if operation not in records:
             print(
                 "promotion: omitted unclaimed observation for uncatalogued operation "
@@ -342,10 +354,13 @@ def _merge(catalog: dict, observations: dict, gaps: list, claims: list) -> None:
             )
             continue
         record = records[operation]
-        _refuse_weaker(operation, record["evidence"], observation)
+        for observation in latest:
+            _refuse_weaker(operation, record["evidence"], observation)
         record["evidence"] = [
-            row for row in record["evidence"] if row["channel"] != "live"
-        ] + [observation]
+            row
+            for row in record["evidence"]
+            if row["channel"] != "live" or _key(row) not in produced
+        ] + latest
     for operation, scope in gaps:
         if operation not in records:
             raise PromotionError("gap needs a reviewed implementation catalog record")
