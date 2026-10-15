@@ -182,6 +182,8 @@ _SERIAL_ELEMENT = (
 #: quoted field loses the `\` of its closing `\"`, which fails the export as broken JSON:
 #: over-scrubbing, never a leak.
 _KEYWORD_SERIAL_KEY = "(?:virtual|logical|cluster|peer_collective)_serial_num"
+#: The other keys the key=value rules scrub, which keep no keyword.
+_DEVICE_ID_KEY = "(?:unique_id|udid|wwpns?|wwnn|serial_num)"
 _SERIAL_KEPT_RE = "(?-i:none|auto)"
 _VALUE_END = r"(?:[,\n]|\r(?=\n)|\\n|\\r(?=\\n)|$)"
 _FIELD_END = rf'(?={_VALUE_END}|"(?:{_VALUE_END}|[}}\]])|\\"(?:{_VALUE_END}|"))'
@@ -238,6 +240,12 @@ _JSON_ESCAPES = (r"\\\\", r"\\[bfnrt]", r"\\u[0-9A-Fa-f]{4}")
 #: A run starts after a JSON escape, as after a separator, but never on the escape's
 #: own letter or digits.
 _AFTER_ESCAPE = "|".join(f"(?<={escape})" for escape in _JSON_ESCAPES)
+#: Where an unquoted key=value key starts: after a non-word character or a JSON escape,
+#: whose letter or digits `\b` reads as part of the key, as in `\nserial_num` (#1638);
+#: never inside a longer key such as `virtual_serial_num`. A literal backslash before
+#: `n` or `u0041` reads the same, and so does an escape of a word character such as
+#: `\u00e9`: over-scrubbing, never a leak.
+_KEY_START = rf"(?:(?<!\w)|{_AFTER_ESCAPE})"
 #: A MAC separator and the hex digit after it.
 _MAC_SEPARATOR = r"[-.:][0-9A-Fa-f]"
 #: The digits after a `\\u` where a separated MAC's first octets stay: fewer than an
@@ -382,14 +390,14 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     # A quoted CSV field holds every value up to its closing quote: "wwpns=a,b".
     (
         re.compile(
-            rf'(?i)"(unique_id|udid|wwpns?|wwnn|serial_num|{_KEYWORD_SERIAL_KEY}'
+            rf'(?i)"({_DEVICE_ID_KEY}|{_KEYWORD_SERIAL_KEY}'
             rf'(?!={_SERIAL_KEPT_RE}\\?"))=[^"\n]*"'
         ),
         r'"\g<1>=<REDACTED-DEVID>"',
     ),
     (
         re.compile(
-            rf"(?i)\b(unique_id|udid|wwpns?|wwnn|serial_num|{_KEYWORD_SERIAL_KEY}"
+            rf"(?i){_KEY_START}({_DEVICE_ID_KEY}|{_KEYWORD_SERIAL_KEY}"
             rf"(?!={_SERIAL_KEPT_RE}{_FIELD_END}))=[^,\n\"]+"
         ),
         r"\g<1>=<REDACTED-DEVID>",
@@ -438,6 +446,12 @@ ALWAYS_LEAKS = (
         )
     ),
     _MAC_LEAK,
+    # A device id or serial the key=value rules missed, quoted too, where they start.
+    re.compile(
+        rf"(?i){_KEY_START}{_DEVICE_ID_KEY}="
+        rf"(?!(?:<REDACTED-DEVID>|&lt;REDACTED-DEVID&gt;){_FIELD_END})"
+        r'"?[^,\n"]+'
+    ),
     # A keyword-holding serial the key=value rules missed, quoted too: no word boundary
     # is needed, and `json.dumps` text hides one behind a `\n` escape.
     re.compile(
