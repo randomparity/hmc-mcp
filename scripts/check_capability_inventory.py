@@ -997,9 +997,13 @@ def derive_states(
                 "unevidenced", implementation=implementation_state
             )
             continue
-        # An operation carries at most one live observation, because re-validation
-        # replaces it; ordering by time keeps a hand-edited catalog deterministic.
-        latest = max(observations, key=lambda item: str(item.get("observed_at")))
+        # An operation keeps one live row per producing observation (ADR 0212).
+        # The newest row decides its state, ordered by the key promotion selects
+        # with, so a timestamp tie between producers resolves the same way.
+        latest = max(
+            observations,
+            key=lambda item: (str(item.get("observed_at")), str(item.get("id"))),
+        )
         key = (repo_root, _handler_module(tool.handler))
         if key not in fingerprints:
             fingerprints[key] = closure_fingerprint(*key)
