@@ -378,7 +378,7 @@ KEYWORD_SERIAL_KEYS = [
     "peer_collective_serial_num",
 ]
 #: `lssyscfg` fields around such a serial, unquoted and as a quoted CSV field.
-VIRTUAL_SERIAL_FIELDS = [
+KEYWORD_SERIAL_FIELDS = [
     "name=lpar-A1,{key}={value},serial_num=<REDACTED-DEVID>",
     'name=lpar-A1,"{key}={value}",state=Running',
     "name=lpar-A1,{key}={value}\nname=lpar-A2",
@@ -392,12 +392,12 @@ def _serial_fields(fields: str, key: str, value: str) -> str:
 
 @pytest.mark.parametrize("key", KEYWORD_SERIAL_KEYS)
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
-@pytest.mark.parametrize("fields", VIRTUAL_SERIAL_FIELDS)
+@pytest.mark.parametrize("fields", KEYWORD_SERIAL_FIELDS)
 @pytest.mark.parametrize("value", ["SYN0001", "None", "nonesuch", "autoSYN0001"])
-def test_virtual_serial_field_is_scrubbed(
+def test_keyword_serial_field_is_scrubbed(
     value: str, fields: str, encode: Any, key: str
 ) -> None:
-    """#1618: `\\bserial_num` has no boundary inside `virtual_serial_num` to match at."""
+    """#1618, #1637: `\\bserial_num` has no boundary inside these keys to match at."""
     tok = export.Tokenizer({}, set())
     body = encode(_serial_fields(fields, key, value))
     scrubbed = tok.tokenize(body)
@@ -413,16 +413,16 @@ def test_virtual_serial_field_is_scrubbed(
 @pytest.mark.parametrize(
     "fields",
     [
-        *VIRTUAL_SERIAL_FIELDS,
+        *KEYWORD_SERIAL_FIELDS,
         "{key}={value}",
         "x=1,{key}={value}\r\nx=1",
     ],
 )
 @pytest.mark.parametrize("keyword", ["none", "auto"])
-def test_virtual_serial_keyword_is_kept_as_evidence(
+def test_keyword_serial_keyword_is_kept_as_evidence(
     keyword: str, fields: str, encode: Any, key: str
 ) -> None:
-    """`none` and `auto` stand in for a virtual serial, as in `VirtualSerialNumber`."""
+    """`none` and `auto` stand in for a serial, as in `VirtualSerialNumber`."""
     tok = export.Tokenizer({}, set())
     body = encode(_serial_fields(fields, key, keyword))
     assert tok.tokenize(body) == body
@@ -438,7 +438,7 @@ def test_virtual_serial_keyword_is_kept_as_evidence(
         "{key}=auto\\SYN0001",
     ],
 )
-def test_virtual_serial_keyword_is_kept_only_as_the_whole_value(
+def test_keyword_serial_keyword_is_kept_only_as_the_whole_value(
     body: str, key: str
 ) -> None:
     """A quoted field runs to its closing quote; anything after a keyword is a serial."""
@@ -455,7 +455,7 @@ def test_virtual_serial_keyword_is_kept_only_as_the_whole_value(
         '"{key}=auto"SYN0001"',
     ],
 )
-def test_virtual_serial_keyword_before_a_quote_in_the_value_fails_closed(
+def test_keyword_serial_keyword_before_a_quote_in_the_value_fails_closed(
     body: str, key: str
 ) -> None:
     """A quote ends a value only where a field ends; the backstop sees what follows."""
@@ -475,7 +475,7 @@ def test_virtual_serial_keyword_before_a_quote_in_the_value_fails_closed(
         ("SYN0001", "<REDACTED-DEVID>"),
     ],
 )
-def test_virtual_serial_last_in_a_json_object_or_array_exports(
+def test_keyword_serial_last_in_a_json_object_or_array_exports(
     value: str, written: str, wrap: Any, key: str
 ) -> None:
     """The scanned corpus closes such a string with `"}` or `"]`, not with a separator."""
@@ -497,7 +497,7 @@ def test_virtual_serial_last_in_a_json_object_or_array_exports(
         '{key}="SYN0001"',
     ],
 )
-def test_virtual_serial_backstop_reports_a_value_the_rules_missed(
+def test_keyword_serial_backstop_reports_a_value_the_rules_missed(
     text: str, key: str
 ) -> None:
     """The backstop needs no word boundary, which `json.dumps` text hides behind `\\n`."""
@@ -516,7 +516,7 @@ def test_virtual_serial_backstop_reports_a_value_the_rules_missed(
         'x,"{key}=",y',
     ],
 )
-def test_virtual_serial_backstop_passes_the_token(text: str, key: str) -> None:
+def test_keyword_serial_backstop_passes_the_token(text: str, key: str) -> None:
     """What the rules write, in a body or an XML body, and an empty value, are no leak."""
     assert export.Tokenizer({}, set()).leaks(text.format(key=key)) == []
 

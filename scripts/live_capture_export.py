@@ -171,9 +171,9 @@ _SERIAL_ELEMENT = (
 #: lpar` output (#1618), as do `logical_serial_num=` there and `cluster_serial_num=` and
 #: `peer_collective_serial_num=` in `lssyscfg -r sys` output (#1637). `\bserial_num` has
 #: no boundary inside any of them to match at, so each is named. A keyword is kept only
-#: as the field's whole value, in its documented case. A value ends at a field separator, a line end or the end of the
-#: text, `json.dumps`'s `\n` and `\r` escapes included, or at a quote, raw or escaped,
-#: that one of those follows; a raw quote also before a JSON `}` or `]`, and `\"` before
+#: as the field's whole value, in its documented case. A value ends at a field separator,
+#: a line end or the end of the text, `json.dumps`'s `\n` and `\r` escapes included, or
+#: at a quote, raw or escaped, that one of those follows; a raw quote also before a JSON `}` or `]`, and `\"` before
 #: the quote that closes a JSON string. A quote with anything else after it is in the
 #: value, and the unquoted rule and the backstop read it so even where the quoted rule
 #: kept the keyword before it. The scrub rules themselves read no escape, so in
