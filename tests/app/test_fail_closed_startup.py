@@ -46,6 +46,7 @@ from pathlib import Path
 
 import pytest
 import typer
+from rendered_output import collapse_whitespace
 from typer.testing import CliRunner
 
 from hmcpctl import server as server_module
@@ -97,14 +98,8 @@ def _unstyle(text: str) -> str:
 
 
 def _plain(text: str) -> str:
-    """The rendered words alone, so a phrase matches wherever Rich wrapped it (#1621).
-
-    Rich breaks a line wherever the console width falls, and a message carrying a
-    temporary path can put that break inside any phrase after it. Only breaks at
-    whitespace are rejoined: a word wider than the console is folded mid-word, and the
-    joined pieces no longer match.
-    """
-    return " ".join(_unstyle(text).split())
+    """The rendered words alone, unstyled and rejoined across Rich's wraps (#1621)."""
+    return collapse_whitespace(_unstyle(text))
 
 
 def _console_script(*, proof: str) -> str:
