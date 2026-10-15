@@ -56,7 +56,7 @@ import logging
 import math
 import os
 import shlex
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from types import TracebackType
 from typing import Any, Literal, Self, TypeVar
@@ -381,12 +381,18 @@ async def _collect_output(
     duration_seconds: float,
     max_bytes: int,
     idle_timeout_seconds: float,
+    on_chunk: Callable[[bytes], None] | None = None,
 ) -> tuple[bytes, StopReason, str | None]:
     """Read the stream until one of the three client-side bounds fires (P8).
 
     Read errors (transport drops included) end the collection with
     ``stop_reason="error"`` and whatever bytes arrived; the release path
     still runs, since P3 showed the HMC never reclaims the vterm itself.
+
+    When *on_chunk* is provided it is called with each raw chunk as it
+    arrives, before the chunk is appended to the internal buffer.  This
+    lets the CLI write bytes to its sink in real time rather than waiting
+    for the capture to finish (issue #1674).
     """
     loop = asyncio.get_running_loop()
     buf = bytearray()
@@ -416,6 +422,8 @@ async def _collect_output(
             raise TypeError("bounded capture never reconnects")
         if not chunk:
             return bytes(buf), "remote-close", None
+        if on_chunk is not None:
+            on_chunk(chunk)
         buf += chunk
         idle_deadline = loop.time() + idle_timeout_seconds
 
@@ -1484,6 +1492,7 @@ async def capture_lpar_console(
     duration_seconds: float,
     max_bytes: int,
     idle_timeout_seconds: float,
+    on_chunk: Callable[[bytes], None] | None = None,
 ) -> ConsoleCapture:
     """Capture up to the given bounds from *lpar_name*'s console.
 
@@ -1515,11 +1524,14 @@ async def capture_lpar_console(
             incomplete ANSI escape sequence.
         idle_timeout_seconds: Client-side cap on silence (time since the last
             received byte); the HMC never times an idle stream out itself.
+        on_chunk: Optional callback called with each raw chunk as it arrives,
+            before it is appended to the internal buffer.  The CLI uses this
+            to write bytes to its output sink in real time (issue #1674).
     """
     _validate_bounds(duration_seconds, max_bytes, idle_timeout_seconds)
     async with ConsoleSession(hmc, system_name, lpar_name) as session:
         data, stop_reason, error = await _collect_output(
-            session, duration_seconds, max_bytes, idle_timeout_seconds
+            session, duration_seconds, max_bytes, idle_timeout_seconds, on_chunk
         )
     if session._state == "lost" and stop_reason != "error":
         # A bound fired on the loss report, or the release scan found it unread.
