@@ -86,8 +86,9 @@ there. The catalog grammar keeps the maintenance level optional so rows recorded
 `schema_version` is the run's `HMC_SCHEMA_VERSION` as its header printed it — a
 `V<n>_<n>[_<n>...]` token or `(not set)` — and observations stored before format 4 read
 `unrecorded`, because nothing recorded the value for them; it attributes the observation and does not
-affect currency or promotion. An operation carries at most one live observation;
-re-validating replaces it, and the superseded record stays in `git log`.
+affect currency or promotion. An operation carries one live observation per producing
+observation id, and the newest by `(observed_at, id)` decides its state; re-validating
+replaces that id's row, and the superseded record stays in `git log`.
 
 ### Confirmed limitation gaps
 
