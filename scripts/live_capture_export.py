@@ -147,10 +147,11 @@ _NAME_ESCAPE = r"\\++(?!u(?i:{}))".format(
 #: `?`: a comment, CDATA section or processing instruction opens no element.
 _NS_PREFIX = rf"(?![!?])(?:(?:[^{_PREFIX_END_CLASS}\\]|{_NAME_ESCAPE})*+:)*"
 #: The namespace prefixes of a closing tag. It holds no attributes, so anything but a tag
-#: delimiter is taken, XML's spaces too: a name with a space, a quote, `=`, a `\u0020` or
-#: a leading `!` or `?` still ends a value the backstops read (#1660). A comment, CDATA
-#: section or processing instruction never starts with `</`. Each segment ends at the
-#: first `:`, so a prefix matches one way only.
+#: delimiter is taken, XML's spaces too: a prefix with a space, a quote, `=`, a `\u0020`
+#: or a leading `!` or `?` still ends a value the backstops read (#1660). A comment, CDATA
+#: section or processing instruction never starts with `</`; text that is not XML but
+#: holds `</`, free text and `x:SerialNumber` is refused, never exported. Each segment
+#: ends at the first `:`, so a prefix matches one way only.
 _CLOSING_PREFIX = r"(?:[^:<>]*+:)*"
 #: Elements whose whole text a rule replaces: the element name pattern, the text the
 #: rule writes and, optionally, the keywords it keeps as evidence. The same entry builds
