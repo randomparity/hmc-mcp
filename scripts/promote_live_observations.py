@@ -301,6 +301,26 @@ def _select(options: list[tuple[str, dict]], claim: dict | None) -> dict:
     return chosen[0]
 
 
+def _refuse_weaker(operation: str, evidence: list, observation: dict) -> None:
+    # No scenario declares its assertion set, and a passing observation records
+    # only the assertions it held; a conditional one can drop out (ST19's
+    # refused-while-mounted). The evidence being replaced is the only baseline.
+    held = set(observation["assertions"])
+    for row in evidence:
+        if (
+            row["channel"] == "live"
+            and row["result"] == "passed"
+            and observation["result"] == "passed"
+            and row["scenario"] == observation["scenario"]
+            and held < set(row["assertions"])
+        ):
+            missing = ", ".join(sorted(set(row["assertions"]) - held))
+            raise PromotionError(
+                f"passing observation for {operation} lacks assertions held by the "
+                f"evidence it would replace: {missing}"
+            )
+
+
 def _merge(catalog: dict, observations: dict, gaps: list, claims: list) -> None:
     records = {record["operation"]: record for record in catalog["operations"]}
     by_claim = {claim["operation"]: claim for claim in claims}
@@ -318,6 +338,7 @@ def _merge(catalog: dict, observations: dict, gaps: list, claims: list) -> None:
             )
             continue
         record = records[operation]
+        _refuse_weaker(operation, record["evidence"], observation)
         record["evidence"] = [
             row for row in record["evidence"] if row["channel"] != "live"
         ] + [observation]
