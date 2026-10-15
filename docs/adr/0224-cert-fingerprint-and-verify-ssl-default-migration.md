@@ -180,7 +180,7 @@ gates are not met by the 1.0 milestone.
 
 ## Consequences
 
-- A new `HMC_CERT_FINGERPRINT` / `--cert-fingerprint` / `ca_bundle.cert_fingerprint`
+- A new `HMC_CERT_FINGERPRINT` / `--cert-fingerprint` / TOML `cert_fingerprint`
   setting will be added in #1614, enabling verification for self-signed HMC
   certificates without requiring a CA bundle.
 - The five-way trust precedence
