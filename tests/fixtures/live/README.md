@@ -68,8 +68,8 @@ above; never join them to other fixtures by token. Tokenizing replaces both seri
 `<REDACTED-SERIAL>`, so the comparison that matters was scripted over the raw capture before
 export: the type, model and serial `_summary_mtms` parses from quick/All (`#2`) equal what
 `mtms_parts` reads from the entry (`#3`), and from each of the sixteen entries of the full
-`ManagedSystem` feed read in the same session (`#4`, not committed). The entry's `WWPNPrefix` is
-zeroed, which the exporter does not do.
+`ManagedSystem` feed read in the same session (`#4`, not committed). The entry's `WWPNPrefix` was
+zeroed by hand before #1639; the exporter now writes `<REDACTED-DEVID>` there.
 
 ## Format
 
