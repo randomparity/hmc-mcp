@@ -106,7 +106,7 @@ _WWN_16 = r"\b(?![0-9a-fA-F]{2}0{14}\b)[0-9a-fA-F]{16}\b"
 _DEVICE_ID_ELEMENTS = (
     "VolumeUniqueID|UniqueDeviceID|MediaUDID|DescriptorPage83|GroupSerialID|UDID|UniqueID"
     "|SerialNumberOfDisk|DeviceSerialNumber|WorldWidePortName|WWPN|PortWWPN"
-    "|WorldWideNodeName|WWNN"
+    "|WorldWideNodeName|WWNN|WWPNPrefix"
 )
 _ADDRESS_ELEMENTS = "NetworkAddress|IPAddress|PrimaryIPAddress|IPv6Address"
 #: The rest of an opening tag, up to a `>` that does not close it as `/>`. A self-closing
@@ -726,7 +726,6 @@ def _key(name: str) -> str:
 #: rules see only XML elements and `key=value` fields, never this JSON form.
 _DEVICE_ID_KEYS = {_key(n) for n in _DEVICE_ID_ELEMENTS.split("|")} | {
     "wwpns",
-    "wwpnprefix",
     "logicalunitudid",
     "luudid",
     "tierudid",

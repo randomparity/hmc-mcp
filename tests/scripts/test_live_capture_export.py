@@ -692,6 +692,7 @@ SCRUBBED_ELEMENTS = [
     ("VirtualSerialNumber", SERIAL),
     ("UniqueDeviceID", DEVID),
     ("ns:WWPN", DEVID),
+    ("WWPNPrefix", DEVID),
 ]
 #: Names the scrub rules matched only in their declared case and after a `\w+:` prefix
 #: (#1572, #1588), or after no prefix at all: neither may hide the value.
@@ -710,6 +711,8 @@ VARIANT_ELEMENTS = [
     ("uniquedeviceid", DEVID),
     ("ns-1:UniqueDeviceID", DEVID),
     ("ns.v1:wwpn", DEVID),
+    ("wwpnprefix", DEVID),
+    ("ns-1:WWPNPrefix", DEVID),
     # #1588: a prefix `json.dumps` writes with a `\u` escape, a non-ASCII name character
     # that is not a word character, and more than one prefix.
     *(
@@ -861,6 +864,31 @@ def test_scrubbed_element_value_is_not_a_leak(
     assert (
         tok.leaks(encode(f'<Root><{element} kb="CUR">{value}</{element}></Root>')) == []
     )
+
+
+#: A `WWPNPrefix` as a `ManagedSystem` entry carries it, in a 12-hex-digit shape that no
+#: WWN or MAC rule reads.
+WWPN_PREFIX = "c050760abcde"  # pragma: allowlist secret
+WWPN_PREFIX_BODY = (
+    f'<IOAdapter><WWPNPrefix kb="CUD">{WWPN_PREFIX}</WWPNPrefix></IOAdapter>'
+)
+
+
+def test_wwpn_prefix_is_scrubbed_from_a_rest_body() -> None:
+    """Regression #1639: a system's WWPN prefix was exported as captured."""
+    corpus = export.tokenize_records(_records(_rest("/e", WWPN_PREFIX_BODY)))
+    assert corpus[-1]["body"] == WWPN_PREFIX_BODY.replace(WWPN_PREFIX, _escaped(DEVID))
+
+
+def test_wwpn_prefix_is_scrubbed_from_tool_json() -> None:
+    """Regression #1639: the same prefix inside a tool's `json.dumps` output."""
+    tool = {"kind": "tool", "step": "t", "tool": "t", "ok": True}
+    corpus = export.tokenize_records(
+        _records({**tool, "data": {"raw": WWPN_PREFIX_BODY}})
+    )
+    assert corpus[-1]["record"]["data"] == {
+        "raw": WWPN_PREFIX_BODY.replace(WWPN_PREFIX, DEVID)
+    }
 
 
 #: Input the scrub rules leave unscrubbed: a `/>` ends the opening tag, a `<` inside the
@@ -1797,6 +1825,8 @@ def test_built_in_accounts_are_not_names() -> None:
         ("volume_unique_id", "<REDACTED-DEVID>"),
         ("udid", "<REDACTED-DEVID>"),
         ("WWPNs", "<REDACTED-DEVID>"),
+        ("WWPNPrefix", "<REDACTED-DEVID>"),
+        ("wwpn_prefix", "<REDACTED-DEVID>"),
         ("LogicalUnitUDID", "<REDACTED-DEVID>"),
         ("SerialNumber", "<REDACTED-SERIAL>"),
         ("LogicalSerialNumber", "<REDACTED-SERIAL>"),
