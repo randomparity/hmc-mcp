@@ -2304,18 +2304,21 @@ def test_free_text_value_after_a_json_escape_is_scrubbed(
     ("before", "after"), [("g", ""), ("1", ""), ("", "1"), ("", "g")]
 )
 @pytest.mark.parametrize("escaped", ESCAPED_CHARACTERS, ids=ascii)
-@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES])
+@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES[:4]])
 def test_free_text_value_inside_a_longer_run_is_not_matched(
     encode: Any, escaped: str, value: str, before: str, after: str
 ) -> None:
     """Neither the free-text scrub rules nor their backstops match. The IPv6 rule still
-    reads a colon MAC joined to a word as an address."""
+    reads a colon MAC joined to a word as an address. A longer separated run is left out:
+    after a group joined to a word, its other groups are a run of their own."""
     body = encode(f"hdr{escaped}{before}{value}{after} x")
     assert [rule.pattern for rule in FREE_TEXT_RULES if rule.search(body)] == []
 
 
 #: A colon MAC is left out: after the letter, the IPv6 rule replaces it as an address.
-@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES[1:]])
+#: So is a longer separated run: after its first group, joined to the letter, the scrub
+#: rules zero the rest as a run of their own.
+@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES[1:4]])
 def test_value_after_an_escaped_backslash_and_n_fails_closed(value: str) -> None:
     """`\\\\n` is a backslash and the letter `n`, so the scrub rules read the value as
     joined to a word and keep it; the backstops read the `\\n` as an escape and report
@@ -2348,6 +2351,38 @@ def test_value_after_escaped_backslashes_keeps_every_backslash(
     assert tok.leaks(out) == []
 
 
+@pytest.mark.parametrize(
+    "value", ["00-00-00-00-00-00-c9-03", "0000.0000.0000.c903.000a"]
+)
+def test_run_with_live_groups_after_zeroed_ones_is_a_leak(value: str) -> None:
+    """Only a run zeroed whole is what the scrub rules write."""
+    tok = export.Tokenizer({}, set())
+    assert tok.leaks(json.dumps(f"hdr {value} x")) == [value]
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize(
+    ("before", "value", "scrubbed"),
+    [
+        ("node-", "0a-1b-2c-3d-4e-5f", "00-00-00-00-00-00"),
+        ("c0507-", "0a-1b-2c-3d-4e-5f-6a", "00-00-00-00-00-00-00"),
+        ("bridge.", "0a1b.2c3d.4e5f", "0000.0000.0000"),
+    ],
+)
+def test_separated_run_after_a_word_ending_in_hex_is_scrubbed(
+    encode: Any, before: str, value: str, scrubbed: str
+) -> None:
+    """A word's last hex letters and the separator after it are not a whole group, so a
+    run may start after them."""
+    tok = export.Tokenizer({}, set())
+    body = encode(f"hdr\n{before}{value} x")
+    assert tok.leaks(body) == [value]
+    out = tok.tokenize(body)
+    assert out == encode(f"hdr\n{before}{scrubbed} x")
+    assert out is not None
+    assert tok.leaks(out) == []
+
+
 @pytest.mark.parametrize(("value", "scrubbed"), FREE_TEXT_VALUES)
 def test_value_after_a_literal_backslash_in_raw_text_is_scrubbed(
     value: str, scrubbed: str
@@ -2375,11 +2410,15 @@ def test_free_text_rules_after_a_long_backslash_run_do_not_backtrack() -> None:
     backstops cost about what they do when no escape or backslash run can start a value
     (#1669)."""
     escapes = "\\" * 20_000 + "u00e9 \\n\\t\\f\\b0a1b \\\\\\b0:1B "
-    body = (escapes + "0a-" * 20_000 + "0ag " + "0a1b." * 20_000 + "0a1bg ") * 5
+    runs = "0a-" * 20_000 + "0ag " + "0a1b." * 20_000 + "0a1bg "
+    zeroed = "00-" * 20_000 + "00g " + "0000." * 20_000 + "0000g "
+    body = (escapes + runs + zeroed) * 5
     assert len(FREE_TEXT_RULES) == 8
     for rule in FREE_TEXT_RULES:
         pattern = rule.pattern.replace(export._SCRUB_START, r"(?<![\w\\])")
         pattern = pattern.replace(export._LEAK_START, r"(?<![\w\\])")
+        for _, _, zeroed in export._MAC_FORMS:
+            pattern = pattern.replace(f"(?!{zeroed})", "")
         assert _cost_ratio(rule, re.compile(pattern, rule.flags), "", body) < 10
 
 
