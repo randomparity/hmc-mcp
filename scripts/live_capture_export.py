@@ -131,7 +131,9 @@ _PREFIX_END_CLASS = "".join(f"\\x{ord(c):02x}" for c in _PREFIX_ENDS)
 #: A backslash run, as `json.dumps` writes one at any depth, is taken unless a `\u`
 #: escape of a `_PREFIX_ENDS` character follows it: `\u0020` or `\u003e` ends a prefix
 #: as a space or `>` would. Every other character after the run is read as itself, so
-#: `\"` ends one, and `\n` does not: in a raw body a backslash is just a character.
+#: `\"` ends one, and `\n`, `\r` and `\t` do not: in a raw body a backslash is just a
+#: character. So the literal text `\u0020` in a raw body ends a prefix too, as it does in
+#: `json.dumps` text, where the two cannot be told apart.
 _NAME_ESCAPE = r"\\++(?!u(?i:{}))".format(
     "|".join(f"{ord(c):04x}" for c in _PREFIX_ENDS)
 )
@@ -141,8 +143,9 @@ _NAME_ESCAPE = r"\\++(?!u(?i:{}))".format(
 #: tail after the name ends at the same `>` whichever prefix matched, and retrying each
 #: one would scan the tail again per segment of `<SerialNumber:SerialNumber:...`. The
 #: two branches of a segment start with different characters, and each segment ends at
-#: the first `:`, so a prefix matches one way only.
-_NS_PREFIX = rf"(?:(?:[^{_PREFIX_END_CLASS}\\]|{_NAME_ESCAPE})*+:)*"
+#: the first `:`, so a prefix matches one way only. A prefix never starts with `!` or
+#: `?`: a comment, CDATA section or processing instruction opens no element.
+_NS_PREFIX = rf"(?![!?])(?:(?:[^{_PREFIX_END_CLASS}\\]|{_NAME_ESCAPE})*+:)*"
 #: Elements whose whole text a rule replaces: the element name pattern, the text the
 #: rule writes and, optionally, the keywords it keeps as evidence. The same entry builds
 #: the scrub rule and its `leaks()` backstop. Names match in any case, after any

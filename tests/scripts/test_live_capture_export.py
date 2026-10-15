@@ -648,9 +648,25 @@ PREFIX_GAPS += ['\\"', "\\u0020", "\\u0009", "\\u003e", "\\u002F", "\\u003d"]
 
 @pytest.mark.parametrize("gap", PREFIX_GAPS)
 def test_namespace_prefix_does_not_span_a_tag(gap: str) -> None:
-    """A prefix is name characters only: `x:SerialNumber` in another tag is not one."""
+    """A prefix ends at a tag delimiter: `x:SerialNumber` in another tag is not one."""
     tok = export.Tokenizer({}, set())
     body = f"<Note{gap}x:SerialNumber>SYN-77Q</Note>"
+    assert tok.tokenize(body) == body
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("element", ["SerialNumber", "MACAddress"])
+@pytest.mark.parametrize(
+    "markup",
+    ["<!--x:{}-->", "<![CDATA[x:{}]]>", "<?x:{}?>"],
+    ids=["comment", "cdata", "pi"],
+)
+def test_markup_that_opens_no_element_is_not_scrubbed(
+    markup: str, element: str, encode: Any
+) -> None:
+    """A prefix never starts with `!` or `?`, so the text after this markup is kept."""
+    tok = export.Tokenizer({}, set())
+    body = encode(f"<Note>{markup.format(element)}FEED</Note>")
     assert tok.tokenize(body) == body
 
 
