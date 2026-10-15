@@ -348,5 +348,9 @@ ln -s root-cert-1.pem "ca-dir/$(openssl x509 -in root-cert-1.pem -noout -subject
 export SSL_CERT_DIR="$PWD/ca-dir"
 ```
 
+> **Windows:** `ln -s` and `openssl` are not available in PowerShell or Command Prompt.
+> Use `SSL_CERT_FILE` instead — see the [Windows export steps](#windows) in the section
+> above for how to build a PEM bundle and set `SSL_CERT_FILE`.
+
 A directory holding only unhashed `.pem` files trusts nothing. When both variables are
 set, `SSL_CERT_FILE` is used.

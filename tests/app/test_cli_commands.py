@@ -27,6 +27,7 @@ import pytest
 import typer
 from click import unstyle
 from conftest import live_fixture
+from rendered_output import collapse_whitespace
 from typer.main import get_command
 from typer.testing import CliRunner
 
@@ -5418,7 +5419,7 @@ def test_storage_mount_optical_media_help_names_the_rest0269_precondition():
 
     assert result.exit_code == 0
     assert "REST0269" in result.stdout
-    assert "activate or apply a profile" in " ".join(result.stdout.split())
+    assert "activate or apply a profile" in collapse_whitespace(result.stdout)
 
 
 @pytest.mark.parametrize("command", ["create", "provision"])
