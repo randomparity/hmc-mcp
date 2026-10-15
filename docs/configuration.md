@@ -191,22 +191,25 @@ HMCs ship self-signed certificates, so TLS verification is off by default and
 `verify_ssl` setting source per process while it stays off. Reusable Python
 consumers can import that category from `hmcpctl.api` and filter it without
 suppressing unrelated `UserWarning`s. To verify the HMC certificate, trust its
-CA through `SSL_CERT_FILE` (see [TLS trust](#tls-trust)) and set
+CA through `HMC_CA_BUNDLE` or `SSL_CERT_FILE` (see [TLS trust](#tls-trust)) and set
 `HMC_VERIFY_SSL=true` (`--verify-ssl`) — otherwise the HMC credentials are at risk of
 man-in-the-middle interception.
 
 ## TLS trust
 
-With `HMC_VERIFY_SSL=true` the client determines what to trust from two sources, in this order:
+With `HMC_VERIFY_SSL=true` the client determines what to trust from three sources, in this order:
 
-1. **`SSL_CERT_FILE`** (or `SSL_CERT_DIR`): when set, the named bundle is used exclusively.
-   `REQUESTS_CA_BUNDLE` and `CURL_CA_BUNDLE` are ignored.
-2. **`HMC_TRUST_SYSTEM_STORE=true`** (the default): when no explicit bundle is set,
-   the operating-system trust store (macOS Keychain, Windows Credential Store, the Linux
-   CA bundle rebuilt by `update-ca-certificates` / `update-ca-trust`) is consulted via
-   the `truststore` library (ADR 0222).
-3. **Bundled `certifi` roots**: when `HMC_TRUST_SYSTEM_STORE=false` and no `SSL_CERT_FILE`
-   is set, only the CA roots bundled with the HTTP library are trusted.
+1. **`HMC_CA_BUNDLE`** (TOML key `ca_bundle`, CLI `--ca-bundle`): when set, the named PEM file
+   is used exclusively. Takes precedence over `SSL_CERT_FILE`, `SSL_CERT_DIR`, and
+   `HMC_TRUST_SYSTEM_STORE` (ADR 0223).
+2. **`SSL_CERT_FILE`** (or `SSL_CERT_DIR`): when set and `HMC_CA_BUNDLE` is not set, the named
+   bundle is used exclusively. `REQUESTS_CA_BUNDLE` and `CURL_CA_BUNDLE` are ignored.
+3. **`HMC_TRUST_SYSTEM_STORE=true`** (the default): when neither `HMC_CA_BUNDLE` nor an explicit
+   `SSL_CERT_FILE`/`SSL_CERT_DIR` is set, the operating-system trust store (macOS Keychain,
+   Windows Credential Store, the Linux CA bundle rebuilt by `update-ca-certificates` /
+   `update-ca-trust`) is consulted via the `truststore` library (ADR 0222).
+4. **Bundled `certifi` roots**: when `HMC_TRUST_SYSTEM_STORE=false` and none of the above are
+   set, only the CA roots bundled with the HTTP library are trusted.
 
 Set these variables in the environment of the process that runs `hmcpctl`, including the
 launcher of an MCP server. They need no root access and apply to every HMC that process
@@ -251,13 +254,15 @@ next `BEGIN` line, and the file then fails to load with `[X509] PEM lib`:
 
 ```bash
 for f in root-cert-1.pem intermediate-cert-2.pem; do cat "$f"; echo; done > hmc-ca-bundle.pem
-export SSL_CERT_FILE="$PWD/hmc-ca-bundle.pem"
+export HMC_CA_BUNDLE="$PWD/hmc-ca-bundle.pem"
 export HMC_VERIFY_SSL=true
 hmcpctl console info
 ```
 
-`SSL_CERT_FILE` replaces the bundled roots rather than adding to them. To trust a public
-CA as well, include it in the file.
+`HMC_CA_BUNDLE` replaces the bundled roots rather than adding to them. To trust a public
+CA as well, include it in the file. If you prefer not to use `HMC_CA_BUNDLE`, you can also
+set `SSL_CERT_FILE="$PWD/hmc-ca-bundle.pem"` (an environment-only alternative; `HMC_CA_BUNDLE`
+takes precedence when both are set).
 
 ### Reuse the system trust store
 
@@ -270,20 +275,67 @@ export HMC_VERIFY_SSL=true
 hmcpctl console info
 ```
 
+This works on macOS (Keychain), Windows (Certificate Store), and Linux without any
+additional setup.
+
 If you need to export a static bundle — for example when `HMC_TRUST_SYSTEM_STORE=false`,
 or when you want a snapshot that is immune to OS store changes — export it once and point
 `SSL_CERT_FILE` at the copy. Re-export it when the system store changes.
 
+#### macOS
+
 ```bash
-# macOS
 security find-certificate -a -p /Library/Keychains/System.keychain \
   /System/Library/Keychains/SystemRootCertificates.keychain > system-ca-bundle.pem
+export SSL_CERT_FILE="$PWD/system-ca-bundle.pem"
 ```
 
-On Linux the distribution already maintains a bundle (for example
-`/etc/ssl/certs/ca-certificates.crt` on Debian and Ubuntu, or
-`/etc/pki/tls/certs/ca-bundle.crt` on RHEL-family systems); `update-ca-certificates` or
-`update-ca-trust` rebuilds it, and `SSL_CERT_FILE` can point straight at it.
+#### Linux
+
+Linux distributions maintain a system bundle that `update-ca-certificates` (Debian/Ubuntu)
+or `update-ca-trust` (RHEL/Fedora) rebuilds when you add a CA. Point `SSL_CERT_FILE` at
+the existing bundle — no regeneration is needed to read the current store:
+
+```bash
+# Debian / Ubuntu
+export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+
+# RHEL / Fedora (RHEL ≤ 9 / Fedora ≤ 42)
+export SSL_CERT_FILE=/etc/pki/tls/cert.pem
+
+# RHEL / Fedora (RHEL 11+ / Fedora 43+)
+export SSL_CERT_FILE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
+```
+
+> **Note:** These paths and commands were verified against distribution documentation and
+> the `truststore` library's source; they were not run on a live Linux host.
+
+To add a CA to the system bundle and have `SSL_CERT_FILE` reflect it automatically,
+copy the PEM file to `/usr/local/share/ca-certificates/` and run
+`sudo update-ca-certificates` (Debian/Ubuntu), or copy it to
+`/etc/pki/ca-trust/source/anchors/` and run `sudo update-ca-trust` (RHEL/Fedora).
+
+#### Windows
+
+Windows users with `HMC_TRUST_SYSTEM_STORE=true` (the default) get the Windows Certificate
+Store automatically via `truststore` — no export is needed.
+
+If you need a static PEM bundle (for example when `HMC_TRUST_SYSTEM_STORE=false`), export
+the Trusted Root CAs from the Windows Certificate Store with PowerShell:
+
+```powershell
+# Run in PowerShell (5 or 7). -Encoding UTF8 is required; the default
+# in Windows PowerShell 5 is UTF-16 LE, which OpenSSL cannot read.
+$certs = Get-ChildItem -Path Cert:\LocalMachine\Root
+foreach ($cert in $certs) {
+    $pem = [Convert]::ToBase64String($cert.Export('Cert'), [Base64FormattingOptions]::InsertLineBreaks)
+    "-----BEGIN CERTIFICATE-----`n$pem`n-----END CERTIFICATE-----" | Out-File -Append -Encoding UTF8 system-ca-bundle.pem
+}
+$env:SSL_CERT_FILE = "$PWD\system-ca-bundle.pem"
+```
+
+Alternatively, use `certutil` to export individual certificates and convert them with
+OpenSSL as described in [Build a PEM bundle](#build-a-pem-bundle).
 
 ### Use a directory instead of a file
 

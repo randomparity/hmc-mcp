@@ -430,15 +430,21 @@ class HMCClient(
 
     def _new_http_client(self, port: int) -> httpx.AsyncClient:
         base_url = httpx.URL(self.config.base_url).copy_with(port=port)
-        verify: bool | ssl.SSLContext = self.config.verify_ssl
-        if (
+        verify: bool | ssl.SSLContext | str = self.config.verify_ssl
+        if self.config.verify_ssl and self.config.ca_bundle:
+            # ADR 0223: HMC_CA_BUNDLE takes the highest precedence. Pass the
+            # path string directly; httpx accepts a PEM path for verify=.
+            # SSL_CERT_FILE/SSL_CERT_DIR and trust_system_store are ignored.
+            verify = self.config.ca_bundle
+        elif (
             self.config.verify_ssl
             and self.config.trust_system_store
             and not os.environ.get("SSL_CERT_FILE")
+            and not os.environ.get("SSL_CERT_DIR")
         ):
             # ADR 0222: use the OS trust store via truststore when both
             # verify_ssl and trust_system_store are on and no explicit bundle
-            # is set. An explicit SSL_CERT_FILE takes precedence, so the
+            # is set. SSL_CERT_FILE or SSL_CERT_DIR takes precedence, so the
             # operator can always pin a bundle without toggling this flag.
             ctx = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             verify = ctx
