@@ -416,6 +416,7 @@ def test_keyword_serial_field_is_scrubbed(
         *KEYWORD_SERIAL_FIELDS,
         "{key}={value}",
         "x=1,{key}={value}\r\nx=1",
+        "hdr\n{key}={value}",
     ],
 )
 @pytest.mark.parametrize("keyword", ["none", "auto"])
@@ -521,6 +522,79 @@ def test_keyword_serial_backstop_reports_a_value_the_rules_missed(
 )
 def test_keyword_serial_backstop_passes_the_token(text: str, key: str) -> None:
     """What the rules write, in a body or an XML body, and an empty value, are no leak."""
+    assert export.Tokenizer({}, set()).leaks(text.format(key=key)) == []
+
+
+#: The other keys the key=value rules scrub, which keep no keyword (#1638).
+DEVICE_ID_KEYS = ["unique_id", "udid", "wwpn", "wwpns", "wwnn", "serial_num"]
+
+
+@pytest.mark.parametrize("key", [*DEVICE_ID_KEYS, *KEYWORD_SERIAL_KEYS])
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("separator", ["\n", "\r", "\t"], ids=["lf", "cr", "tab"])
+def test_key_value_field_at_a_line_start_is_scrubbed(
+    separator: str, encode: Any, key: str
+) -> None:
+    """#1638: `\\b` reads the letter of a `json.dumps` `\\n` escape as part of the key."""
+    tok = export.Tokenizer({}, set())
+    body = encode(f"hdr{separator}{key}=SYN0001")
+    scrubbed = tok.tokenize(body)
+    assert scrubbed == body.replace("SYN0001", DEVID)
+    assert tok.leaks(scrubbed) == []
+    assert tok.leaks(body)
+
+
+@pytest.mark.parametrize("key", DEVICE_ID_KEYS)
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("separator", ["\n", "\r", "\t"], ids=["lf", "cr", "tab"])
+@pytest.mark.parametrize("prefix", ["x", "ns_", "virtual_"])
+def test_key_value_key_inside_a_longer_key_is_left(
+    prefix: str, separator: str, encode: Any, key: str
+) -> None:
+    """A key is matched after an escape, never inside a longer key such as `ns_udid`."""
+    tok = export.Tokenizer({}, set())
+    body = encode(f"hdr{separator}{prefix}{key}=none")
+    assert tok.tokenize(body) == body
+    assert tok.leaks(body) == []
+
+
+@pytest.mark.parametrize("key", DEVICE_ID_KEYS)
+@pytest.mark.parametrize(
+    "text",
+    [
+        "x {key}=SYN0001",
+        json.dumps("x\n{key}=SYN0001"),
+        json.dumps("x\r{key}=SYN0001"),
+        json.dumps("x\t{key}=SYN0001"),
+        "{KEY}=SYN0001",
+        "{key}=none",
+        "{key}=<REDACTED-DEVID>SYN0001",
+        '{key}="SYN0001"',
+    ],
+)
+def test_device_id_backstop_reports_a_value_the_rules_missed(
+    text: str, key: str
+) -> None:
+    """Every key the rules scrub has a backstop, at the same boundary (#1638)."""
+    text = text.format(key=key, KEY=key.upper())
+    start = text.lower().rindex(f"{key}=")
+    assert export.Tokenizer({}, set()).leaks(text) == [text[start:].removesuffix('"')]
+
+
+@pytest.mark.parametrize("key", DEVICE_ID_KEYS)
+@pytest.mark.parametrize(
+    "text",
+    [
+        "{key}=<REDACTED-DEVID>,x=1",
+        "{key}=&lt;REDACTED-DEVID&gt;",
+        json.dumps("x\n{key}=<REDACTED-DEVID>\n"),
+        'x,"{key}=<REDACTED-DEVID>",y',
+        "{key}=,x=1",
+        "ns_{key}=SYN0001",
+    ],
+)
+def test_device_id_backstop_passes_the_token(text: str, key: str) -> None:
+    """What the rules write, an empty value and a longer key are no leak."""
     assert export.Tokenizer({}, set()).leaks(text.format(key=key)) == []
 
 
@@ -1172,6 +1246,24 @@ def test_mac_leak_check_after_many_backslash_u_does_not_backtrack() -> None:
     )
     assert without.pattern != export._MAC_LEAK.pattern
     assert _cost_ratio(export._MAC_LEAK, without, "", body) < 10
+
+
+def test_key_start_after_many_escapes_does_not_backtrack() -> None:
+    """The escape lookbehind reads a fixed two characters, so a key=value rule and its
+    backstop cost about what they do with `\\b` alone (#1638)."""
+    body = "\\nserial_nu\\tudi\\rwwpn\\nunique_id\\twwnn " * 5_000
+    rules = [
+        (rule, replacement)
+        for rule, replacement in export.IDENTIFIER_RULES
+        if export._KEY_START in rule.pattern
+    ]
+    rules += [
+        (rule, "") for rule in export.ALWAYS_LEAKS if export._KEY_START in rule.pattern
+    ]
+    assert len(rules) == 2
+    for rule, replacement in rules:
+        bounded = re.compile(rule.pattern.replace(export._KEY_START, r"\b"), rule.flags)
+        assert _cost_ratio(rule, bounded, replacement, body) < 10
 
 
 @pytest.mark.parametrize(
