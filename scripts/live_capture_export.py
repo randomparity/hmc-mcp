@@ -100,7 +100,9 @@ BUILT_IN_ACCOUNTS = {"root", "hscroot", "hscpe", "admin"}
 
 Replacement = str | Callable[[re.Match[str]], str]
 
-_WWN_16 = r"\b(?![0-9a-fA-F]{2}0{14}\b)[0-9a-fA-F]{16}\b"
+#: A 16-hex WWN, other than a LUN address: two digits and fourteen zeros. Its start is
+#: the rule's: `_SCRUB_START` or `_LEAK_START`.
+_WWN_16 = r"(?![0-9a-fA-F]{2}0{14}\b)[0-9a-fA-F]{16}\b"
 
 #: Elements whose whole text is a device identifier.
 _DEVICE_ID_ELEMENTS = (
@@ -280,6 +282,44 @@ _AFTER_ESCAPE = "|".join(f"(?<={escape})" for escape in _JSON_ESCAPES)
 #: `n` or `u0041` reads the same, and so does an escape of a word character such as
 #: `\u00e9`: over-scrubbing, never a leak.
 _KEY_START = rf"(?:(?<!\w)|{_AFTER_ESCAPE})"
+#: Where a free-text MAC or WWN the scrub rules replace starts: after a character that
+#: is neither a word character nor a backslash, or after a backslash run read from its
+#: first backslash, so pairs are escaped backslashes (#1669). The run is pairs alone,
+#: pairs and a JSON escape, or pairs and a lone backslash before anything but an
+#: escape letter, as in raw text. It is the `escape` group, which the rule writes back.
+#: The letter of a `\f` or `\b` escape is never read as the value's first hex digit and
+#: dropped; after an escaped backslash, an `n` is a letter the value is joined to. The
+#: run is matched only from its first backslash, so it is scanned once.
+_SCRUB_START = (
+    r"(?:(?<![\w\\])|(?<!\\)(?P<escape>(?:\\\\)++"
+    r"|(?:\\\\)*+\\(?:[bfnrt]|u[0-9A-Fa-f]{4}|(?![bfnrtu]))))"
+)
+#: Where a backstop reads a free-text MAC or WWN as starting: as `_SCRUB_START`, but
+#: after any `_AFTER_ESCAPE`, even an escaped backslash and an `n`, so a value the scrub
+#: rules read as joined to that letter fails closed (#1669).
+_LEAK_START = rf"(?:(?<![\w\\])|{_AFTER_ESCAPE})"
+#: Free-text MACs in each separator style: a guard, the run, and the run zeroed whole as
+#: the scrub rules write it. A longer hyphen or dotted run, such as a hyphenated WWPN, is
+#: zeroed whole, not left with live groups after a MAC's worth. Each group ends at a word
+#: boundary, so a word after the run, as in `...-5f-backup`, ends it rather than hiding
+#: it. The guard refuses a start after a whole group and its separator, so a run is
+#: matched from its first group only and scanned once; a group joined to a word, as in
+#: `node-0a-1b-...` or `vlan_10-0a-...`, is not a whole one. A backstop checks the guard
+#: before the zeroed run, or each group would scan the rest of the run. A longer colon
+#: run is the IPv6 rule's.
+_MAC_FORMS = (
+    ("", r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b", r"(?:00:){5}00\b"),
+    (
+        r"(?<!(?<!\w)[0-9A-Fa-f]{2}-)",
+        r"[0-9A-Fa-f]{2}(?:-[0-9A-Fa-f]{2}\b){5,}+",
+        r"00(?:-00\b){5,}+(?!-[0-9A-Fa-f]{2}\b)",
+    ),
+    (
+        r"(?<!(?<!\w)[0-9A-Fa-f]{4}\.)",
+        r"[0-9A-Fa-f]{4}(?:\.[0-9A-Fa-f]{4}\b){2,}+",
+        r"0000(?:\.0000\b){2,}+(?!\.[0-9A-Fa-f]{4}\b)",
+    ),
+)
 #: A MAC separator and the hex digit after it.
 _MAC_SEPARATOR = r"[-.:][0-9A-Fa-f]"
 #: The digits after a `\\u` where a separated MAC's first octets stay: fewer than an
@@ -441,6 +481,12 @@ def _zero_run(run: re.Match[str]) -> str:
     return _ESCAPE_DIGITS.sub("0030", escape) + "0" * len(value)
 
 
+def _zero_value(match: re.Match[str]) -> str:
+    """Zero a free-text MAC's hex digits, keeping its separators and the escape before it."""
+    escape = match.group("escape") or ""
+    return escape + re.sub("[0-9A-Fa-f]", "0", match.group(0)[len(escape) :])
+
+
 def _mac_element(match: re.Match[str]) -> str:
     """Zero each hex run in a MAC element's text; keywords such as `ALL` stay as evidence."""
     text = _MAC_ELEMENT_RUN.sub(_zero_run, match.group(2))
@@ -516,19 +562,27 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
         re.compile(rf"(<(?>{_NS_PREFIX}(?i:\w*MACAddress\w*+)){_TAG_TAIL})([^<]+)"),
         _mac_element,
     ),
-    (re.compile(r"(?i)\b(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\b"), "00:00:00:00:00:00"),
+    *(
+        (re.compile(rf"{_SCRUB_START}{guard}{run}"), _zero_value)
+        for guard, run, _ in _MAC_FORMS
+    ),
     (re.compile(r"(?i)(mac_addr=)[0-9a-f]{12}"), r"\g<1>000000000000"),
     (_IPV6, _ipv6),
     # Any other 16-hex token is a WWN: a `disk@<target WWPN>` path, an
     # `AIX-VDASD-<hex>` descriptor. A LUN address (`81` and fourteen zeros) is not.
-    (re.compile(_WWN_16), "<REDACTED-DEVID>"),
+    (re.compile(rf"{_SCRUB_START}{_WWN_16}"), r"\g<escape><REDACTED-DEVID>"),
 )
 #: Shapes that may never appear in a tokenized output, whatever was collected.
 ALWAYS_LEAKS = (
     re.compile(rf"\b(?!{re.escape(PLACEHOLDER_IP)}\b)(?:\d{{1,3}}\.){{3}}\d{{1,3}}\b"),
     re.compile(r"U[0-9A-Za-z]{4}\.[0-9A-Za-z]{3}\.[0-9A-Za-z]{7}"),
     re.compile(r"-L[0-9A-F]{8,}"),
-    re.compile(_WWN_16),
+    re.compile(rf"{_LEAK_START}{_WWN_16}"),
+    # A free-text MAC the scrub rules missed; only the zeroed form they write is kept.
+    *(
+        re.compile(rf"{_LEAK_START}{guard}(?!{zeroed}){run}")
+        for guard, run, zeroed in _MAC_FORMS
+    ),
     re.compile(r"(?i)x-api-session=(?!<REDACTED)\w"),
     re.compile(r"\b(?:ssh-(?:rsa|ed25519|dss)|ecdsa-sha2-[\w-]+) +AAAA"),
     # A private token joined to a word left part of that word (a lab name's suffix)
