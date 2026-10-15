@@ -1580,7 +1580,9 @@ def test_octet_after_an_escape_ending_in_hex_is_a_leak(encode: Any, value: str) 
     in JSON text, is reported by `_LIVE_HEX_RUN`'s escape start, not the joined octet."""
     tok = export.Tokenizer({}, set())
     body = encode(f"<MACAddress>{value}</MACAddress>")
-    assert body[body.index(">") + 1 : body.index("</")] in tok.leaks(body)
+    text = body[body.index(">") + 1 : body.index("</")]
+    # The free-text MAC backstop reports the MAC after the escape too (#1669).
+    assert tok.leaks(body) == [text[-len("0A:00:00:00:00:00") :], text]
 
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
@@ -2261,6 +2263,9 @@ FREE_TEXT_VALUES = [
     ("0a-1b-2c-3d-4e-5f", "00-00-00-00-00-00"),
     ("0a1b.2c3d.4e5f", "0000.0000.0000"),
     ("0123456789abcdef", "<REDACTED-DEVID>"),
+    # A longer separated run is zeroed whole: a hyphenated WWPN, a dotted GUID.
+    ("50-05-07-68-0a-1b-2c-3d", "00-00-00-00-00-00-00-00"),
+    ("0002.c903.000a.1b2c", "0000.0000.0000.0000"),
 ]
 #: The free-text MAC and WWN scrub rules and backstops, found by their starts.
 FREE_TEXT_RULES = [
@@ -2367,7 +2372,8 @@ def test_free_text_rules_after_a_long_backslash_run_do_not_backtrack() -> None:
     """A backslash run is read from its first backslash, once, so the scrub rules and
     backstops cost about what they do when no escape or backslash run can start a value
     (#1669)."""
-    body = ("\\" * 20_000 + "u00e9 \\n\\t\\f\\b0a1b \\\\\\b0:1B ") * 5
+    escapes = "\\" * 20_000 + "u00e9 \\n\\t\\f\\b0a1b \\\\\\b0:1B "
+    body = (escapes + "0a-" * 20_000 + "0ag " + "0a1b." * 20_000 + "0a1bg ") * 5
     assert len(FREE_TEXT_RULES) == 8
     for rule in FREE_TEXT_RULES:
         pattern = rule.pattern.replace(export._SCRUB_START, r"(?<![\w\\])")

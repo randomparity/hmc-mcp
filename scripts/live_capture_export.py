@@ -298,11 +298,17 @@ _SCRUB_START = (
 #: after any `_AFTER_ESCAPE`, even an escaped backslash and an `n`, so a value the scrub
 #: rules read as joined to that letter fails closed (#1669).
 _LEAK_START = rf"(?:(?<![\w\\])|{_AFTER_ESCAPE})"
-#: Free-text MACs in each separator style, and the placeholder each is replaced with.
+#: Free-text MACs in each separator style, and the zeroed form the scrub rules write.
+#: A longer hyphen or dotted run, such as a hyphenated WWPN, is zeroed whole, not left
+#: with live groups after a MAC's worth; it is matched from its first group only, so it
+#: is scanned once. A longer colon run is the IPv6 rule's.
 _MAC_FORMS = (
-    (r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b", "00:00:00:00:00:00"),
-    (r"(?:[0-9A-Fa-f]{2}-){5}[0-9A-Fa-f]{2}\b", "00-00-00-00-00-00"),
-    (r"(?:[0-9A-Fa-f]{4}\.){2}[0-9A-Fa-f]{4}\b", "0000.0000.0000"),
+    (r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b", r"(?:00:){5}00\b"),
+    (r"(?<![0-9A-Fa-f]-)[0-9A-Fa-f]{2}(?:-[0-9A-Fa-f]{2}){5,}+\b", r"00(?:-00){5,}+\b"),
+    (
+        r"(?<![0-9A-Fa-f]\.)[0-9A-Fa-f]{4}(?:\.[0-9A-Fa-f]{4}){2,}+\b",
+        r"0000(?:\.0000){2,}+\b",
+    ),
 )
 #: A MAC separator and the hex digit after it.
 _MAC_SEPARATOR = r"[-.:][0-9A-Fa-f]"
@@ -465,6 +471,12 @@ def _zero_run(run: re.Match[str]) -> str:
     return _ESCAPE_DIGITS.sub("0030", escape) + "0" * len(value)
 
 
+def _zero_value(match: re.Match[str]) -> str:
+    """Zero a free-text MAC's hex digits, keeping its separators and the escape before it."""
+    escape = match.group("escape") or ""
+    return escape + re.sub("[0-9A-Fa-f]", "0", match.group(0)[len(escape) :])
+
+
 def _mac_element(match: re.Match[str]) -> str:
     """Zero each hex run in a MAC element's text; keywords such as `ALL` stay as evidence."""
     text = _MAC_ELEMENT_RUN.sub(_zero_run, match.group(2))
@@ -540,10 +552,7 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
         re.compile(rf"(<(?>{_NS_PREFIX}(?i:\w*MACAddress\w*+)){_TAG_TAIL})([^<]+)"),
         _mac_element,
     ),
-    *(
-        (re.compile(rf"{_SCRUB_START}{form}"), rf"\g<escape>{placeholder}")
-        for form, placeholder in _MAC_FORMS
-    ),
+    *((re.compile(rf"{_SCRUB_START}{form}"), _zero_value) for form, _ in _MAC_FORMS),
     (re.compile(r"(?i)(mac_addr=)[0-9a-f]{12}"), r"\g<1>000000000000"),
     (_IPV6, _ipv6),
     # Any other 16-hex token is a WWN: a `disk@<target WWPN>` path, an
@@ -556,11 +565,8 @@ ALWAYS_LEAKS = (
     re.compile(r"U[0-9A-Za-z]{4}\.[0-9A-Za-z]{3}\.[0-9A-Za-z]{7}"),
     re.compile(r"-L[0-9A-F]{8,}"),
     re.compile(rf"{_LEAK_START}{_WWN_16}"),
-    # A free-text MAC the scrub rules missed; only the placeholder they write is kept.
-    *(
-        re.compile(rf"{_LEAK_START}(?!{re.escape(placeholder)}\b){form}")
-        for form, placeholder in _MAC_FORMS
-    ),
+    # A free-text MAC the scrub rules missed; only the zeroed form they write is kept.
+    *(re.compile(rf"{_LEAK_START}(?!{zeroed}){form}") for form, zeroed in _MAC_FORMS),
     re.compile(r"(?i)x-api-session=(?!<REDACTED)\w"),
     re.compile(r"\b(?:ssh-(?:rsa|ed25519|dss)|ecdsa-sha2-[\w-]+) +AAAA"),
     # A private token joined to a word left part of that word (a lab name's suffix)
