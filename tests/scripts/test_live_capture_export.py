@@ -2640,10 +2640,15 @@ def test_free_text_rules_after_a_long_backslash_run_do_not_backtrack() -> None:
     zeroed = "00-" * 20_000 + "00 " + "0000." * 20_000 + "0000 "
     body = (escapes + r"\u" + runs + r"\u" + zeroed) * 5
     assert len(FREE_TEXT_RULES) == 10
-    for rule in [*FREE_TEXT_RULES, export._RAW_IDENTIFIER_LEAK]:
+    for rule in [
+        *FREE_TEXT_RULES,
+        export._RAW_IDENTIFIER_LEAK,
+        export._JSON_RAW_IDENTIFIER_LEAK,
+    ]:
         pattern = rule.pattern.replace(export._SCRUB_START, r"(?<![\w\\])")
         pattern = pattern.replace(export._LEAK_START, r"(?<![\w\\])")
         pattern = pattern.replace(r"(?<=\\u)", "(?!)")
+        pattern = pattern.replace(r"(?<!\\)(?:\\\\)++u", "(?!)")
         for _, _, zeroed in export._MAC_FORMS:
             pattern = pattern.replace(f"(?!{zeroed})", "")
         baseline = re.compile(pattern, rule.flags)
@@ -3293,3 +3298,47 @@ def test_derived_raw_guard_checks_late_values_in_large_nested_data(
     with pytest.raises(export.LeakError, match="nothing written"):
         export._write_scanned(data, out, ())
     assert not out.exists()
+
+
+@pytest.mark.parametrize("path", ["tool", "direct"])
+@pytest.mark.parametrize("slashes", [0, 1, 2, 3])
+@pytest.mark.parametrize(
+    "value", ["é" + "0" * 12, "\x0b" + "0" * 12, "\x01" + "0" * 12, "é.0000.0000"]
+)
+def test_known_json_preserves_actual_unicode_before_hex_suffix(
+    path: str, slashes: int, value: str
+) -> None:
+    value = "\\" * slashes + value
+    if path == "direct":
+        text = json.dumps({"raw": value})
+        out = export.Tokenizer({}, set()).tokenize(text, json_encoded=True)
+        assert out == text
+        assert json.loads(out) == {"raw": value}
+    else:
+        record = {"kind": "tool", "step": "t", "data": {"raw": value}}
+        corpus = export.tokenize_records(_records(record))
+        assert corpus[-1]["record"]["data"]["raw"] == value
+
+
+@pytest.mark.parametrize("kind", ["ssh", "rest", "tool"])
+@pytest.mark.parametrize("slashes", [0, 1, 2, 3])
+@pytest.mark.parametrize(
+    "value",
+    [
+        r"\u00e9" + "0" * 12,
+        r"\u000b" + "0" * 12,
+        r"\u0001" + "0" * 12,
+        r"\u00e9.0000.0000",
+    ],
+)
+def test_literal_u_unicode_lookalikes_still_refuse(
+    kind: str, slashes: int, value: str
+) -> None:
+    value = "\\" * slashes + value
+    record = {
+        "ssh": _ssh("lshmc", value),
+        "rest": _rest("/e", value),
+        "tool": {"kind": "tool", "step": "t", "data": {"raw": value}},
+    }[kind]
+    with pytest.raises(export.LeakError, match="nothing written"):
+        export.tokenize_records(_records(record))

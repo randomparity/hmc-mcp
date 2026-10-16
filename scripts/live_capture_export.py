@@ -424,11 +424,14 @@ _MAC_LEAK = re.compile(
 _MAC_ELEMENT = re.compile(
     rf"(<(?>{_NS_PREFIX}(?i:\w*MACAddress\w*+)){_TAG_TAIL})([^<]+)"
 )
-_RAW_IDENTIFIER_LEAK = re.compile(
-    rf"(?<=\\u)(?:{_WWN_16}|"
+_RAW_IDENTIFIER_VALUE = (
+    rf"(?:{_WWN_16}|"
     + "|".join(rf"{guard}(?!{zeroed}){run}" for guard, run, zeroed in _MAC_FORMS[1:])
     + ")"
 )
+_RAW_IDENTIFIER_LEAK = re.compile(rf"(?<=\\u){_RAW_IDENTIFIER_VALUE}")
+#: Only an even slash run is a literal backslash-u in JSON produced by the caller.
+_JSON_RAW_IDENTIFIER_LEAK = re.compile(rf"(?<!\\)(?:\\\\)++u{_RAW_IDENTIFIER_VALUE}")
 
 
 #: An IPv6 address, or a colon-separated HMC record `_ipv6` keeps, up to a word boundary.
@@ -925,7 +928,8 @@ class Tokenizer:
             return self.names[word[:-1]] + "."
         return word
 
-    def tokenize(self, text: str | None) -> str | None:
+    def tokenize(self, text: str | None, *, json_encoded: bool = False) -> str | None:
+        """Scrub raw text; json_encoded opts in only for JSON made by the caller."""
         if text is None:
             return None
         xml = text.lstrip().startswith("<")
@@ -949,7 +953,8 @@ class Tokenizer:
         # Check this call's exact representation before fields are serialized together.
         mac_values = iter(_MAC_ELEMENT.finditer(text))
         mac_value = next(mac_values, None)
-        for match in _RAW_IDENTIFIER_LEAK.finditer(text):
+        raw_rule = _JSON_RAW_IDENTIFIER_LEAK if json_encoded else _RAW_IDENTIFIER_LEAK
+        for match in raw_rule.finditer(text):
             while mac_value is not None and mac_value.end(2) <= match.start():
                 mac_value = next(mac_values, None)
             if mac_value is None or match.start() < mac_value.start(2):
@@ -1063,7 +1068,7 @@ def _tokenize_record(tok: Tokenizer, record: dict[str, Any]) -> dict[str, Any]:
         rest = redact_identifier_keys(rest)
         try:
             out["record"] = json.loads(
-                tok.tokenize(json.dumps(rest, default=str)) or "{}"
+                tok.tokenize(json.dumps(rest, default=str), json_encoded=True) or "{}"
             )
         except json.JSONDecodeError as exc:
             raise BrokenBodyError(

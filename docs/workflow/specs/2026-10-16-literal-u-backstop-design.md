@@ -2,9 +2,8 @@
 
 ## Problem
 
-Raw `\u` immediately before a WWN, hyphen MAC or dotted MAC is mistaken for
-an escape; scrubbers and leak checks miss the identifier. Authority: #1684,
-scoped by `q1684-e82330a7`, parent #1558 and its approved report/refusal option.
+Raw `\u` hides WWNs and separated MACs from scrub/leak checks (#1684).
+Authority: `q1684-e82330a7`, parent #1558, human continuation 2026-10-16.
 
 ## Scope
 
@@ -16,7 +15,8 @@ in that same representation. Merge ordered spans/matches once; raise existing
 The existing derived writer checks actual supplied string leaves and keys,
 without MAC exemptions: firmware/source metadata was not scrubbed by that call.
 Files: `scripts/live_capture_export.py`, its test module, this unnumbered spec.
-No new argument, dependency, data model, migration or compatibility path.
+Private `json_encoded=True` is set only at actual `json.dumps` producers or
+explicit direct JSON callers; raw/default calls and derived metadata stay guarded.
 Approved exclusions (campaign chat 2026-10-16): closing tags #1680, serial-key
 consolidation #1682, live/release validation #1506, IPv4 escapes #1683.
 
@@ -33,8 +33,8 @@ consolidation #1682, live/release validation #1506, IPv4 escapes #1683.
 - Boundary inventory: capture strings enter scrubbing; survivors are checked
   before aggregation/dequoting. Derived data is checked before filesystem write.
 - Actor/trust model: producers control strings/metadata; refuse survivors before publication.
-- Control per boundary: Unicode escapes plus zeroed MAC digits resemble live
-  identifiers. Only actual scrub-call value spans retain those exemptions.
+- Control per boundary: odd JSON slash runs retain genuine Unicode; even runs
+  remain literal. Only actual scrub-call MAC value spans retain exemptions.
   An unclosed stdout opener cannot own stderr/another record; a decoded Unicode
   opener cannot claim ownership absent from the tool's encoded scrub input.
   Attributes, unmatched tags, CDATA and child-separated text remain checked.
@@ -50,9 +50,9 @@ fixtures remain byte-identical and acquire no new refusal.
 
 ## Validation
 
-- focused-test: raw refusal, actual scrub spans, cross-field/record/nested JSON,
-  encoded-Unicode opener, derived metadata/keys, and valid Unicode cases in
-  `tests/scripts/test_live_capture_export.py`; red: export succeeds; green:
+- focused-test: raw spans, cross-field/record/nested JSON, Unicode provenance,
+  derived keys and explicit direct JSON calls in the existing test module; red:
+  raw exports succeed or genuine Unicode refuses; green:
   `uv run --no-sync pytest tests/scripts/test_live_capture_export.py --no-cov -q`.
 - focused-test: existing JSON, zeroed/LUN, long-run and fixture cases; compare
   all 119 source bytes, capture re-exports and derived writes against the base.
