@@ -166,7 +166,25 @@ def lpars_refcodes(
         lambda: list_lpar_refcodes(ssh_config(), system_name, lpar_name, count)
     )
 
-    output(rows, as_json, None, "No reference codes found")
+    table = VerbatimTable(title="Reference codes")
+    for column in ("Partition", "Timestamp", "Code", "Definition"):
+        table.add_column(column)
+    for row in rows:
+        cells = (
+            row["lpar_name"],
+            row["time_stamp"],
+            row["refcode"],
+            row["definition"] or "Unknown definition",
+        )
+        # HMC text must not become terminal commands or invisible direction changes.
+        escapes = {
+            ord(char): ascii(char)[1:-1]
+            for cell in cells
+            for char in cell
+            if not char.isprintable()
+        }
+        table.add_row(*(cell.translate(escapes) for cell in cells))
+    output(rows, as_json, table, "No reference codes found")
 
 
 def register_commands(group: typer.Typer) -> None:
