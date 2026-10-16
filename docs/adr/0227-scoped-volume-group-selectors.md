@@ -13,7 +13,8 @@ the selected VIOS inventory. Reject missing, duplicate or incomplete matching
 identity; never choose the first VG. Keep low-level client UUID/path validation.
 VIOS-centric CLI commands take positional VIOS, `--vg` and object `--name`;
 mapping targets use `--lpar`. Attach-disk keeps positional LPAR, `--vios` and
-`--vg`, resolving before the existing UUID-based provisioning workflow.
+`--vg`, resolving before the existing UUID-based provisioning workflow. Its VG
+preflight uses the same membership predicate, retaining UUID-only typed inputs.
 
 ## Consequences
 Old positional VG/media syntax is replaced with migration examples. Selection

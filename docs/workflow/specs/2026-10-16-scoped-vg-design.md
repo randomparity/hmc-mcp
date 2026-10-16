@@ -5,11 +5,14 @@ Source: #1697, parent #1695 and the approved WORK:SCOPE annotation on #1697.
 [ADR 0227](../../adr/0227-scoped-volume-group-selectors.md) records the boundary.
 C1: VIOS-centric storage commands keep VIOS positional. VG-bearing disk,
 repository and media read/write/upload commands take `--vg NAME_OR_UUID`;
-media object arguments become `--name`. Mount/unmount take `--lpar` and `--name`.
+media object arguments and map `--disk` become `--name`. Mount/unmount take
+`--lpar` and `--name`.
 Upload retains positional ISO_SOURCE. Mapping IDs remain positional identities.
 C2: attach-disk keeps positional LPAR with `--vios`/`--vg` names or UUIDs.
 Its CLI adapter resolves VIOS with optional system containment, then VG, before
 constructing the existing UUID-only ProvisionStorage and calling the workflow.
+The provisioning VG preflight delegates to the same unique-identity resolver
+after requiring a UUID, so direct attach/provision dry-runs retain that contract.
 C3: storage/resources.py owns `resolve_volume_group_uuid(hmc, vios_uuid, value)`.
 It reads only that VIOS's existing list_volume_groups feed. Canonical UUIDs match
 case-insensitively; other values match GroupName exactly. Names require complete
