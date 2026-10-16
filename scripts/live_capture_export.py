@@ -154,8 +154,10 @@ _NS_PREFIX = rf"(?![!?])(?:(?:[^{_PREFIX_END_CLASS}\\]|{_NAME_ESCAPE})*+:)*"
 #: or a leading `!` or `?` still ends a value the backstops read (#1660). A comment, CDATA
 #: section or processing instruction never starts with `</`; text that is not XML but
 #: holds `</`, free text and `x:SerialNumber` is refused, never exported. Each segment
-#: ends at the first `:`, so a prefix matches one way only.
-_CLOSING_PREFIX = r"(?:[^:<>]*+:)*"
+#: ends at the first `:`, so a prefix matches one way only. Before the bare name,
+#: XML whitespace, `!` and `?` need no `:` (#1678); JSON whitespace escapes count too.
+#: This final run is possessive, so a long run is scanned once.
+_CLOSING_PREFIX = r"(?:[^:<>]*+:)*(?:[ \t\n\r!?]|\\++[nrt])*+"
 #: Elements whose whole text a rule replaces: the element name pattern, the text the
 #: rule writes and, optionally, the keywords it keeps as evidence. The same entry builds
 #: the scrub rule and its `leaks()` backstop. Names match in any case, after any
