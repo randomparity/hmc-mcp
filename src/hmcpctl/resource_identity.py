@@ -7,7 +7,6 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Literal
 
 from hmcpctl.client.client_resolution import summary_for
-from hmcpctl.errors import HMCError
 
 if TYPE_CHECKING:
     from hmcpctl.client.core import HMCClient
@@ -140,17 +139,11 @@ async def _verify_partition_on_system(
     hmc: HMCClient, system_uuid: str, partition_uuid: str, kind: Literal["LPAR", "VIOS"]
 ) -> None:
     """Establish UUID containment using only the selected managed-system feed."""
-    try:
-        partitions = (
-            await hmc.list_logical_partitions(system_uuid)
-            if kind == "LPAR"
-            else await hmc.list_vios(system_uuid)
-        )
-    except HMCError as exc:
-        raise ValueError(
-            f"Cannot confirm {kind} {partition_uuid!r} belongs to managed system "
-            f"{system_uuid}: {exc}"
-        ) from exc
+    partitions = (
+        await hmc.list_logical_partitions(system_uuid)
+        if kind == "LPAR"
+        else await hmc.list_vios(system_uuid)
+    )
     if not _hosts_partition(partitions, partition_uuid):
         raise ValueError(
             f"{kind} {partition_uuid!r} does not belong to managed system "

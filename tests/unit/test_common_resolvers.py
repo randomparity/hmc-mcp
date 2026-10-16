@@ -170,3 +170,19 @@ async def test_scoped_uuid_requires_selected_system_membership(resolver, feed, m
     getattr(hmc, feed).assert_awaited_once_with(SYSTEM_UUID)
     hmc.find_partition_by_name.assert_not_awaited()
     hmc.find_vios_by_name.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("resolver", "feed"),
+    [(resolve_lpar_uuid, "list_logical_partitions"), (resolve_vios_uuid, "list_vios")],
+)
+async def test_scoped_uuid_preserves_feed_error(resolver, feed):
+    from hmcpctl.errors import HMCError
+
+    hmc = AsyncMock()
+    error = HMCError("feed unavailable", status_code=404)
+    getattr(hmc, feed).side_effect = error
+    with pytest.raises(HMCError) as caught:
+        await resolver(hmc, SYSTEM_UUID, system_name_or_uuid=SYSTEM_UUID)
+    assert caught.value is error

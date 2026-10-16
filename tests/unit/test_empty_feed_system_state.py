@@ -466,14 +466,13 @@ async def test_partition_membership_check_names_the_system_state(
     _mock_no_connection_system(mock_hmc)
 
     async with HMCClient(make_config()) as hmc:
-        with pytest.raises(ValueError) as caught:
+        with pytest.raises(HMCError) as caught:
             await resolver(hmc, LPAR_UUID, system_name_or_uuid=SYSTEM_UUID)
 
     message = str(caught.value)
     assert repr(SYSTEM_NAME) in message
     assert "State 'no connection'" in message
     assert "omit the selector" not in message
-    assert isinstance(caught.value.__cause__, HMCError)
 
 
 @pytest.mark.asyncio

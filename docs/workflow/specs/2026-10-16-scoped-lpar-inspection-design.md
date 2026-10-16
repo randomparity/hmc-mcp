@@ -18,7 +18,9 @@ Use the same case-insensitive membership rule against the selected system's
 VIOS feed for scoped VIOS UUIDs. Names continue through existing exact-name
 resolution; omitted/blank scope retains current UUID passthrough and discovery.
 The selected-system feed establishes membership before target reads or writes;
-its existing disconnected-system diagnostic must survive. Ownership override
+its existing disconnected-system diagnostic must survive. Feed failures propagate
+the original HMCError, including subtype/status, so callers retain transport-error
+handling; confirmed non-membership remains ValueError. Ownership override
 bypasses ownership policy, not an explicitly selected system.
 Get_lpar must constrain UUIDs without changing its absent-name None result.
 Audit CLI systems/lpars/vios/storage target forwarding and direct dependencies;
