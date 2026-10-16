@@ -271,7 +271,8 @@ def _element_leak(element: str, value: str, keep: str | None = None) -> re.Patte
     it to its end, as the scrub rule does.
     """
     written = re.escape(value.replace("<", "&lt;").replace(">", "&gt;"))
-    closing = rf"(?=</{_CLOSING_PREFIX}{element}\b)"
+    # Nested JSON text retains its slash escape; later serialization doubles backslashes.
+    closing = rf"(?=<\\*+/{_CLOSING_PREFIX}{element}\b)"
     kept = (
         rf"(?P<kept><(?>{_NS_PREFIX}{element}\b){_ATTRS}(?<!/)>(?:{keep}){closing})|"
         if keep
@@ -394,8 +395,8 @@ _LIVE_HEX_RUN = (
 #: keeps. The closing tag is checked before the run is searched, and neither check
 #: backtracks out of the text run, so the scan stays linear.
 _MAC_LEAK = re.compile(
-    rf"(?:(?<![^<>])(?=[^<>]*+</{_CLOSING_PREFIX}(?i:\w*MACAddress))(?=[^<>]*?{_LIVE_HEX_RUN})"
-    rf"[^<>]++|\]\]>(?=(?:\s|\\[nrt])*+</{_CLOSING_PREFIX}(?i:\w*MACAddress)))"
+    rf"(?:(?<![^<>])(?=[^<>]*+<\\*+/{_CLOSING_PREFIX}(?i:\w*MACAddress))(?=[^<>]*?{_LIVE_HEX_RUN})"
+    rf"[^<>]++|\]\]>(?=(?:\s|\\[nrt])*+<\\*+/{_CLOSING_PREFIX}(?i:\w*MACAddress)))"
 )
 
 
