@@ -2638,11 +2638,12 @@ def test_free_text_rules_after_a_long_backslash_run_do_not_backtrack() -> None:
     escapes = "\\" * 20_000 + "u00e9 \\n\\t\\f\\b0a1b \\\\\\b0:1B "
     runs = "0a-" * 20_000 + "0ag " + "0a1b." * 20_000 + "0a1bg "
     zeroed = "00-" * 20_000 + "00 " + "0000." * 20_000 + "0000 "
-    body = (escapes + runs + zeroed) * 5
+    body = (escapes + r"\u" + runs + r"\u" + zeroed) * 5
     assert len(FREE_TEXT_RULES) == 10
-    for rule in FREE_TEXT_RULES:
+    for rule in [*FREE_TEXT_RULES, export._RAW_IDENTIFIER_LEAK]:
         pattern = rule.pattern.replace(export._SCRUB_START, r"(?<![\w\\])")
         pattern = pattern.replace(export._LEAK_START, r"(?<![\w\\])")
+        pattern = pattern.replace(r"(?<=\\u)", "(?!)")
         for _, _, zeroed in export._MAC_FORMS:
             pattern = pattern.replace(f"(?!{zeroed})", "")
         baseline = re.compile(pattern, rule.flags)
@@ -3146,3 +3147,79 @@ def test_ipv6_backstop_after_colon_delimited_labels(body: str) -> None:
     if body == "IPv6:::1":
         record = export._tokenize_record(tok, {**_ssh("lshmc", body), "_src": "test"})
         assert tok.leaks(json.dumps([record]))
+
+
+@pytest.mark.parametrize("slashes", [1, 2, 3, 4])
+@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES[1:4]])
+def test_literal_u_before_a_free_text_identifier_is_reported(
+    slashes: int, value: str
+) -> None:
+    """#1684: raw backslash-u is not necessarily a Unicode escape."""
+    tok = export.Tokenizer({}, set())
+    body = "hdr " + "\\" * slashes + "u" + value + " x"
+    out = tok.tokenize(body)
+    assert out == body
+    assert tok.leaks(out) == [value]
+
+
+@pytest.mark.parametrize("kind", ["ssh", "rest", "tool"])
+@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES[1:4]])
+def test_literal_u_identifier_refuses_export(kind: str, value: str) -> None:
+    body = "hdr \\u" + value + " x"
+    record = {
+        "ssh": _ssh("lshwres", body),
+        "rest": _rest("/e", body),
+        "tool": {"kind": "tool", "step": "t", "data": {"raw": body}},
+    }[kind]
+    with pytest.raises(export.LeakError, match="nothing written"):
+        export.tokenize_records(_records(record))
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "<other>{}</MACAddress>",
+        "<MACAddress {}",
+        "<MACAddress><![CDATA[{}]]></MACAddress>",
+        "<MACAddress><child/>{}</MACAddress>",
+        "<MACAddress/> {}</MACAddress>",
+        '<MACAddress note="{}">ALL</MACAddress>',
+    ],
+)
+@pytest.mark.parametrize(
+    "value", ["0001000000000000", "0a-1b-2c-3d-4e-5f", "0a1b.2c3d.4e5f"]
+)
+def test_literal_u_identifier_outside_mac_scrub_text_refuses(
+    template: str, value: str
+) -> None:
+    """Only text matched by the actual MAC scrubber can use its escape exemptions."""
+    body = template.format("\\u" + value)
+    tok = export.Tokenizer({}, set())
+    out = tok.tokenize(body)
+    assert out is not None
+    assert tok.leaks(out)
+    with pytest.raises(export.LeakError, match="nothing written"):
+        export.tokenize_records(_records(_rest("/e", body)))
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "<MACAddress>{}",
+        "<MACAddress>{}</MA",
+        "<MACAddress>{}</other>",
+        "<MACAddress>{}</?MACAddress>",
+    ],
+)
+@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES[1:4]])
+def test_literal_u_mac_scrub_text_stays_safe_without_a_valid_closing_tag(
+    template: str, value: str
+) -> None:
+    body = template.format("\\u" + value)
+    tok = export.Tokenizer({}, set())
+    out = tok.tokenize(body)
+    assert out is not None
+    assert value not in out
+    assert tok.leaks(out) == []
+    corpus = export.tokenize_records(_records(_rest("/e", body)))
+    assert corpus[-1]["body"] == out

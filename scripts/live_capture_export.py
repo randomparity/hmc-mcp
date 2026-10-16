@@ -419,6 +419,18 @@ _MAC_LEAK = re.compile(
 )
 
 
+#: Share the MAC scrubber's exact value spans with the raw-text backstop: an actual
+#: Unicode escape before zeroed MAC digits can otherwise look like a live identifier.
+_MAC_ELEMENT = re.compile(
+    rf"(<(?>{_NS_PREFIX}(?i:\w*MACAddress\w*+)){_TAG_TAIL})([^<]+)"
+)
+_RAW_IDENTIFIER_LEAK = re.compile(
+    rf"(?<=\\u)(?:{_WWN_16}|"
+    + "|".join(rf"{guard}(?!{zeroed}){run}" for guard, run, zeroed in _MAC_FORMS[1:])
+    + ")"
+)
+
+
 #: An IPv6 address, or a colon-separated HMC record `_ipv6` keeps, up to a word boundary.
 _IPV6_CANDIDATE = r"(?:fe80|[0-9a-f]{1,4})(?::[0-9a-f]{0,4}){2,7}\b"
 #: A JSON escape and the candidate directly after it, or a candidate at a word boundary.
@@ -647,7 +659,7 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     # value: text after it belongs to its parent. This rule leaves it, and `_MAC_LEAK`
     # reports it only when it ends at a closing MAC tag.
     (
-        re.compile(rf"(<(?>{_NS_PREFIX}(?i:\w*MACAddress\w*+)){_TAG_TAIL})([^<]+)"),
+        _MAC_ELEMENT,
         _mac_element,
     ),
     *(
@@ -952,6 +964,15 @@ class Tokenizer:
                 for m in pattern.finditer(text)
                 if not m.groupdict().get("kept")
             ]
+        # Only the value the MAC scrubber handles uses its escape exemptions.
+        # Merge ordered scans so many raw candidates never rescan earlier values.
+        mac_values = iter(_MAC_ELEMENT.finditer(text))
+        mac_value = next(mac_values, None)
+        for match in _RAW_IDENTIFIER_LEAK.finditer(text):
+            while mac_value is not None and mac_value.end(2) <= match.start():
+                mac_value = next(mac_values, None)
+            if mac_value is None or match.start() < mac_value.start(2):
+                found.append(match.group(0))
         found += _ipv6_leaks(text)
         for pattern in self.private:
             found += [m.group(0) for m in pattern.finditer(text)]
