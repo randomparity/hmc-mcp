@@ -1802,6 +1802,31 @@ def test_email_rule_starts_where_it_always_did(raw: str, scrubbed: str) -> None:
     assert rule.sub(replacement, raw) == scrubbed
 
 
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize(
+    "escaped", [r"\n", r"\r", r"\t", r"\f", r"\b", r"\u0001", r"\u00e9"]
+)
+def test_email_after_a_json_escape_keeps_the_escape(encode: Any, escaped: str) -> None:
+    """An escape's letter and digits belong to the escape, never to the address."""
+    rule, replacement = next(r for r in export.IDENTIFIER_RULES if "@" in r[0].pattern)
+    value = escaped if encode is str else json.loads(f'"{escaped}"')
+    body = encode(f"hdr{value}admin@example.org")
+    scrubbed = rule.sub(replacement, body)
+    assert scrubbed == encode(f"hdr{value}user@example.test")
+    if encode is json.dumps:
+        assert json.loads(scrubbed) == f"hdr{value}user@example.test"
+
+
+@pytest.mark.parametrize("escaped", ["\n", "\r", "\t", "\f", "\b", "\x01", "é"])
+def test_email_after_an_encoded_control_character_keeps_valid_json(
+    escaped: str,
+) -> None:
+    tok = export.Tokenizer({}, set())
+    scrubbed = tok.tokenize(json.dumps(f"hdr{escaped}admin@example.org"))
+    assert scrubbed == json.dumps(f"hdr{escaped}user@example.test")
+    assert json.loads(scrubbed) == f"hdr{escaped}user@example.test"
+
+
 def test_a_long_run_without_an_at_sign_is_scanned_once() -> None:
     """Regression #1592: the e-mail rule rescanned the rest of the run from each position.
 
