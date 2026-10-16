@@ -8,6 +8,7 @@ tokenized, and an SSH key comment leaking a host.
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import re
@@ -23,6 +24,30 @@ assert MODULE_SPEC is not None
 assert MODULE_SPEC.loader is not None
 export = importlib.util.module_from_spec(MODULE_SPEC)
 MODULE_SPEC.loader.exec_module(export)
+
+
+def test_serial_names_share_one_source() -> None:
+    """#1682: one added name reaches both consumers without editing either."""
+    tree = ast.parse(MODULE_PATH.read_text(encoding="utf-8"))
+    names = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "_SERIAL_NAMES"
+            for target in node.targets
+        )
+    )
+    assert isinstance(names.value, ast.Tuple)
+    names.value.elts.append(ast.Constant(value="probe_serial_num"))
+    namespace: dict[str, Any] = {"__name__": "serial_name_probe"}
+    # Execute only the repository module already imported above, with one added test name.
+    exec(  # noqa: S102
+        compile(ast.fix_missing_locations(tree), str(MODULE_PATH), "exec"), namespace
+    )
+    assert re.fullmatch(namespace["_KEYWORD_SERIAL_KEY"], "probe_serial_num")
+    assert "probeserialnum" in namespace["_SERIAL_KEYS"]
+
 
 SYSTEM = "labsys42"
 LPAR = "labsys42-lp3"
