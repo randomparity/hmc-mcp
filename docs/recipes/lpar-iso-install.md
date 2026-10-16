@@ -192,7 +192,7 @@ hmcpctl storage create-disk "$VIOS" --vg "$VG" --name "$DISK_NAME" --capacity-mi
   --system "$SYSTEM" --yes
 hmcpctl storage list-vgs "$VIOS" --system "$SYSTEM" --json
 hmcpctl storage list-mappings "$VIOS" --lpar "$LPAR" --system "$SYSTEM" --json
-hmcpctl storage map "$VIOS" --lpar "$LPAR" --disk "$DISK_NAME" --system "$SYSTEM" --yes
+hmcpctl storage map "$VIOS" --lpar "$LPAR" --name "$DISK_NAME" --system "$SYSTEM" --yes
 hmcpctl storage list-mappings "$VIOS" --lpar "$LPAR" --system "$SYSTEM" --json
 ```
 
@@ -213,24 +213,24 @@ VIOS's `rootvg`. Set `MEDIA_VG` to the group that holds the repository.
 
 ```bash
 MEDIA_VG=<volume-group-uuid-holding-the-media-repository>
-hmcpctl storage get-media-repo "$VIOS" "$MEDIA_VG" --system "$SYSTEM" --json
+hmcpctl storage get-media-repo "$VIOS" --vg "$MEDIA_VG" --system "$SYSTEM" --json
 ```
 
 If `get-media-repo` shows no repository, create one. `--size-mib` must be a multiple of 1024
 and reaches the HMC as whole GiB, so the command below creates a 20 GiB repository.
 
 ```bash
-hmcpctl storage create-media-repo "$VIOS" "$MEDIA_VG" --size-mib 20480 --system "$SYSTEM" --yes
+hmcpctl storage create-media-repo "$VIOS" --vg "$MEDIA_VG" --size-mib 20480 --system "$SYSTEM" --yes
 ```
 
 Put the ISO in the repository and mount it on the partition. `upload-iso` sends the ISO
 through the HMC web File API and reports `uploaded` once the repository lists it.
 
 ```bash
-hmcpctl storage upload-iso "$VIOS" "$MEDIA_VG" "$MEDIA_NAME" "$ISO_URL" --system "$SYSTEM" --json
-hmcpctl storage list-optical-media "$VIOS" "$MEDIA_VG" --system "$SYSTEM" --json
+hmcpctl storage upload-iso "$VIOS" --vg "$MEDIA_VG" --name "$MEDIA_NAME" "$ISO_URL" --system "$SYSTEM" --json
+hmcpctl storage list-optical-media "$VIOS" --vg "$MEDIA_VG" --system "$SYSTEM" --json
 hmcpctl storage list-mappings "$VIOS" --lpar "$LPAR" --system "$SYSTEM" --json
-hmcpctl storage mount-optical-media "$VIOS" "$LPAR" "$MEDIA_NAME" --system "$SYSTEM" --yes
+hmcpctl storage mount-optical-media "$VIOS" --lpar "$LPAR" --name "$MEDIA_NAME" --system "$SYSTEM" --yes
 hmcpctl storage list-mappings "$VIOS" --lpar "$LPAR" --system "$SYSTEM" --json
 ```
 
@@ -378,7 +378,7 @@ Do not continue until the state reads `not activated`. Then unmount the ISO:
 
 ```bash
 hmcpctl storage list-mappings "$VIOS" --lpar "$LPAR" --system "$SYSTEM" --json
-hmcpctl storage unmount-optical-media "$VIOS" "$LPAR" "$MEDIA_NAME" --system "$SYSTEM" --confirm
+hmcpctl storage unmount-optical-media "$VIOS" --lpar "$LPAR" --name "$MEDIA_NAME" --system "$SYSTEM" --confirm
 hmcpctl storage list-mappings "$VIOS" --lpar "$LPAR" --system "$SYSTEM" --json
 ```
 
@@ -417,14 +417,14 @@ Delete the virtual disk, then the ISO. `delete-disk` refuses a disk that is stil
 
 ```bash
 hmcpctl storage delete-disk "$VIOS" --vg "$VG" --name "$DISK_NAME" --system "$SYSTEM" --yes
-hmcpctl storage delete-media "$VIOS" "$MEDIA_VG" "$MEDIA_NAME" --system "$SYSTEM" --yes
+hmcpctl storage delete-media "$VIOS" --vg "$MEDIA_VG" --name "$MEDIA_NAME" --system "$SYSTEM" --yes
 ```
 
 Delete the media repository only if this run created it and it holds nothing else:
 
 ```bash
-hmcpctl storage list-optical-media "$VIOS" "$MEDIA_VG" --system "$SYSTEM" --json
-hmcpctl storage delete-media-repo "$VIOS" "$MEDIA_VG" --system "$SYSTEM" --yes
+hmcpctl storage list-optical-media "$VIOS" --vg "$MEDIA_VG" --system "$SYSTEM" --json
+hmcpctl storage delete-media-repo "$VIOS" --vg "$MEDIA_VG" --system "$SYSTEM" --yes
 ```
 
 Delete the partition last, after the same description check; stop if it no

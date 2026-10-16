@@ -133,7 +133,7 @@ hmcpctl storage list-vgs <vios-uuid>                       # find the VG + free 
 hmcpctl storage create-disk <vios-uuid> --vg <vg-uuid> --name web01_root --capacity-mib 51200
 
 # 3. map the disk to the partition (the HMC creates the vSCSI adapter pair)
-hmcpctl storage map <vios-uuid> --lpar web01 --disk web01_root
+hmcpctl storage map <vios-uuid> --lpar web01 --name web01_root
 
 # 4. (optionally) network + power on
 hmcpctl adapters add-network web01 --vlan 100
@@ -152,6 +152,44 @@ hmcpctl lpars power-on web01
 > **Cluster / SSP Logical Unit** model are wrapped. Once a disk is mapped,
 > partitioning it into filesystems is the guest OS's job (NIM, cloud-init,
 > `mkfs`), not the HMC's.
+
+## Storage selector migration
+
+VIOS-centric commands take one positional VIOS name or UUID. Use `--system` to
+constrain that VIOS to a managed system, `--vg NAME_OR_UUID` for its volume group,
+and `--name` for the disk or optical image. VG names match exactly within that
+VIOS; missing, ambiguous or incomplete identities fail with candidate details.
+UUIDs also require membership in the selected VIOS before a write.
+
+These pre-release forms replace the earlier syntax (prefix each with `hmcpctl storage`):
+
+| Earlier | Current |
+| --- | --- |
+| `get-media-repo VIOS VG` | `get-media-repo VIOS --vg VG` |
+| `list-optical-media VIOS VG` | `list-optical-media VIOS --vg VG` |
+| `create-media-repo VIOS VG --size-mib 20480` | `create-media-repo VIOS --vg VG --size-mib 20480` |
+| `delete-media-repo VIOS VG` | `delete-media-repo VIOS --vg VG` |
+| `create-media VIOS VG --name install.iso --size-mib 1024` | `create-media VIOS --vg VG --name install.iso --size-mib 1024` |
+| `delete-media VIOS VG install.iso` | `delete-media VIOS --vg VG --name install.iso` |
+| `upload-iso VIOS VG install.iso URL` | `upload-iso VIOS --vg VG --name install.iso URL` |
+| `mount-optical-media VIOS LPAR install.iso` | `mount-optical-media VIOS --lpar LPAR --name install.iso` |
+| `unmount-optical-media VIOS LPAR install.iso` | `unmount-optical-media VIOS --lpar LPAR --name install.iso` |
+| `map VIOS --lpar LPAR --disk disk01` | `map VIOS --lpar LPAR --name disk01` |
+
+`create-disk` and `delete-disk` already use `--vg` and `--name`; their `--vg`
+now accepts an exact VG name as well as a UUID. Confirmation options are unchanged.
+For example, `hmcpctl storage delete-disk vios-a --vg datavg --name disk01 --yes`
+still refuses to delete a mapped disk. Mounted-media and If-Match guards also remain.
+
+`attach-disk` is the target-oriented exception: its positional parent is the LPAR,
+with both `--vios NAME_OR_UUID` and `--vg NAME_OR_UUID`, for example:
+
+```bash
+hmcpctl storage attach-disk web01 --vios vios-a --vg datavg --name disk01 --capacity-mib 1024 --dry-run
+```
+
+The media repository belongs to its VIOS/VG, so it has no LPAR filter. Inspect LPAR
+relationships with `hmcpctl storage list-mappings vios-a --lpar web01`.
 
 ## Fleet utilization report
 

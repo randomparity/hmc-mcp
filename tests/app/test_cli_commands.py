@@ -809,7 +809,7 @@ def test_connection_options_do_not_leak_between_invocations(monkeypatch):
                 VIOS_UUID,
                 "--lpar",
                 LPAR_UUID,
-                "--disk",
+                "--name",
                 "bootvol",
                 "--target",
                 "vtscsi0",
@@ -827,6 +827,7 @@ def test_connection_options_do_not_leak_between_invocations(monkeypatch):
                 "storage",
                 "create-media-repo",
                 VIOS_UUID,
+                "--vg",
                 VG_UUID,
                 "--size-mib",
                 "2048",
@@ -836,7 +837,7 @@ def test_connection_options_do_not_leak_between_invocations(monkeypatch):
             "Created media repository",
         ),
         (
-            ["storage", "delete-media-repo", VIOS_UUID, VG_UUID, "--yes"],
+            ["storage", "delete-media-repo", VIOS_UUID, "--vg", VG_UUID, "--yes"],
             ("delete_media_repository", (VIOS_UUID, VG_UUID), {}),
             "Deleted media repository",
         ),
@@ -906,7 +907,7 @@ def test_network_cli_refuses_an_unknown_switch_id_before_the_create(fake_hmc):
             "adapter-1",
         ],
         ["network", "delete", SYSTEM_UUID, "--uuid", "network-1"],
-        ["storage", "delete-media-repo", VIOS_UUID, VG_UUID],
+        ["storage", "delete-media-repo", VIOS_UUID, "--vg", VG_UUID],
     ],
 )
 def test_destructive_cli_commands_abort_without_confirmation(fake_hmc, args):
@@ -2132,7 +2133,7 @@ def test_storage_map_rejects_invalid_kind_before_client_call(fake_hmc):
             VIOS_UUID,
             "--lpar",
             LPAR_UUID,
-            "--disk",
+            "--name",
             "disk1",
             "--kind",
             "UnknownStorage",
@@ -2213,7 +2214,8 @@ def test_storage_create_disk(fake_hmc):
 
     assert result.exit_code == 0
     assert "Created virtual disk 'bootvol' (1024 MiB)" in result.stdout
-    name, args, _ = fake_hmc.calls[0]
+    assert fake_hmc.calls[0] == ("list_volume_groups", (VIOS_UUID,), {})
+    name, args, _ = fake_hmc.calls[1]
     assert name == "create_virtual_disk"
     assert args[1] == VG_UUID
     assert args[3] == 1024
@@ -2432,7 +2434,9 @@ def _storage_app() -> typer.Typer:
             [
                 "upload-iso",
                 VIOS_UUID,
+                "--vg",
                 VG_UUID,
+                "--name",
                 "aix.iso",
                 "https://images.test/aix.iso",
             ],
@@ -2548,7 +2552,7 @@ def test_storage_map_declined_confirmation_aborts(fake_hmc, monkeypatch):
 
     result = RUNNER.invoke(
         cli.app,
-        ["storage", "map", VIOS_UUID, "--lpar", LPAR_UUID, "--disk", "bootvol"],
+        ["storage", "map", VIOS_UUID, "--lpar", LPAR_UUID, "--name", "bootvol"],
         input="n\n",
     )
 
@@ -2569,7 +2573,15 @@ def test_storage_create_media_repo_declined_confirmation_aborts(fake_hmc, monkey
 
     result = RUNNER.invoke(
         cli.app,
-        ["storage", "create-media-repo", VIOS_UUID, VG_UUID, "--size-mib", "2048"],
+        [
+            "storage",
+            "create-media-repo",
+            VIOS_UUID,
+            "--vg",
+            VG_UUID,
+            "--size-mib",
+            "2048",
+        ],
         input="n\n",
     )
 
@@ -2595,6 +2607,7 @@ def test_storage_create_media_creates_when_confirmed(fake_hmc, monkeypatch):
             "storage",
             "create-media",
             VIOS_UUID,
+            "--vg",
             VG_UUID,
             "--name",
             "aix.iso",
@@ -2630,6 +2643,7 @@ def test_storage_create_media_declined_confirmation_aborts(fake_hmc, monkeypatch
             "storage",
             "create-media",
             VIOS_UUID,
+            "--vg",
             VG_UUID,
             "--name",
             "aix.iso",
@@ -2656,7 +2670,16 @@ def test_storage_delete_media_deletes_when_confirmed(fake_hmc, monkeypatch):
 
     result = RUNNER.invoke(
         cli.app,
-        ["storage", "delete-media", VIOS_UUID, VG_UUID, "aix.iso", "--yes"],
+        [
+            "storage",
+            "delete-media",
+            VIOS_UUID,
+            "--vg",
+            VG_UUID,
+            "--name",
+            "aix.iso",
+            "--yes",
+        ],
     )
 
     assert result.exit_code == 0
@@ -2676,7 +2699,7 @@ def test_storage_delete_media_declined_confirmation_aborts(fake_hmc, monkeypatch
 
     result = RUNNER.invoke(
         cli.app,
-        ["storage", "delete-media", VIOS_UUID, VG_UUID, "aix.iso"],
+        ["storage", "delete-media", VIOS_UUID, "--vg", VG_UUID, "--name", "aix.iso"],
         input="n\n",
     )
 
@@ -2701,7 +2724,9 @@ def test_storage_mount_optical_media_forwards_selectors(fake_hmc, monkeypatch):
             "storage",
             "mount-optical-media",
             VIOS_UUID,
+            "--lpar",
             LPAR_UUID,
+            "--name",
             "install.iso",
             "--system",
             SYSTEM_UUID,
@@ -2741,7 +2766,9 @@ def test_storage_unmount_optical_media_forwards_selectors(fake_hmc, monkeypatch)
             "storage",
             "unmount-optical-media",
             VIOS_UUID,
+            "--lpar",
             LPAR_UUID,
+            "--name",
             "install.iso",
             "--system",
             SYSTEM_UUID,
@@ -2772,7 +2799,15 @@ def test_storage_mount_optical_media_decline_does_not_mutate(fake_hmc, monkeypat
 
     result = RUNNER.invoke(
         cli.app,
-        ["storage", "mount-optical-media", VIOS_UUID, LPAR_UUID, "install.iso"],
+        [
+            "storage",
+            "mount-optical-media",
+            VIOS_UUID,
+            "--lpar",
+            LPAR_UUID,
+            "--name",
+            "install.iso",
+        ],
         input="n\n",
     )
 
@@ -2789,7 +2824,15 @@ def test_storage_unmount_optical_media_decline_does_not_mutate(fake_hmc, monkeyp
 
     result = RUNNER.invoke(
         cli.app,
-        ["storage", "unmount-optical-media", VIOS_UUID, LPAR_UUID, "install.iso"],
+        [
+            "storage",
+            "unmount-optical-media",
+            VIOS_UUID,
+            "--lpar",
+            LPAR_UUID,
+            "--name",
+            "install.iso",
+        ],
         input="n\n",
     )
 
@@ -2824,7 +2867,9 @@ def test_storage_get_media_repo_renders_name_and_size(fake_hmc, monkeypatch):
         "hmcpctl.cli_commands.storage.resources.get_media_repository", fake_get
     )
 
-    result = RUNNER.invoke(cli.app, ["storage", "get-media-repo", VIOS_UUID, VG_UUID])
+    result = RUNNER.invoke(
+        cli.app, ["storage", "get-media-repo", VIOS_UUID, "--vg", VG_UUID]
+    )
 
     assert result.exit_code == 0
     assert "VMLibrary" in result.stdout
@@ -2841,7 +2886,9 @@ def test_storage_get_media_repo_labels_the_size_in_gib(fake_hmc, monkeypatch):
         "hmcpctl.cli_commands.storage.resources.get_media_repository", fake_get
     )
 
-    result = RUNNER.invoke(cli.app, ["storage", "get-media-repo", VIOS_UUID, VG_UUID])
+    result = RUNNER.invoke(
+        cli.app, ["storage", "get-media-repo", VIOS_UUID, "--vg", VG_UUID]
+    )
 
     assert result.exit_code == 0
     assert "Size: 64 GiB" in result.stdout
@@ -2855,7 +2902,9 @@ def test_storage_get_media_repo_reports_empty(fake_hmc, monkeypatch):
         "hmcpctl.cli_commands.storage.resources.get_media_repository", fake_get
     )
 
-    result = RUNNER.invoke(cli.app, ["storage", "get-media-repo", VIOS_UUID, VG_UUID])
+    result = RUNNER.invoke(
+        cli.app, ["storage", "get-media-repo", VIOS_UUID, "--vg", VG_UUID]
+    )
 
     assert result.exit_code == 0
     assert "No media repository found" in result.stdout
@@ -2870,7 +2919,7 @@ def test_storage_get_media_repo_json(fake_hmc, monkeypatch):
     )
 
     result = RUNNER.invoke(
-        cli.app, ["storage", "get-media-repo", VIOS_UUID, VG_UUID, "--json"]
+        cli.app, ["storage", "get-media-repo", VIOS_UUID, "--vg", VG_UUID, "--json"]
     )
 
     assert result.exit_code == 0
@@ -2887,7 +2936,7 @@ def test_storage_list_optical_media_renders_a_table(fake_hmc, monkeypatch):
     )
 
     result = RUNNER.invoke(
-        cli.app, ["storage", "list-optical-media", VIOS_UUID, VG_UUID]
+        cli.app, ["storage", "list-optical-media", VIOS_UUID, "--vg", VG_UUID]
     )
 
     assert result.exit_code == 0
@@ -2905,7 +2954,7 @@ def test_storage_list_optical_media_reports_empty(fake_hmc, monkeypatch):
     )
 
     result = RUNNER.invoke(
-        cli.app, ["storage", "list-optical-media", VIOS_UUID, VG_UUID]
+        cli.app, ["storage", "list-optical-media", VIOS_UUID, "--vg", VG_UUID]
     )
 
     assert result.exit_code == 0
@@ -2921,7 +2970,7 @@ def test_storage_list_optical_media_json(fake_hmc, monkeypatch):
     )
 
     result = RUNNER.invoke(
-        cli.app, ["storage", "list-optical-media", VIOS_UUID, VG_UUID, "--json"]
+        cli.app, ["storage", "list-optical-media", VIOS_UUID, "--vg", VG_UUID, "--json"]
     )
 
     assert result.exit_code == 0
@@ -3114,7 +3163,9 @@ def test_storage_upload_iso_reports_uploaded_media(fake_hmc, monkeypatch):
             "storage",
             "upload-iso",
             VIOS_UUID,
+            "--vg",
             VG_UUID,
+            "--name",
             "aix.iso",
             "https://images.test/aix.iso",
         ],
@@ -3143,7 +3194,9 @@ def test_storage_upload_iso_json(fake_hmc, monkeypatch):
             "storage",
             "upload-iso",
             VIOS_UUID,
+            "--vg",
             VG_UUID,
+            "--name",
             "aix.iso",
             "https://images.test/aix.iso",
             "--json",
@@ -5654,3 +5707,66 @@ def test_scoped_lpar_inspection_missing_system(fake_hmc, command):
     )
     assert result.exit_code == 1, result.output
     assert "No managed system named" in result.output
+
+
+@pytest.mark.parametrize("vg", ["rootvg", VG_UUID])
+@pytest.mark.parametrize("vios", ["vios01", VIOS_UUID])
+def test_storage_named_attach_selectors(fake_hmc, vg, vios):
+    fake_hmc.vg["Resource"]["GroupName"] = "rootvg"
+    fake_hmc.find_vios_by_name = AsyncMock(return_value={"UUID": VIOS_UUID})
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "storage",
+            "attach-disk",
+            LPAR_UUID,
+            "--vios",
+            vios,
+            "--vg",
+            vg,
+            "--name",
+            "disk01",
+            "--capacity-mib",
+            "1024",
+            "--dry-run",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    if vios == "vios01":
+        fake_hmc.find_vios_by_name.assert_awaited_once_with("vios01")
+    else:
+        fake_hmc.find_vios_by_name.assert_not_awaited()
+    assert not any(name == "create_virtual_disk" for name, _, _ in fake_hmc.calls)
+
+
+def test_storage_map_uses_name_option(fake_hmc):
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "storage",
+            "map",
+            VIOS_UUID,
+            "--lpar",
+            LPAR_UUID,
+            "--name",
+            "disk01",
+            "--yes",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["get-media-repo", VIOS_UUID, VG_UUID],
+        ["delete-media", VIOS_UUID, VG_UUID, "install.iso", "--yes"],
+        ["mount-optical-media", VIOS_UUID, LPAR_UUID, "install.iso", "--yes"],
+        ["map", VIOS_UUID, "--lpar", LPAR_UUID, "--disk", "disk01", "--yes"],
+    ],
+)
+def test_storage_retired_positional_syntax_makes_no_requests(fake_hmc, arguments):
+    result = RUNNER.invoke(cli.app, ["storage", *arguments])
+    assert result.exit_code == 2
+    assert fake_hmc.calls == []

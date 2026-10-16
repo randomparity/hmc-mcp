@@ -95,8 +95,8 @@ jq -r '.entries[].UUID' "$CAPTURE_DIR/vios.json" | while IFS= read -r vios; do
   capture "vios-$vios-mappings.json" hmcpctl storage list-mappings "$vios" --system "$SYSTEM" --json
   jq -r '.[].uuid' "$CAPTURE_DIR/vios-$vios-vgs.json" | while IFS= read -r vg; do
     capture "vios-$vios-vg-$vg.raw.xml" hmcpctl raw get "/rest/api/uom/VirtualIOServer/$vios/VolumeGroup/$vg"
-    capture "vios-$vios-vg-$vg-media-repository.json" hmcpctl storage get-media-repo "$vios" "$vg" --system "$SYSTEM" --json
-    capture "vios-$vios-vg-$vg-optical-media.json" hmcpctl storage list-optical-media "$vios" "$vg" --system "$SYSTEM" --json
+    capture "vios-$vios-vg-$vg-media-repository.json" hmcpctl storage get-media-repo "$vios" --vg "$vg" --system "$SYSTEM" --json
+    capture "vios-$vios-vg-$vg-optical-media.json" hmcpctl storage list-optical-media "$vios" --vg "$vg" --system "$SYSTEM" --json
   done
 done
 ```

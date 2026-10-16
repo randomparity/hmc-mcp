@@ -10,7 +10,7 @@ from rich.text import Text
 
 from hmcpctl.client.core import HMCClient
 
-from ...documents.storage import StorageKind
+from ...documents.storage import StorageKind, validate_virtual_disk
 from ...operations.lpar.profile_sync import ChangeLocation
 from ...operations.lpar.provision import (
     AttachDiskResult,
@@ -33,9 +33,11 @@ from ...operations.storage.resources import (
     list_volume_groups,
     map_storage,
     mount_optical_media,
+    resolve_volume_group_uuid,
     unmount_optical_media,
     upload_iso,
 )
+from ...resource_identity import resolve_vios_uuid
 from ..output import VerbatimTable, console, output, print_json, usage_error
 from ..runtime import with_client
 
@@ -101,7 +103,7 @@ def storage_create_vg(
 
 def storage_create_disk(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
-    vg: str = typer.Option(..., "--vg", help="Volume Group UUID"),
+    vg: str = typer.Option(..., "--vg", help="Volume Group name or UUID"),
     name: str = typer.Option(
         ..., "--name", "-n", help="Virtual disk name (at most 15 characters)"
     ),
@@ -135,7 +137,7 @@ def storage_create_disk(
 
 def storage_delete_disk(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
-    vg: str = typer.Option(..., "--vg", help="Volume Group UUID"),
+    vg: str = typer.Option(..., "--vg", help="Volume Group name or UUID"),
     name: str = typer.Option(..., "--name", "-n", help="Virtual disk name"),
     yes: bool = typer.Option(False, "--yes", "-y"),
     system: str | None = typer.Option(
@@ -159,8 +161,8 @@ def storage_delete_disk(
 
 def storage_attach_disk(
     lpar: str = typer.Argument(..., help="Target LPAR name or UUID"),
-    vios: str = typer.Option(..., "--vios", help="VIOS UUID"),
-    vg: str = typer.Option(..., "--vg", help="Volume Group UUID"),
+    vios: str = typer.Option(..., "--vios", help="VIOS name or UUID"),
+    vg: str = typer.Option(..., "--vg", help="Volume Group name or UUID"),
     name: str = typer.Option(
         ..., "--name", "-n", help="New virtual disk name (at most 15 characters)"
     ),
@@ -185,17 +187,21 @@ def storage_attach_disk(
     ):
         raise typer.Abort()
 
-    result = with_client(
-        lambda hmc: attach_disk_to_lpar(
+    async def _go(hmc: HMCClient) -> AttachDiskResult:
+        validate_virtual_disk(name, capacity_mib)
+        vios_uuid = await resolve_vios_uuid(hmc, vios, system_name_or_uuid=system)
+        vg_uuid = await resolve_volume_group_uuid(hmc, vios_uuid, vg)
+        return await attach_disk_to_lpar(
             hmc,
             system,
             lpar,
-            ProvisionStorage(vios, name, vg_uuid=vg),
+            ProvisionStorage(vios_uuid, name, vg_uuid=vg_uuid),
             capacity_mib=capacity_mib,
             dry_run=dry_run,
             ownership_override=ownership_override,
         )
-    )
+
+    result = with_client(_go)
     if as_json:
         print_json(asdict(result))
         if not dry_run and not result.workflow_completed:
@@ -237,7 +243,9 @@ def _print_attach_location(result: AttachDiskResult) -> None:
 def storage_map(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     lpar: str = typer.Option(..., "--lpar", help="Target LPAR name or UUID"),
-    disk: str = typer.Option(..., "--disk", help="Storage name (DiskName or hdiskN)"),
+    disk: str = typer.Option(
+        ..., "--name", "-n", help="Storage name (DiskName or hdiskN)"
+    ),
     kind: StorageKind = typer.Option(
         "VirtualDisk", "--kind", help="VirtualDisk or PhysicalVolume"
     ),
@@ -278,7 +286,7 @@ def storage_map(
 
 def storage_create_media_repo(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
-    vg: str = typer.Argument(..., help="Volume Group UUID"),
+    vg: str = typer.Option(..., "--vg", help="Volume Group name or UUID"),
     size_mib: int = typer.Option(
         ...,
         "--size-mib",
@@ -307,7 +315,7 @@ def storage_create_media_repo(
 
 def storage_create_media(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
-    vg: str = typer.Argument(..., help="Volume Group UUID"),
+    vg: str = typer.Option(..., "--vg", help="Volume Group name or UUID"),
     name: str = typer.Option(
         ..., "--name", "-n", help="Media file name (e.g. aix.iso)"
     ),
@@ -339,7 +347,7 @@ def storage_create_media(
 
 def storage_delete_media_repo(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
-    vg: str = typer.Argument(..., help="Volume Group UUID"),
+    vg: str = typer.Option(..., "--vg", help="Volume Group name or UUID"),
     yes: bool = typer.Option(False, "--yes", "-y"),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
@@ -359,8 +367,10 @@ def storage_delete_media_repo(
 
 def storage_delete_media(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
-    vg: str = typer.Argument(..., help="Volume Group UUID"),
-    media_name: str = typer.Argument(..., help="ISO image name to delete"),
+    vg: str = typer.Option(..., "--vg", help="Volume Group name or UUID"),
+    media_name: str = typer.Option(
+        ..., "--name", "-n", help="ISO image name to delete"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y"),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
@@ -382,7 +392,7 @@ def storage_delete_media(
 
 def storage_get_media_repo(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
-    vg: str = typer.Argument(..., help="Volume Group UUID"),
+    vg: str = typer.Option(..., "--vg", help="Volume Group name or UUID"),
     as_json: bool = typer.Option(False, "--json", help="Output as JSON"),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
@@ -410,7 +420,7 @@ def storage_get_media_repo(
 
 def storage_list_optical_media(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
-    vg: str = typer.Argument(..., help="Volume Group UUID"),
+    vg: str = typer.Option(..., "--vg", help="Volume Group name or UUID"),
     as_json: bool = typer.Option(False, "--json", help="Output as JSON"),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
@@ -444,8 +454,8 @@ def storage_list_optical_media(
 
 def storage_mount_optical_media(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
-    lpar: str = typer.Argument(..., help="Target LPAR name or UUID"),
-    media_name: str = typer.Argument(..., help="ISO image name to mount"),
+    lpar: str = typer.Option(..., "--lpar", help="Target LPAR name or UUID"),
+    media_name: str = typer.Option(..., "--name", "-n", help="ISO image name to mount"),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
@@ -496,8 +506,10 @@ def storage_mount_optical_media(
 
 def storage_unmount_optical_media(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
-    lpar: str = typer.Argument(..., help="Target LPAR name or UUID"),
-    media_name: str = typer.Argument(..., help="ISO image name to unmount"),
+    lpar: str = typer.Option(..., "--lpar", help="Target LPAR name or UUID"),
+    media_name: str = typer.Option(
+        ..., "--name", "-n", help="ISO image name to unmount"
+    ),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
@@ -612,9 +624,9 @@ def storage_detach_mapping(
 
 def storage_upload_iso(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
-    vg: str = typer.Argument(..., help="Volume Group UUID"),
-    media_name: str = typer.Argument(
-        ..., help="Target name for the ISO in the repository"
+    vg: str = typer.Option(..., "--vg", help="Volume Group name or UUID"),
+    media_name: str = typer.Option(
+        ..., "--name", "-n", help="Target name for the ISO in the repository"
     ),
     iso_source: str = typer.Argument(
         ...,
