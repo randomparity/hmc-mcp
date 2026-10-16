@@ -312,8 +312,8 @@ _AFTER_ESCAPE = "|".join(f"(?<={escape})" for escape in _JSON_ESCAPES)
 #: `n` or `u0041` reads the same, and so does an escape of a word character such as
 #: `\u00e9`: over-scrubbing, never a leak.
 _KEY_START = rf"(?:(?<!\w)|{_AFTER_ESCAPE})"
-#: Where a free-text MAC or WWN the scrub rules replace starts: after a character that
-#: is neither a word character nor a backslash, or after a backslash run read from its
+#: Where a free-text MAC, WWN or IPv4 address the scrub rules replace starts: after a
+#: character that is neither a word character nor a backslash, or a backslash run from its
 #: first backslash, so pairs are escaped backslashes (#1669). The run is pairs alone,
 #: pairs and a JSON escape, or pairs and a lone backslash before anything but an
 #: escape letter, as in raw text. It is the `escape` group, which the rule writes back.
@@ -324,8 +324,8 @@ _SCRUB_START = (
     r"(?:(?<![\w\\])|(?<!\\)(?P<escape>(?:\\\\)++"
     r"|(?:\\\\)*+\\(?:[bfnrt]|u[0-9A-Fa-f]{4}|(?![bfnrtu]))))"
 )
-#: Where a backstop reads a free-text MAC or WWN as starting: as `_SCRUB_START`, but
-#: after any `_AFTER_ESCAPE`, even an escaped backslash and an `n`, so a value the scrub
+#: Where a backstop reads a free-text MAC, WWN or IPv4 address as starting: as
+#: `_SCRUB_START`, but after any `_AFTER_ESCAPE`, even an escaped backslash and an `n`, so a value the scrub
 #: rules read as joined to that letter fails closed (#1669).
 _LEAK_START = rf"(?:(?<![\w\\])|{_AFTER_ESCAPE})"
 #: Free-text MACs in each separator style: a guard, the run, and the run zeroed whole as
@@ -612,7 +612,10 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
         HMC_HOST,
     ),
     _element_rule(*_ADDRESS_ELEMENT),
-    (re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"), PLACEHOLDER_IP),
+    (
+        re.compile(rf"{_SCRUB_START}(?:\d{{1,3}}\.){{3}}\d{{1,3}}\b"),
+        rf"\g<escape>{PLACEHOLDER_IP}",
+    ),
     # Anywhere, even inside `1eU8375.42A.XXXXXXX-V100-C3`; the slot suffix after the
     # prefix is generic and code joins on it, so it stays.
     (re.compile(r"U[0-9A-Za-z]{4}\.[0-9A-Za-z]{3}\.[0-9A-Za-z]{7}"), "<REDACTED-LOC>"),
@@ -659,7 +662,9 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
 )
 #: Shapes that may never appear in a tokenized output, whatever was collected.
 ALWAYS_LEAKS = (
-    re.compile(rf"\b(?!{re.escape(PLACEHOLDER_IP)}\b)(?:\d{{1,3}}\.){{3}}\d{{1,3}}\b"),
+    re.compile(
+        rf"{_LEAK_START}(?!{re.escape(PLACEHOLDER_IP)}\b)(?:\d{{1,3}}\.){{3}}\d{{1,3}}\b"
+    ),
     re.compile(r"U[0-9A-Za-z]{4}\.[0-9A-Za-z]{3}\.[0-9A-Za-z]{7}"),
     re.compile(r"-L[0-9A-F]{8,}"),
     re.compile(rf"{_LEAK_START}{_WWN_16}"),
