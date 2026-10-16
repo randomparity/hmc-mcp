@@ -2789,6 +2789,9 @@ def test_built_in_accounts_are_not_names() -> None:
         ("LogicalSerialNum", "<REDACTED-SERIAL>"),
         ("cluster_serial_num", "<REDACTED-SERIAL>"),
         ("peer_collective_serial_num", "<REDACTED-SERIAL>"),
+        ("frame_serial", "<REDACTED-SERIAL>"),
+        ("Chassis.Serial-ID", "<REDACTED-SERIAL>"),
+        ("SERIALNUMBERBACKUP", "<REDACTED-SERIAL>"),
     ],
 )
 def test_tool_output_identifiers_are_redacted(key: str, token: str) -> None:
@@ -2823,6 +2826,9 @@ def test_tool_output_identifiers_are_redacted(key: str, token: str) -> None:
         "logical_serial_num",
         "ClusterSerialNum",
         "PEER_COLLECTIVE_SERIAL_NUM",
+        "frame_serial",
+        "Chassis.Serial-ID",
+        "SERIALNUMBERBACKUP",
     ],
 )
 @pytest.mark.parametrize(
@@ -2850,6 +2856,23 @@ def test_tool_output_serial_keeps_only_keywords(
     out = corpus[-1]["record"]["data"]
     assert out[key] == expected
     assert out["nested"][key] == {"@attrs": {"ksv": "V1"}, "#text": expected}
+
+
+@pytest.mark.parametrize("key", ["SerialNumber", "backup_serial"])
+def test_tool_output_serial_attributes_redact_identifier_keys(key: str) -> None:
+    tool = {
+        "kind": "tool",
+        "step": "t",
+        "tool": "x",
+        "data": {
+            "frame_serial": {"@attrs": {"ksv": "V1", key: "x9q"}, "#text": "auto"}
+        },
+    }
+    corpus = export.tokenize_records(_records(tool))
+    assert corpus[-1]["record"]["data"]["frame_serial"] == {
+        "@attrs": {"ksv": "V1", key: "<REDACTED-SERIAL>"},
+        "#text": "auto",
+    }
 
 
 def test_long_uppercase_hex_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:

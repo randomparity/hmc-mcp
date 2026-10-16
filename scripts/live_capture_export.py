@@ -964,10 +964,12 @@ _SERIAL_KEPT = frozenset(_SERIAL_ELEMENT[2].split("|"))
 
 
 def _replace_value(value: Any, token: str, keep: frozenset[str] = frozenset()) -> Any:
-    """*value* with its text replaced by *token*; `@attrs` and *keep* values are kept."""
+    """Replace text by *token*, retaining ordinary attributes and *keep* values."""
     if isinstance(value, dict):
         return {
-            k: v if k == "@attrs" else _replace_value(v, token, keep)
+            k: redact_identifier_keys(v)
+            if k == "@attrs"
+            else _replace_value(v, token, keep)
             for k, v in value.items()
         }
     if isinstance(value, list):
@@ -982,7 +984,7 @@ def redact_identifier_keys(value: Any) -> Any:
         for key, item in value.items():
             if _key(key) in _DEVICE_ID_KEYS:
                 out[key] = _replace_value(item, "<REDACTED-DEVID>")
-            elif _key(key) in _SERIAL_KEYS:
+            elif _key(key) in _SERIAL_KEYS or "serial" in _key(key):
                 out[key] = _replace_value(item, "<REDACTED-SERIAL>", _SERIAL_KEPT)
             else:
                 out[key] = redact_identifier_keys(item)
