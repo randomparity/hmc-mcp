@@ -1063,6 +1063,60 @@ def test_value_behind_a_malformed_closing_name_is_a_leak(
     assert (value in scrubbed) is not escaped
 
 
+@pytest.mark.parametrize("depth", [0, 1, 2])
+@pytest.mark.parametrize(
+    ("element", "value"),
+    [
+        ("X-API-Session", "SYN-77Q"),
+        ("PublicSSHKeyValue", "SYN-77Q"),
+        ("IPAddress", "SYN-77Q"),
+        ("SerialNumber", "SYN0001"),
+        ("WWPN", "SYN-77Q"),
+        ("MACAddress", "0A1B2C3D4E5F"),  # pragma: allowlist secret
+    ],
+)
+def test_json_escaped_closing_slash_reports_unscrubbed_values(
+    element: str, value: str, depth: int
+) -> None:
+    """#1680: inner JSON text survives outer capture decoding and later serialization."""
+    name = f'a"b:{element}'
+    body = json.dumps(f"<Root><{name}>{value}</{name}></Root>").replace("</", r"<\/")
+    for _ in range(depth):
+        body = json.dumps(body)
+    tok = export.Tokenizer({}, set())
+    assert tok.tokenize(body) == body
+    assert tok.leaks(body) == [value]
+    with pytest.raises(export.LeakError, match="private value.*nothing written"):
+        export.tokenize_records(_records(_rest("/e", body)))
+
+
+@pytest.mark.parametrize("element", ["SerialNumber", "MACAddress"])
+def test_json_escaped_closing_slash_reports_cdata(element: str) -> None:
+    body = json.dumps(f'<a"b:{element}><![CDATA[SYN0001]]> </a"b:{element}>')
+    body = body.replace("</", r"<\/")
+    assert export.Tokenizer({}, set()).leaks(body) != []
+
+
+@pytest.mark.parametrize("kind", ["rest", "ssh", "tool"])
+def test_inner_json_closing_slash_survives_capture_loading_and_refuses_export(
+    kind: str, tmp_path: Path
+) -> None:
+    body = json.dumps('<a"b:SerialNumber>SYN0001</a"b:SerialNumber>').replace(
+        "</", r"<\/"
+    )
+    record = {
+        "rest": _rest("/e", body),
+        "ssh": _ssh("read", body),
+        "tool": {"kind": "tool", "result": {"text": body}},
+    }[kind]
+    raw = tmp_path / "capture.jsonl"
+    raw.write_text(json.dumps(record) + "\n", encoding="utf-8")
+    records = export.load_raw([raw])
+    assert {k: v for k, v in records[0].items() if k != "_src"} == record
+    with pytest.raises(export.LeakError, match="private value.*nothing written"):
+        export.tokenize_records(records)
+
+
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
 @pytest.mark.parametrize("prefix", UNSCRUBBED_PREFIXES)
 @pytest.mark.parametrize("element", ["SerialNumber", "MACAddress"])
@@ -1078,12 +1132,13 @@ def test_cdata_behind_a_malformed_closing_name_is_a_leak(
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
 @pytest.mark.parametrize("prefix", UNSCRUBBED_PREFIXES)
+@pytest.mark.parametrize("closing", ["</", r"<\/"])
 def test_kept_keyword_before_a_malformed_closing_name_is_not_a_leak(
-    prefix: str, encode: Any
+    prefix: str, encode: Any, closing: str
 ) -> None:
     """A keyword after a well-formed opening tag is kept whatever closes it (#1660)."""
     tok = export.Tokenizer({}, set())
-    assert tok.leaks(encode(f"<SerialNumber>none</{prefix}SerialNumber>")) == []
+    assert tok.leaks(encode(f"<SerialNumber>none{closing}{prefix}SerialNumber>")) == []
 
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
@@ -1776,11 +1831,14 @@ def test_many_unclosed_openings_do_not_backtrack(element: str) -> None:
 @pytest.mark.parametrize(
     "segment", ["a:", '!"=:', "a b\t:", "SerialNumberx:", "IPAddress_:"]
 )
-def test_closing_tag_with_many_prefixes_does_not_backtrack(segment: str) -> None:
+@pytest.mark.parametrize("closing", ["</", r"<\/", "<" + "\\" * 5_000 + "/"])
+def test_closing_tag_with_many_prefixes_does_not_backtrack(
+    segment: str, closing: str
+) -> None:
     """Each closing prefix segment ends at its first `:`, so a closing tag of many
     segments that never names the element costs about what the scrub rules' prefix
     does (#1660). With a segment that could take a `:`, this body never finished."""
-    body = ("&gt;zz</" + segment * 5_000 + "x>") * 5
+    body = ("&gt;zz" + closing + segment * 5_000 + "x>") * 5
     rules = [
         rule for rule in export.ALWAYS_LEAKS if export._CLOSING_PREFIX in rule.pattern
     ]
