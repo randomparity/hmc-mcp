@@ -3234,7 +3234,11 @@ def test_lpars_refcodes_via_ssh(monkeypatch):
         "lsrefcode -r lpar -m sys1 --filter lpar_names=web01"
         " -n 3 -F lpar_name,time_stamp,refcode --header"
     )
-    assert json.loads(result.stdout) == [
+    rows = json.loads(result.stdout)
+    assert all(row["definition"] for row in rows)
+    assert [
+        {k: row[k] for k in ("lpar_name", "time_stamp", "refcode")} for row in rows
+    ] == [
         {
             "lpar_name": "web01",
             "time_stamp": "2026-09-21 10:00:00",
@@ -5489,3 +5493,49 @@ def test_lpars_provision_refuses_a_dedicated_slot_before_client_call(
     assert "hmc_assign_dedicated_pcie_slot" in unstyle(result.stderr)
     provision.assert_not_awaited()
     assert fake_hmc.calls == []
+
+
+@pytest.mark.parametrize("as_json", [False, True])
+def test_lpars_refcode_definitions_and_unknowns(monkeypatch, as_json):
+    async def fake(_cfg, _cmd):
+        return (
+            "lpar_name,time_stamp,refcode\n"
+            "web01,now,CA00E105 LP=00002\nweb01,earlier,B2001230 LP=00002\n"
+        )
+
+    _patch_ssh_command(monkeypatch, fake)
+    args = ["lpars", "refcodes", "sys1", "web01", "--count", "2"]
+    result = RUNNER.invoke(cli.app, args + (["--json"] if as_json else []))
+    assert result.exit_code == 0, result.output
+    if as_json:
+        rows = json.loads(result.stdout)
+        assert "operating system" in rows[0]["definition"].lower()
+        assert rows[0]["refcode"] == "CA00E105 LP=00002"
+        assert rows[1]["definition"] is None
+        assert rows[1]["definition_source"] is None
+    else:
+        text = collapse_whitespace(result.stdout)
+        assert "operating system" in text.lower()
+        assert "Unknown definition" in text
+        assert "B2001230" in text
+
+
+@pytest.mark.parametrize("as_json", [False, True])
+def test_refcode_table_escapes_terminal_controls_but_json_preserves_them(
+    monkeypatch, as_json
+):
+    raw = "B2001230\x1b]52;c;YWJj\x1b\\\u202e"
+
+    async def fake(_cfg, _cmd):
+        return f"lpar_name,time_stamp,refcode\nweb01,now,{raw}\n"
+
+    _patch_ssh_command(monkeypatch, fake)
+    args = ["lpars", "refcodes", "sys1", "web01"]
+    result = RUNNER.invoke(cli.app, args + (["--json"] if as_json else []))
+    assert result.exit_code == 0, result.output
+    if as_json:
+        assert json.loads(result.stdout)[0]["refcode"] == raw
+    else:
+        assert "\x1b" not in result.stdout
+        assert "\u202e" not in result.stdout
+        assert "\\x1b" in result.stdout
