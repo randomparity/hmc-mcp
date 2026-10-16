@@ -19,7 +19,7 @@ from hmcpctl.ssh.console import (
     ConsoleHoldLostError,
 )
 
-from ..output import err_console, fail, usage_error
+from ..output import err_console, fail, terminal_field, usage_error
 from ..runtime import with_client
 
 #: ADR 0175: ``released`` false means the vterm may still be held; it outranks 1.
@@ -84,7 +84,9 @@ def _report(capture: ConsoleCapture) -> None:
             f"{shlex.quote(capture.system)} -p {shlex.quote(capture.lpar)}' "
             "on the HMC before another capture"
         )
-    err_console.print(line, markup=False, highlight=False, soft_wrap=True)
+    err_console.print(
+        terminal_field(line, err=True), markup=False, highlight=False, soft_wrap=True
+    )
 
 
 def _exit_code(capture: ConsoleCapture, *, write_failed: bool) -> int:
@@ -167,7 +169,8 @@ def lpars_capture_console(
     if write_error:
         _discard(sink, output)
         err_console.print(
-            f"Error: could not write console bytes: {write_error[0]}", markup=False
+            f"Error: could not write console bytes: {terminal_field(write_error[0], err=True)}",
+            markup=False,
         )
         raise typer.Exit(_exit_code(capture, write_failed=True)) from write_error[0]
     if output is not None:
@@ -176,7 +179,8 @@ def lpars_capture_console(
         except OSError as exc:
             _discard(sink, output)
             err_console.print(
-                f"Error: could not write console bytes: {exc}", markup=False
+                f"Error: could not write console bytes: {terminal_field(exc, err=True)}",
+                markup=False,
             )
             raise typer.Exit(_exit_code(capture, write_failed=True)) from exc
     code = _exit_code(capture, write_failed=False)

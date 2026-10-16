@@ -26,7 +26,7 @@ _T = TypeVar("_T")
 
 
 class VerbatimTable(Table):
-    """A table whose string title, caption, headers and cells print exactly as given.
+    """A table whose string fields keep literal markup and visibly encode controls.
 
     Rich parses a plain ``str`` as console markup, so an HMC name holding ``[word]``
     would lose that segment; a ``Text`` is never parsed (#1029).
@@ -61,11 +61,31 @@ class VerbatimTable(Table):
 
 
 def _verbatim(value: _T, style: StyleType = "") -> _T | Text:
-    return Text(value, style=style) if isinstance(value, str) else value
+    return (
+        Text(escape_controls(value), style=style) if isinstance(value, str) else value
+    )
+
+
+def escape_controls(value: str) -> str:
+    """Keep printable Unicode and visibly encode nonprintable field characters."""
+    return "".join(char if char.isprintable() else ascii(char)[1:-1] for char in value)
+
+
+def terminal_field(value: object, *, err: bool = False) -> str:
+    """Encode one human field for its actual destination, independently of color settings."""
+    text = str(value)
+    return (
+        escape_controls(text) if (sys.stderr if err else sys.stdout).isatty() else text
+    )
+
+
+def print_raw(body: str) -> None:
+    """Protect terminal display while retaining redirected response bytes (ADR 0229)."""
+    typer.echo(terminal_field(body), color=True)
 
 
 def print_json(data: Any) -> None:
-    console.print_json(json.dumps(data, default=str))
+    console.print_json(json.dumps(data, default=str), ensure_ascii=sys.stdout.isatty())
 
 
 def _resource(entry: dict[str, Any]) -> dict[str, Any]:
@@ -96,11 +116,15 @@ def output(
         print_json(entries)
     elif table is not None:
         if table.row_count == 0:
-            err_console.print(empty_msg, style="yellow", markup=False)
+            err_console.print(
+                terminal_field(empty_msg, err=True), style="yellow", markup=False
+            )
         else:
             console.print(table)
     elif not entries:
-        err_console.print(empty_msg, style="yellow", markup=False)
+        err_console.print(
+            terminal_field(empty_msg, err=True), style="yellow", markup=False
+        )
     else:
         print_json(entries)
 
@@ -109,29 +133,39 @@ def report_unreadable(listing: FleetListing) -> None:
     """Name each managed system a fleet listing could not read (ADR 0197)."""
     for system in listing.unreadable_systems:
         err_console.print(
-            f"Skipped managed system {system.system_name} ({system.system_uuid}): "
-            f"State {system.state}",
+            f"Skipped managed system {terminal_field(system.system_name, err=True)} ({terminal_field(system.system_uuid, err=True)}): "
+            f"State {terminal_field(system.state, err=True)}",
             style="yellow",
             markup=False,
             soft_wrap=True,
         )
 
 
-def fail(exc: Exception, *, code: int = 1) -> NoReturn:
+def fail(exc: Exception, *, code: int = 1, guidance: str = "") -> NoReturn:
     """Report an exception and exit with the requested runtime-error code."""
-    err_console.print(Text.assemble(("Error:", "red"), f" {exc}"))
+    err_console.print(
+        Text.assemble(("Error:", "red"), f" {terminal_field(exc, err=True)}", guidance)
+    )
     raise typer.Exit(code=code)
 
 
-def usage_error(message: str) -> NoReturn:
+def usage_error(message: str, *, guidance: str = "") -> NoReturn:
     """Report invalid command arguments using Typer's usage-error exit code."""
-    err_console.print(Text.assemble(("Error:", "red"), f" {message}"))
+    err_console.print(
+        Text.assemble(
+            ("Error:", "red"), f" {terminal_field(message, err=True)}", guidance
+        )
+    )
     raise typer.Exit(code=2)
 
 
 def partition_not_found(value: str) -> NoReturn:
     """Report a failed partition lookup consistently across CLI domains."""
-    err_console.print(f"Partition '{value}' not found", style="yellow", markup=False)
+    err_console.print(
+        f"Partition '{terminal_field(value, err=True)}' not found",
+        style="yellow",
+        markup=False,
+    )
     raise typer.Exit(code=1)
 
 
@@ -194,7 +228,9 @@ def print_inventory(
 ) -> None:
     """Render raw inventory projections without routing machine output through Rich."""
     if format == InventoryFormat.json:
-        typer.echo(json.dumps(data, ensure_ascii=False, default=str, indent=2))
+        typer.echo(
+            json.dumps(data, ensure_ascii=sys.stdout.isatty(), default=str, indent=2)
+        )
         return
     values = list((data or {}).items() if rows is None else rows)
     if format == InventoryFormat.tsv:
@@ -211,4 +247,6 @@ def print_inventory(
             )
         console.print(table)
     if not values:
-        err_console.print(empty_msg, style="yellow", markup=False)
+        err_console.print(
+            terminal_field(empty_msg, err=True), style="yellow", markup=False
+        )

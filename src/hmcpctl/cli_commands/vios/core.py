@@ -17,6 +17,7 @@ from ..output import (
     print_json,
     report_unreadable,
     resolve_inventory_format,
+    terminal_field,
 )
 from ..runtime import with_client
 
@@ -79,7 +80,9 @@ def vios_power_on(
 ) -> None:
     """Power on a VIOS (submits a PowerOn job)."""
     validate_wait_timing(wait, timeout, interval)
-    if not yes and not typer.confirm(f"Really PowerOn VIOS {name_or_uuid}?"):
+    if not yes and not typer.confirm(
+        f"Really PowerOn VIOS {terminal_field(name_or_uuid)}?"
+    ):
         raise typer.Abort()
 
     job = with_client(
@@ -94,7 +97,11 @@ def vios_power_on(
         )
     )
 
-    console.print(f"Submitted PowerOn for {name_or_uuid}", style="green", markup=False)
+    console.print(
+        f"Submitted PowerOn for {terminal_field(name_or_uuid)}",
+        style="green",
+        markup=False,
+    )
     print_json(job)
 
 
@@ -116,7 +123,9 @@ def vios_power_off(
     """Power off a VIOS (submits a PowerOff job)."""
     validate_wait_timing(wait, timeout, interval)
     op = "Immediate PowerOff" if immediate else "PowerOff"
-    if not yes and not typer.confirm(f"Really {op} VIOS {name_or_uuid}?"):
+    if not yes and not typer.confirm(
+        f"Really {terminal_field(op)} VIOS {terminal_field(name_or_uuid)}?"
+    ):
         raise typer.Abort()
 
     job = with_client(
@@ -132,7 +141,11 @@ def vios_power_off(
         )
     )
 
-    console.print(f"Submitted {op} for {name_or_uuid}", style="green", markup=False)
+    console.print(
+        f"Submitted {terminal_field(op)} for {terminal_field(name_or_uuid)}",
+        style="green",
+        markup=False,
+    )
     print_json(job)
 
 

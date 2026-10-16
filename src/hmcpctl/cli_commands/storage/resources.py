@@ -45,6 +45,7 @@ from ..output import (
     print_inventory,
     print_json,
     resolve_inventory_format,
+    terminal_field,
     usage_error,
 )
 from ..runtime import with_client
@@ -96,7 +97,8 @@ def storage_create_vg(
     if not pv_list:
         usage_error("Provide at least one physical volume via --pvs")
     if not yes and not typer.confirm(
-        f"Create VG '{name}' from {pv_list} on VIOS {vios}?"
+        f"Create VG '{terminal_field(name)}' from {terminal_field(pv_list)} on VIOS "
+        f"{terminal_field(vios)}?"
     ):
         raise typer.Abort()
 
@@ -106,7 +108,9 @@ def storage_create_vg(
         )
     )
 
-    console.print(f"Created Volume Group '{name}'", style="green", markup=False)
+    console.print(
+        f"Created Volume Group '{terminal_field(name)}'", style="green", markup=False
+    )
     print_json(vg)
 
 
@@ -126,7 +130,8 @@ def storage_create_disk(
 ) -> None:
     """Create a Virtual Disk (logical volume) in a Volume Group."""
     if not yes and not typer.confirm(
-        f"Create {capacity_mib} MiB virtual disk '{name}' in VG {vg}?"
+        f"Create {terminal_field(capacity_mib)} MiB virtual disk '"
+        f"{terminal_field(name)}' in VG {terminal_field(vg)}?"
     ):
         raise typer.Abort()
 
@@ -137,7 +142,7 @@ def storage_create_disk(
     )
 
     console.print(
-        f"Created virtual disk '{name}' ({capacity_mib} MiB)",
+        f"Created virtual disk '{terminal_field(name)}' ({terminal_field(capacity_mib)} MiB)",
         style="green",
         markup=False,
     )
@@ -157,14 +162,18 @@ def storage_delete_disk(
 
     Validates that the disk is not mapped to any LPAR before deletion.
     """
-    if not yes and not typer.confirm(f"Delete virtual disk '{name}' from VG {vg}?"):
+    if not yes and not typer.confirm(
+        f"Delete virtual disk '{terminal_field(name)}' from VG {terminal_field(vg)}?"
+    ):
         raise typer.Abort()
 
     disk = with_client(
         lambda hmc: delete_virtual_disk(hmc, vios, vg, name, system_name_or_uuid=system)
     )
 
-    console.print(f"Deleted virtual disk '{name}'", style="green", markup=False)
+    console.print(
+        f"Deleted virtual disk '{terminal_field(name)}'", style="green", markup=False
+    )
     print_json(disk)
 
 
@@ -191,7 +200,8 @@ def storage_attach_disk(
         not dry_run
         and not yes
         and not typer.confirm(
-            f"Create {capacity_mib} MiB disk '{name}' and attach it to LPAR '{lpar}'?"
+            f"Create {terminal_field(capacity_mib)} MiB disk '{terminal_field(name)}"
+            f"' and attach it to LPAR '{terminal_field(lpar)}'?"
         )
     ):
         raise typer.Abort()
@@ -221,7 +231,9 @@ def storage_attach_disk(
         return
     if result.workflow_completed:
         console.print(
-            f"Attached virtual disk '{name}' to {lpar}", style="green", markup=False
+            f"Attached virtual disk '{terminal_field(name)}' to {terminal_field(lpar)}",
+            style="green",
+            markup=False,
         )
         _print_attach_location(result)
         return
@@ -244,9 +256,11 @@ def storage_attach_disk(
 
 def _print_attach_location(result: AttachDiskResult) -> None:
     for warning in result.warnings:
-        console.print(f"Warning: {warning}", style="yellow", markup=False)
+        console.print(
+            f"Warning: {terminal_field(warning)}", style="yellow", markup=False
+        )
     if result.change_location is not None:
-        console.print(result.change_location.summary(), markup=False)
+        console.print(terminal_field(result.change_location.summary()), markup=False)
 
 
 def storage_map(
@@ -269,7 +283,8 @@ def storage_map(
 ) -> None:
     """Map backing storage to an LPAR via a vSCSI mapping on a VIOS."""
     if not yes and not typer.confirm(
-        f"Map {kind} '{disk}' on VIOS {vios} to LPAR '{lpar}'?"
+        f"Map {terminal_field(kind)} '{terminal_field(disk)}' on VIOS "
+        f"{terminal_field(vios)} to LPAR '{terminal_field(lpar)}'?"
     ):
         raise typer.Abort()
 
@@ -287,10 +302,13 @@ def storage_map(
     )
 
     console.print(
-        Text.assemble((f"Mapped '{disk}'", "green"), f" to {result.lpar_uuid}")
+        Text.assemble(
+            (f"Mapped '{terminal_field(disk)}'", "green"),
+            f" to {terminal_field(result.lpar_uuid)}",
+        )
     )
     print_json(asdict(result))
-    console.print(result.change_location.summary(), markup=False)
+    console.print(terminal_field(result.change_location.summary()), markup=False)
 
 
 def storage_create_media_repo(
@@ -308,7 +326,8 @@ def storage_create_media_repo(
 ) -> None:
     """Create the Virtual Media Repository (VMLibrary) on a volume group."""
     if not yes and not typer.confirm(
-        f"Create {size_mib} MiB media repository on VG {vg} (VIOS {vios})?"
+        f"Create {terminal_field(size_mib)} MiB media repository on VG "
+        f"{terminal_field(vg)} (VIOS {terminal_field(vios)})?"
     ):
         raise typer.Abort()
 
@@ -318,7 +337,9 @@ def storage_create_media_repo(
         )
     )
 
-    console.print(f"Created media repository on {vg}", style="green", markup=False)
+    console.print(
+        f"Created media repository on {terminal_field(vg)}", style="green", markup=False
+    )
     print_json(result)
 
 
@@ -340,7 +361,8 @@ def storage_create_media(
 ) -> None:
     """Create a blank optical media (ISO container) in the media repository."""
     if not yes and not typer.confirm(
-        f"Create media '{name}' ({size_mib} MiB) on VG {vg} (VIOS {vios})?"
+        f"Create media '{terminal_field(name)}' ({terminal_field(size_mib)}"
+        f" MiB) on VG {terminal_field(vg)} (VIOS {terminal_field(vios)})?"
     ):
         raise typer.Abort()
 
@@ -350,7 +372,11 @@ def storage_create_media(
         )
     )
 
-    console.print(f"Created media '{name}' on {vg}", style="green", markup=False)
+    console.print(
+        f"Created media '{terminal_field(name)}' on {terminal_field(vg)}",
+        style="green",
+        markup=False,
+    )
     print_json(result)
 
 
@@ -364,14 +390,16 @@ def storage_delete_media_repo(
 ) -> None:
     """Delete the Virtual Media Repository from a volume group."""
     if not yes and not typer.confirm(
-        f"Delete media repository on VG {vg} (VIOS {vios})?"
+        f"Delete media repository on VG {terminal_field(vg)} (VIOS {terminal_field(vios)})?"
     ):
         raise typer.Abort()
 
     with_client(
         lambda hmc: delete_media_repository(hmc, vios, vg, system_name_or_uuid=system)
     )
-    console.print(f"Deleted media repository on {vg}", style="green", markup=False)
+    console.print(
+        f"Deleted media repository on {terminal_field(vg)}", style="green", markup=False
+    )
 
 
 def storage_delete_media(
@@ -387,7 +415,8 @@ def storage_delete_media(
 ) -> None:
     """Delete an ISO image from the media repository."""
     if not yes and not typer.confirm(
-        f"Delete media '{media_name}' on VG {vg} (VIOS {vios})?"
+        f"Delete media '{terminal_field(media_name)}' on VG {terminal_field(vg)}"
+        f" (VIOS {terminal_field(vios)})?"
     ):
         raise typer.Abort()
 
@@ -396,7 +425,11 @@ def storage_delete_media(
             hmc, vios, vg, media_name, system_name_or_uuid=system
         )
     )
-    console.print(f"Deleted media '{media_name}' on {vg}", style="green", markup=False)
+    console.print(
+        f"Deleted media '{terminal_field(media_name)}' on {terminal_field(vg)}",
+        style="green",
+        markup=False,
+    )
 
 
 def storage_get_media_repo(
@@ -480,8 +513,9 @@ def storage_mount_optical_media(
     target = f"; target device {target_device}" if target_device else ""
     selected_system = f" in managed system {system}" if system else ""
     if not yes and not typer.confirm(
-        f"Mount optical media '{media_name}' from VIOS {vios} to LPAR {lpar}"
-        f"{selected_system}{target}?"
+        f"Mount optical media '{terminal_field(media_name)}' from VIOS "
+        f"{terminal_field(vios)} to LPAR {terminal_field(lpar)}"
+        f"{terminal_field(selected_system)}{terminal_field(target)}?"
     ):
         raise typer.Abort()
 
@@ -497,12 +531,12 @@ def storage_mount_optical_media(
         )
     )
     console.print(
-        f"Mounted optical media '{media_name}' on LPAR {lpar}",
+        f"Mounted optical media '{terminal_field(media_name)}' on LPAR {terminal_field(lpar)}",
         style="green",
         markup=False,
     )
     print_json(result.resource)
-    console.print(result.change_location.summary(), markup=False)
+    console.print(terminal_field(result.change_location.summary()), markup=False)
 
 
 def storage_unmount_optical_media(
@@ -525,8 +559,9 @@ def storage_unmount_optical_media(
 ) -> None:
     """Unmount an ISO mapping while preserving the backing ISO."""
     if not confirm and not typer.confirm(
-        f"Unmount optical media '{media_name}' from LPAR {lpar} on VIOS {vios}? "
-        "The backing ISO remains available."
+        f"Unmount optical media '{terminal_field(media_name)}' from LPAR "
+        f"{terminal_field(lpar)} on VIOS {terminal_field(vios)}"
+        f"? The backing ISO remains available."
     ):
         raise typer.Abort()
 
@@ -542,11 +577,14 @@ def storage_unmount_optical_media(
 
     location = with_client(_go)
     console.print(
-        f"Unmounted optical media '{media_name}' from LPAR {lpar}; backing ISO remains",
+        (
+            f"Unmounted optical media '{terminal_field(media_name)}' from LPAR "
+            f"{terminal_field(lpar)}; backing ISO remains"
+        ),
         style="green",
         markup=False,
     )
-    console.print(location.summary(), markup=False)
+    console.print(terminal_field(location.summary()), markup=False)
 
 
 def storage_list_mappings(
@@ -600,8 +638,11 @@ def storage_detach_mapping(
     """Detach a VirtualSCSIMapping while preserving its backing storage."""
     if not confirm:
         typer.confirm(
-            f"Delete storage mapping {mapping_id} on VIOS {vios}? "
-            "The backing storage (PhysicalVolume or VirtualDisk) will be preserved.",
+            (
+                f"Delete storage mapping {terminal_field(mapping_id)} on VIOS "
+                f"{terminal_field(vios)}? The backing storage (PhysicalVolume or "
+                f"VirtualDisk) will be preserved."
+            ),
             abort=True,
         )
 
@@ -615,8 +656,12 @@ def storage_detach_mapping(
         )
 
     location = with_client(_go)
-    console.print(f"Deleted storage mapping {mapping_id}", style="green", markup=False)
-    console.print(location.summary(), markup=False)
+    console.print(
+        f"Deleted storage mapping {terminal_field(mapping_id)}",
+        style="green",
+        markup=False,
+    )
+    console.print(terminal_field(location.summary()), markup=False)
 
 
 def storage_upload_iso(
@@ -662,20 +707,25 @@ def storage_upload_iso(
         print_json(result)
     else:
         console.print(
-            f"Upload status: {result.get('status', 'unknown')}",
+            f"Upload status: {terminal_field(result.get('status', 'unknown'))}",
             style="green",
             markup=False,
         )
-        console.print(f"  Media name: {result.get('media_name', 'N/A')}", markup=False)
         console.print(
-            f"  Size: {result.get('media_size_bytes', 0):,} bytes", markup=False
+            f"  Media name: {terminal_field(result.get('media_name', 'N/A'))}",
+            markup=False,
         )
         console.print(
-            f"  Source SHA-256: {result.get('source_sha256', 'N/A')}", markup=False
+            f"  Size: {terminal_field(format(result.get('media_size_bytes', 0), ','))} bytes",
+            markup=False,
+        )
+        console.print(
+            f"  Source SHA-256: {terminal_field(result.get('source_sha256', 'N/A'))}",
+            markup=False,
         )
         if result.get("media"):
             console.print(
-                f"  Media entry: {result['media'].get('MediaName', 'N/A')}",
+                f"  Media entry: {terminal_field(result['media'].get('MediaName', 'N/A'))}",
                 markup=False,
             )
 

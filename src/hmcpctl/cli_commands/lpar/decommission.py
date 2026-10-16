@@ -8,7 +8,7 @@ import typer
 from rich.text import Text
 
 from ...operations.lpar.decommission import DecommissionResult, decommission_lpar
-from ..output import VerbatimTable, console, print_json
+from ..output import VerbatimTable, console, escape_controls, print_json, terminal_field
 from ..runtime import with_client
 
 
@@ -43,9 +43,11 @@ def lpars_decommission(
     """Inventory and optionally decommission one LPAR."""
     if not dry_run and not yes:
         typer.confirm(
-            f"Decommission LPAR '{name_or_uuid}' on system '{system}'? "
-            "This powers it off, detaches its vSCSI mappings before client adapters "
-            "and partition deletion, and retains backing storage.",
+            (
+                f"Decommission LPAR '{terminal_field(name_or_uuid)}' on system '"
+                f"{terminal_field(system)}'? This powers it off, detaches its vSCSI mappings "
+                f"before client adapters and partition deletion, and retains backing storage."
+            ),
             abort=True,
         )
 
@@ -82,13 +84,16 @@ def _render_decommission_result(
         )
     elif result.workflow_completed:
         console.print(
-            f"LPAR '{name_or_uuid}' decommissioned successfully",
+            f"LPAR '{terminal_field(name_or_uuid)}' decommissioned successfully",
             style="green",
             markup=False,
         )
     else:
         console.print(
-            f"LPAR '{name_or_uuid}' was not fully decommissioned — check step results",
+            (
+                f"LPAR '{terminal_field(name_or_uuid)}"
+                f"' was not fully decommissioned — check step results"
+            ),
             style="yellow",
             markup=False,
         )
@@ -102,12 +107,14 @@ def _render_decommission_result(
         style = _step_style(status)
         table.add_row(
             step.step,
-            Text(status, style=style),
+            Text(escape_controls(status), style=style),
             "-" if step.result is None else str(step.result),
         )
     console.print(table)
     for warning in result.warnings:
-        console.print(f"Warning: {warning}", style="yellow", markup=False)
+        console.print(
+            f"Warning: {terminal_field(warning)}", style="yellow", markup=False
+        )
 
 
 def _step_style(status: str) -> str:

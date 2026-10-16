@@ -23,6 +23,7 @@ from ..output import (
     print_inventory,
     report_unreadable,
     resolve_inventory_format,
+    terminal_field,
 )
 from ..runtime import run_cli_coroutine, ssh_config, with_client
 
@@ -133,7 +134,7 @@ def lpars_state(
 
     if state is None:
         partition_not_found(name_or_uuid)
-    console.print(state, markup=False)
+    console.print(terminal_field(state), markup=False)
 
 
 def lpars_refcodes(
@@ -162,16 +163,6 @@ def lpars_refcodes(
         cells = [
             (name, stamp, code, definition or "Unknown definition")
             for name, stamp, code, definition in cells
-        ]
-        # Keep the existing table-only terminal sanitation; JSON and TSV retain raw data.
-        cells = [
-            tuple(
-                "".join(
-                    char if char.isprintable() else ascii(char)[1:-1] for char in cell
-                )
-                for cell in row
-            )
-            for row in cells
         ]
     print_inventory(
         rows,
