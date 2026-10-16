@@ -22,8 +22,10 @@ to a different processor generation or an inventory of system reference codes ge
 Matching ignores case and surrounding whitespace. A whitespace-separated diagnostic
 suffix is allowed; the application preserves the entire original `refcode` string.
 Exact documented notations win, followed by documented short AIX indicator aliases,
-then variable patterns (`X`, `Y`, `T`, `S` each denote a hexadecimal position). Patterns
-with fewer variable positions win; document order breaks equal-specificity ties.
+then variable patterns (`X`, `Y`, `T`, `S` each denote a hexadecimal position).
+Documented bounds limit individual positions: C104550X ends in 0 or 1,
+C116C2XX ends in 00–1F, and C16453XX ends in 2 or 3. Patterns admitting fewer
+concrete values win; document order breaks equal-specificity ties.
 For example D600430A wins over D6xx430A, C200ABCD matches C200XXXX, and
 D1A23F01 matches D1XX3Y01. The variables retain their contextual meanings, such as
 node IDs, dump progress or event type/subtype; lookup does not diagnose those values.

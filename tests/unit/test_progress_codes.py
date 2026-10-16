@@ -147,3 +147,44 @@ def test_catalog_lookup_is_independent_of_process_text_encoding(tmp_path):
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize(
+    ("notation", "valid", "invalid"),
+    [
+        ("C104550X", ["C1045500", "C1045501"], ["C1045502", "C104550F"]),
+        ("C116C2XX", ["C116C200", "C116C21F"], ["C116C220", "C116C2FF"]),
+        ("C16453XX", ["C1645302", "C16453F3"], ["C16453F4", "C164530F"]),
+    ],
+)
+def test_documented_variable_bounds(notation, valid, invalid):
+    assert lookup_progress_code(notation).notation == notation
+    for code in valid:
+        assert lookup_progress_code(code).notation == notation
+    for code in invalid:
+        assert lookup_progress_code(code) is None
+
+
+def test_exact_code_outside_variable_bounds_still_wins():
+    assert lookup_progress_code("C1645301").notation == "C1645301"
+
+
+def test_bounded_pattern_ranks_by_admitted_values(monkeypatch, tmp_path):
+    from hmcpctl import progress_codes
+
+    entries = [
+        {
+            "notation": notation,
+            "definition": "Checkpoint.",
+            "applicability": "Firmware",
+            "pdf_pages": [72],
+        }
+        for notation in ("C116CXXF", "C116C2XX")
+    ]
+    (tmp_path / "_progress_codes.json").write_text(json.dumps({"entries": entries}))
+    monkeypatch.setattr(progress_codes, "files", lambda _package: tmp_path)
+    progress_codes._catalog.cache_clear()
+    try:
+        assert lookup_progress_code("C116C21F").notation == "C116C2XX"
+    finally:
+        progress_codes._catalog.cache_clear()

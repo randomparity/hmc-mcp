@@ -14,6 +14,12 @@ from importlib.resources import files
 
 SOURCE_URL = "https://public.dhe.ibm.com/systems/power/docs/hw/p9/p9eai_prg1.pdf"
 _VARIABLES = frozenset("XYST")
+# Per-position limits in the source explanations, physical PDF pages 72 and 77.
+_VARIABLE_BOUNDS = {
+    "C104550X": {7: "01"},
+    "C116C2XX": {6: "01"},
+    "C16453XX": {7: "23"},
+}
 
 
 @dataclass(frozen=True)
@@ -55,13 +61,18 @@ def _catalog() -> tuple[
         )
         notation = record.notation.upper()
         exact[notation] = record
-        variables = sum(char in _VARIABLES for char in notation)
-        if variables:
-            expression = "".join(
-                "[0-9A-F]" if char in _VARIABLES else re.escape(char)
-                for char in notation
-            )
-            patterns.append((variables, re.compile(expression), record))
+        if any(char in _VARIABLES for char in notation):
+            bounds = _VARIABLE_BOUNDS.get(notation, {})
+            expression = ""
+            cardinality = 1
+            for position, char in enumerate(notation):
+                if char in _VARIABLES:
+                    values = bounds.get(position, "0123456789ABCDEF")
+                    expression += f"[{values}]"
+                    cardinality *= len(values)
+                else:
+                    expression += re.escape(char)
+            patterns.append((cardinality, re.compile(expression), record))
         if notation.startswith("0") and record.applicability in (
             "AIX configuration program indicators",
             "AIX diagnostic load progress indicators",
@@ -83,7 +94,7 @@ def lookup_progress_code(code: str) -> ProgressCodeDefinition | None:
     """Look up a code, allowing case/outer whitespace and diagnostic suffixes.
 
     Exact notations and documented short aliases precede variable patterns;
-    fewer variable positions win, with document order breaking ties. Unknown
+    fewer admitted concrete values win, with document order breaking ties. Unknown
     or malformed values return None. The original input is never rewritten.
     """
     if not isinstance(code, str) or not code.strip():
