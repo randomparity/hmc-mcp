@@ -347,7 +347,7 @@ def _drop_restored_ownership(
             "MANUAL RECOVERY REQUIRED: a restored document recorded the repository "
             f"as this arm's; it is no longer treated as owned. If an earlier run "
             f"created it, delete it by hand (hmcpctl storage delete-media-repo "
-            f"{shlex.quote(str(artifacts.vios_uuid))} <group: {groups}> --system "
+            f"{shlex.quote(str(artifacts.vios_uuid))} --vg <group: {groups}> --system "
             f"{shlex.quote(state.config.system_name)})",
         )
     artifacts.vmedia_repo_created = False
@@ -754,7 +754,7 @@ async def vmedia_upload_iso(client: Client, state: RunState) -> None:
             None,
             f"MANUAL RECOVERY REQUIRED: {name} may be in the repository "
             f"(hmcpctl storage delete-media {shlex.quote(str(state.artifacts.vios_uuid))} "
-            f"{shlex.quote(str(state.artifacts.vmedia_vg_uuid))} {shlex.quote(name)} "
+            f"--vg {shlex.quote(str(state.artifacts.vmedia_vg_uuid))} --name {shlex.quote(name)} "
             f"--system {shlex.quote(config.system_name)})",
         )
     state.record_verified(
@@ -1103,7 +1103,7 @@ class _RoundTrip:
                 self.manual(
                     f"cannot confirm whether {self.name} was created",
                     f"hmcpctl storage list-optical-media {shlex.quote(self.vios)} "
-                    f"{shlex.quote(self.vg)}",
+                    f"--vg {shlex.quote(self.vg)}",
                 )
             else:
                 self.artifacts.vmedia_blank_name = None
@@ -1236,7 +1236,7 @@ class _RoundTrip:
     def unmount_command(self) -> str:
         return (
             f"hmcpctl storage unmount-optical-media {shlex.quote(self.vios)} "
-            f"{shlex.quote(self.config.lp3_name)} {self.name} --system "
+            f"--lpar {shlex.quote(self.config.lp3_name)} --name {shlex.quote(self.name)} --system "
             f"{shlex.quote(self.config.system_name)}"
         )
 
@@ -1303,7 +1303,7 @@ class _RoundTrip:
             self.manual(
                 f"{self.name} is still in the repository",
                 f"hmcpctl storage delete-media {shlex.quote(self.vios)} "
-                f"{shlex.quote(self.vg)} {self.name}",
+                f"--vg {shlex.quote(self.vg)} --name {shlex.quote(self.name)}",
             )
 
 

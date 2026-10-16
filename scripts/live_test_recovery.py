@@ -1183,8 +1183,8 @@ async def _optical_mapping_left(call, inputs: LparResidueInputs) -> Finding | No
         "optical mapping left",
         f"{', '.join(left)} is still mounted to {inputs.lpar_name} from VIOS {vios}",
         "; ".join(
-            f"hmcpctl storage unmount-optical-media {_q(vios)} {_q(inputs.lpar_name)} "
-            f"{_q(media)} --system {_q(inputs.system_name)}"
+            f"hmcpctl storage unmount-optical-media {_q(vios)} --lpar {_q(inputs.lpar_name)} "
+            f"--name {_q(media)} --system {_q(inputs.system_name)}"
             for media in left
         ),
     )
@@ -1286,14 +1286,14 @@ async def _repository_left(call, inputs: LparResidueInputs) -> Finding | None:
         raise StateUnreadable(f"could not read the media repository in {vg} ({status})")
     if not data:
         return None
-    where = f"{_q(vios)} {_q(vg)}"
+    where = f"{_q(vios)} --vg {_q(vg)}"
     system = f"--system {_q(inputs.system_name)}"
     return Finding(
         "media repository left",
         f"the repository the run created in volume group {vg} on VIOS {vios} "
         "still exists",
         f"hmcpctl storage list-optical-media {where} {system}; "
-        f"hmcpctl storage delete-media {where} <each ISO> {system}; "
+        f"hmcpctl storage delete-media {where} --name <each ISO> {system}; "
         f"hmcpctl storage delete-media-repo {where} {system}",
     )
 
@@ -1325,7 +1325,7 @@ async def _run_media_left(call, inputs: LparResidueInputs) -> Finding | None:
         f"{', '.join(left)} created by the run is still in volume group {vg} on "
         f"VIOS {vios}",
         "; ".join(
-            f"hmcpctl storage delete-media {_q(vios)} {_q(vg)} {_q(name)} "
+            f"hmcpctl storage delete-media {_q(vios)} --vg {_q(vg)} --name {_q(name)} "
             f"--system {_q(inputs.system_name)}"
             for name in left
         ),

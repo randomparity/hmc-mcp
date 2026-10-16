@@ -9,13 +9,17 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import shlex
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import click
 import pytest
 from conftest import live_fixture
+from typer.main import get_command
 
+from hmcpctl import cli
 from hmcpctl.client.client_parse import _parse_feed
 from hmcpctl.client.client_storage import mapping_lpar_uuid, storage_mapping_id
 
@@ -917,12 +921,12 @@ async def test_the_adapter_listing_is_the_1237_command_by_vios_id():
         (
             {"hmc_list_optical_mappings": [_optical(_BLANK)]},
             "optical mapping left",
-            f"hmcpctl storage unmount-optical-media {_VIOS} {_TEST_LPAR} {_BLANK}",
+            f"hmcpctl storage unmount-optical-media {_VIOS} --lpar {_TEST_LPAR} --name {_BLANK}",
         ),
         (
             {"hmc_list_optical_media": [{"name": _BLANK, "size_mib": 1024}]},
             "run media left",
-            f"hmcpctl storage delete-media {_VIOS} {_VG} {_BLANK}",
+            f"hmcpctl storage delete-media {_VIOS} --vg {_VG} --name {_BLANK}",
         ),
         (
             {"hmc_run_command": f"5,{_TEST_LPAR},3\n7,{_TEST_LPAR},4\n"},
@@ -932,7 +936,7 @@ async def test_the_adapter_listing_is_the_1237_command_by_vios_id():
         (
             {"hmc_get_media_repository": {"RepositoryName": "VMLibrary"}},
             "media repository left",
-            f"hmcpctl storage delete-media-repo {_VIOS} {_VG}",
+            f"hmcpctl storage delete-media-repo {_VIOS} --vg {_VG}",
         ),
         (
             {"hmc_get_lpar_state": "running"},
@@ -959,6 +963,17 @@ async def test_each_stranded_class_is_reported_with_its_remedy(overrides, what, 
 
     assert [finding.what for finding in findings] == [what]
     assert remedy in findings[0].remedy
+    if remedy.startswith("hmcpctl storage"):
+        root = get_command(cli.app)
+        storage = root.commands["storage"]
+        for command in (
+            findings[0].remedy.replace("<each ISO>", "install.iso").split("; ")
+        ):
+            tokens = shlex.split(command)
+            leaf = storage.get_command(click.Context(storage), tokens[2])
+            assert leaf is not None
+            with leaf.make_context(tokens[2], tokens[3:]):
+                pass
 
 
 @pytest.mark.asyncio

@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import importlib.util
+import shlex
 import sys
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+import click
 import pytest
+from typer.main import get_command
+
+from hmcpctl import cli
 
 _RUNNER_PATH = Path(__file__).parents[1] / "scripts" / "live_test_runner.py"
 sys.path.insert(0, str(_RUNNER_PATH.parent))
@@ -273,6 +278,23 @@ def arm(monkeypatch, tmp_path):
 async def _run(state, *subtasks: int) -> None:
     for number in subtasks:
         await runner.SUBTASKS[number](None, state)
+    for row in state.results:
+        _, marker, command = str(row.get("note", "")).partition("(hmcpctl storage ")
+        if not marker:
+            continue
+        command = command.rsplit(")", 1)[0]
+        # The restored-ownership remedy asks the operator to choose a listed group.
+        if "<group: " in command:
+            before, _, rest = command.partition("<group: ")
+            _, _, after = rest.partition(">")
+            command = before + "selected-vg" + after
+        tokens = shlex.split(command)
+        root = get_command(cli.app)
+        storage = root.commands["storage"]
+        leaf = storage.get_command(click.Context(storage), tokens[0])
+        assert leaf is not None
+        with leaf.make_context(tokens[0], tokens[1:]):
+            pass
 
 
 def _observations(state) -> dict[str, list[dict[str, Any]]]:
