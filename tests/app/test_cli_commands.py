@@ -5219,11 +5219,12 @@ def test_metrics_show_logical_partition_forwards_owning_system(fake_hmc):
 
     assert result.exit_code == 0
     assert fake_hmc.calls == [
+        ("list_logical_partitions", (SYSTEM_UUID,), {}),
         (
             "get_processed_metric_links",
             ("LogicalPartition", LPAR_UUID, "2024-01-01T00:00:00Z", None, None),
             {"system_uuid": SYSTEM_UUID},
-        )
+        ),
     ]
 
 
@@ -5539,3 +5540,114 @@ def test_refcode_table_escapes_terminal_controls_but_json_preserves_them(
         assert "\x1b" not in result.stdout
         assert "\u202e" not in result.stdout
         assert "\\x1b" in result.stdout
+
+
+@pytest.mark.parametrize("command", ["show", "state"])
+@pytest.mark.parametrize("flag", ["--system", "-s"])
+@pytest.mark.parametrize("target", [LPAR_UUID, LPAR_NAME])
+def test_lpar_inspection_carries_system_scope(fake_hmc, command, flag, target):
+    result = RUNNER.invoke(cli.app, ["lpars", command, target, flag, SYSTEM_UUID])
+    assert result.exit_code == 0, result.output
+    if target == LPAR_UUID:
+        assert fake_hmc.calls[0] == ("list_logical_partitions", (SYSTEM_UUID,), {})
+    else:
+        assert fake_hmc.calls[0] == (
+            "find_partition_by_name",
+            (LPAR_NAME,),
+            {"system_uuid": SYSTEM_UUID},
+        )
+
+
+@pytest.mark.parametrize("command", ["show", "state"])
+def test_lpar_inspection_rejects_wrong_system_uuid(fake_hmc, monkeypatch, command):
+    monkeypatch.setattr(fake_hmc, "list_logical_partitions", AsyncMock(return_value=[]))
+    result = RUNNER.invoke(cli.app, ["lpars", command, LPAR_UUID, "-s", SYSTEM_UUID])
+    assert result.exit_code == 1, result.output
+    assert "does not belong to managed system" in result.output
+    assert fake_hmc.calls == []
+
+
+@pytest.mark.parametrize("command", ["delete", "decommission", "capture-console"])
+def test_required_lpar_scope_rejects_before_hmc_calls(fake_hmc, command):
+    result = RUNNER.invoke(cli.app, ["lpars", command, LPAR_UUID])
+    assert result.exit_code == 2, result.output
+    assert "--system" in result.output
+    assert fake_hmc.calls == []
+
+
+@pytest.mark.parametrize("command", ["show", "state"])
+@pytest.mark.parametrize(
+    "system", [SYSTEM_UUID, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]
+)
+def test_lpar_inspection_disambiguates_duplicate_names(
+    fake_hmc, monkeypatch, command, system
+):
+    from types import MethodType
+
+    from hmcpctl.client.core import HMCClient
+
+    other_uuid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    expected = LPAR_UUID if system == SYSTEM_UUID else other_uuid
+
+    async def partitions(selected):
+        return [
+            {
+                **fake_hmc.lpar,
+                "UUID": LPAR_UUID if selected == SYSTEM_UUID else other_uuid,
+            }
+        ]
+
+    monkeypatch.setattr(fake_hmc, "list_logical_partitions", partitions)
+    monkeypatch.setattr(
+        fake_hmc,
+        "find_partition_by_name",
+        MethodType(HMCClient.find_partition_by_name, fake_hmc),
+    )
+    result = RUNNER.invoke(cli.app, ["lpars", command, LPAR_NAME, "-s", system])
+    assert result.exit_code == 0, result.output
+    if command == "show":
+        assert json.loads(result.stdout)["UUID"] == expected
+    else:
+        assert fake_hmc.calls == [
+            ("get_quick_property", ("LogicalPartition", expected, "PartitionState"), {})
+        ]
+
+
+@pytest.mark.parametrize("command", ["show", "state"])
+def test_scoped_lpar_inspection_missing_name(fake_hmc, command):
+    result = RUNNER.invoke(cli.app, ["lpars", command, "ghost", "-s", SYSTEM_UUID])
+    assert result.exit_code == 1, result.output
+    assert fake_hmc.calls == [
+        ("find_partition_by_name", ("ghost",), {"system_uuid": SYSTEM_UUID})
+    ]
+
+
+def test_storage_wrong_system_uuid_refuses_before_deletion(fake_hmc, monkeypatch):
+    monkeypatch.setattr(fake_hmc, "list_vios", AsyncMock(return_value=[]))
+    result = RUNNER.invoke(
+        cli.app,
+        [
+            "storage",
+            "delete-disk",
+            VIOS_UUID,
+            "--vg",
+            VG_UUID,
+            "--name",
+            "disk1",
+            "--system",
+            SYSTEM_UUID,
+            "--yes",
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    assert "does not belong to managed system" in result.output
+    assert fake_hmc.calls == []
+
+
+@pytest.mark.parametrize("command", ["show", "state"])
+def test_scoped_lpar_inspection_missing_system(fake_hmc, command):
+    result = RUNNER.invoke(
+        cli.app, ["lpars", command, LPAR_UUID, "-s", "absent-system"]
+    )
+    assert result.exit_code == 1, result.output
+    assert "No managed system named" in result.output

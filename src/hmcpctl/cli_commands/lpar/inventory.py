@@ -124,10 +124,15 @@ def lpars_list(
 def lpars_show(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     as_json: bool = typer.Option(True, "--json/--no-json"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Restrict to this managed system name or UUID"
+    ),
 ) -> None:
     """Show one LPAR, looked up by name (exact) or by UUID."""
 
-    lpar = with_client(lambda hmc: get_lpar(hmc, name_or_uuid))
+    lpar = with_client(
+        lambda hmc: get_lpar(hmc, name_or_uuid, system_name_or_uuid=system)
+    )
 
     if lpar is None:
         partition_not_found(name_or_uuid)
@@ -136,14 +141,19 @@ def lpars_show(
 
 def lpars_state(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
+    system: str | None = typer.Option(
+        None, "--system", "-s", help="Restrict to this managed system name or UUID"
+    ),
 ) -> None:
     """Print just the current state of an LPAR."""
 
     async def state_or_none(hmc):
         try:
-            return await get_lpar_state(hmc, name_or_uuid)
-        except ResourceNotFoundError:
-            return None
+            return await get_lpar_state(hmc, name_or_uuid, system_name_or_uuid=system)
+        except ResourceNotFoundError as exc:
+            if exc.resource_kind == "LPAR":
+                return None
+            raise
 
     state = with_client(state_or_none)
 
