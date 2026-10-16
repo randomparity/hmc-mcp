@@ -964,10 +964,12 @@ _SERIAL_KEPT = frozenset(_SERIAL_ELEMENT[2].split("|"))
 
 
 def _replace_value(value: Any, token: str, keep: frozenset[str] = frozenset()) -> Any:
-    """*value* with its text replaced by *token*; `@attrs` and *keep* values are kept."""
+    """Replace text by *token*, retaining ordinary attributes and *keep* values."""
     if isinstance(value, dict):
         return {
-            k: v if k == "@attrs" else _replace_value(v, token, keep)
+            k: redact_identifier_keys(v)
+            if k == "@attrs"
+            else _replace_value(v, token, keep)
             for k, v in value.items()
         }
     if isinstance(value, list):

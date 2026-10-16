@@ -2858,6 +2858,23 @@ def test_tool_output_serial_keeps_only_keywords(
     assert out["nested"][key] == {"@attrs": {"ksv": "V1"}, "#text": expected}
 
 
+@pytest.mark.parametrize("key", ["SerialNumber", "backup_serial"])
+def test_tool_output_serial_attributes_redact_identifier_keys(key: str) -> None:
+    tool = {
+        "kind": "tool",
+        "step": "t",
+        "tool": "x",
+        "data": {
+            "frame_serial": {"@attrs": {"ksv": "V1", key: "x9q"}, "#text": "auto"}
+        },
+    }
+    corpus = export.tokenize_records(_records(tool))
+    assert corpus[-1]["record"]["data"]["frame_serial"] == {
+        "@attrs": {"ksv": "V1", key: "<REDACTED-SERIAL>"},
+        "#text": "auto",
+    }
+
+
 def test_long_uppercase_hex_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     """A volume id that slips past every rule is caught by the scan."""
     monkeypatch.setattr(export, "redact_identifier_keys", lambda value: value)
