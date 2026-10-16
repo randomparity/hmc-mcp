@@ -102,7 +102,7 @@ BUILT_IN_ACCOUNTS = {"root", "hscroot", "hscpe", "admin"}
 Replacement = str | Callable[[re.Match[str]], str]
 
 #: A 16-hex WWN, other than a LUN address: two digits and fourteen zeros. Its start is
-#: the rule's: `_SCRUB_START` or `_LEAK_START`.
+#: supplied by each scrub rule or survivor guard.
 _WWN_16 = r"(?![0-9a-fA-F]{2}0{14}\b)[0-9a-fA-F]{16}\b"
 
 #: Elements whose whole text is a device identifier.
@@ -946,6 +946,14 @@ class Tokenizer:
         if xml:
             # The token must not open an element, or the body would stop parsing.
             text = re.sub(r"<(REDACTED-[A-Z]+)>", r"&lt;\1&gt;", text)
+        # Check this call's exact representation before fields are serialized together.
+        mac_values = iter(_MAC_ELEMENT.finditer(text))
+        mac_value = next(mac_values, None)
+        for match in _RAW_IDENTIFIER_LEAK.finditer(text):
+            while mac_value is not None and mac_value.end(2) <= match.start():
+                mac_value = next(mac_values, None)
+            if mac_value is None or match.start() < mac_value.start(2):
+                raise LeakError("a raw identifier survived tokenizing; nothing written")
         return text
 
     def leaks(self, text: str) -> list[str]:
@@ -964,15 +972,6 @@ class Tokenizer:
                 for m in pattern.finditer(text)
                 if not m.groupdict().get("kept")
             ]
-        # Only the value the MAC scrubber handles uses its escape exemptions.
-        # Merge ordered scans so many raw candidates never rescan earlier values.
-        mac_values = iter(_MAC_ELEMENT.finditer(text))
-        mac_value = next(mac_values, None)
-        for match in _RAW_IDENTIFIER_LEAK.finditer(text):
-            while mac_value is not None and mac_value.end(2) <= match.start():
-                mac_value = next(mac_values, None)
-            if mac_value is None or match.start() < mac_value.start(2):
-                found.append(match.group(0))
         found += _ipv6_leaks(text)
         for pattern in self.private:
             found += [m.group(0) for m in pattern.finditer(text)]
@@ -1501,6 +1500,19 @@ def _write_scanned(data: Any, out: Path, private: Sequence[str]) -> None:
         raise LeakError(
             f"{len(leaks)} private value(s) in the derived output; nothing written"
         )
+    # Derived metadata has no MAC-scrub ownership. Check each supplied string and key.
+    pending = [data]
+    while pending:
+        value = pending.pop()
+        if isinstance(value, dict):
+            pending.extend(value)
+            pending.extend(value.values())
+        elif isinstance(value, (list, tuple)):
+            pending.extend(value)
+        elif isinstance(value, str) and _RAW_IDENTIFIER_LEAK.search(value):
+            raise LeakError(
+                "a raw identifier is in the derived output; nothing written"
+            )
     out.write_text(text, encoding="utf-8")
 
 
