@@ -259,13 +259,12 @@ async def resolve_volume_group_uuid(hmc: HMCClient, vios_uuid: str, value: str) 
             incomplete |= not valid_uuid
             matches.append(uuid)
     if incomplete or len(matches) != 1:
-        reason = (
-            "incomplete identity"
-            if incomplete
-            else "ambiguous"
-            if matches
-            else "not found"
-        )
+        if incomplete:
+            reason = "incomplete identity"
+        elif matches:
+            reason = "ambiguous"
+        else:
+            reason = "not found"
         raise ValueError(
             f"VolumeGroup {value!r} on VIOS {vios_uuid!r}: {reason}. "
             f"Candidates: {', '.join(candidates) or 'none'}. "
