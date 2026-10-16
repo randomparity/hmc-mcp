@@ -200,7 +200,26 @@ _SERIAL_ELEMENT = (
 #: before it. The unquoted rule reads no escape, so in `json.dumps` text a value runs on
 #: over a `\n`: over-scrubbing, never a leak. The quoted rule keeps the backslashes
 #: before its closing quote, so `json.dumps` text stays valid JSON (#1641).
-_KEYWORD_SERIAL_KEY = "(?:virtual|logical|cluster|peer_collective)_serial_num"
+_SERIAL_NAMES = (
+    "SerialNumber",
+    "LogicalSerialNumber",
+    "VirtualSerialNumber",
+    "serial",
+    "serial_num",
+    "virtual_serial_num",
+    "logical_serial_num",
+    "cluster_serial_num",
+    "peer_collective_serial_num",
+)
+_KEYWORD_SERIAL_KEY = (
+    "(?:"
+    + "|".join(
+        name.removesuffix("_serial_num")
+        for name in _SERIAL_NAMES
+        if name.endswith("_serial_num")
+    )
+    + ")_serial_num"
+)
 #: The other keys the key=value rules scrub, which keep no keyword.
 _DEVICE_ID_KEY = "(?:unique_id|udid|wwpns?|wwnn|serial_num)"
 _SERIAL_KEPT_RE = "(?-i:none|auto)"
@@ -947,17 +966,7 @@ _DEVICE_ID_KEYS = {_key(n) for n in _DEVICE_ID_ELEMENTS.split("|")} | {
     "luudid",
     "tierudid",
 }
-_SERIAL_KEYS = {
-    "serialnumber",
-    "logicalserialnumber",
-    "virtualserialnumber",
-    "serial",
-    "serialnum",
-    "virtualserialnum",
-    "logicalserialnum",
-    "clusterserialnum",
-    "peercollectiveserialnum",
-}
+_SERIAL_KEYS = {_key(name) for name in _SERIAL_NAMES}
 #: The keywords a serial element keeps (#1593), kept here on the same terms: only as the
 #: whole value, in their documented case.
 _SERIAL_KEPT = frozenset(_SERIAL_ELEMENT[2].split("|"))
