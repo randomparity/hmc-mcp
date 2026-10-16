@@ -9,6 +9,21 @@ used over SSH; this guide covers the `hmcpctl` application.
 The [bare-CEC LPAR recipe](recipes/bare-cec-lpar.md) walks a dedicated-I/O partition from
 create to delete.
 
+## Terminal text and machine streams
+
+Human terminal fields display nonprintable characters as visible escapes: an ESC becomes
+`\x1b`, a field newline becomes `\n`, and a bidi override becomes `\u202e`.
+Printable Unicode and literal brackets remain unchanged. Application layout and colors remain;
+stdout and stderr use their own actual terminal state, independently of color preferences.
+Explicit human tables use the same field encoding even when redirected.
+
+Raw REST responses use this protection on a terminal; redirected raw responses retain their
+original text and existing trailing newline. Captured console bytes remain unchanged. JSON
+escapes terminal controls through JSON encoding, so decoded values are unchanged. Explicit
+TSV retains its documented reversible delimiter encoding even on a terminal; choose a table
+for human display. Raw/capture files and explicit machine streams can contain controls, so
+consumers displaying those bytes later must apply their own display policy (ADR 0229).
+
 ## CLI usage
 
 ```bash

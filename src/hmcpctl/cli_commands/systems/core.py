@@ -25,6 +25,7 @@ from ..output import (
     print_inventory,
     print_json,
     resolve_inventory_format,
+    terminal_field,
 )
 from ..runtime import with_client
 
@@ -62,7 +63,9 @@ def systems_health(
         empty_msg="No fleet health issue rows returned",
     )
     for warning in result["warnings"]:
-        err_console.print(warning, style="yellow", markup=False)
+        err_console.print(
+            terminal_field(warning, err=True), style="yellow", markup=False
+        )
 
 
 def systems_list(
@@ -112,7 +115,9 @@ def systems_show(
     system = with_client(lambda hmc: get_system(hmc, name_or_uuid))
     if system is None:
         err_console.print(
-            f"System '{name_or_uuid}' not found", style="yellow", markup=False
+            f"System '{terminal_field(name_or_uuid, err=True)}' not found",
+            style="yellow",
+            markup=False,
         )
         raise typer.Exit(code=1)
     print_inventory(system, selected, title="Managed System")
@@ -131,7 +136,9 @@ def systems_power_on(
 ) -> None:
     """Power on a managed system (submits a PowerOn job)."""
     validate_wait_timing(wait, timeout, interval)
-    if not yes and not typer.confirm(f"Really PowerOn system {name_or_uuid}?"):
+    if not yes and not typer.confirm(
+        f"Really PowerOn system {terminal_field(name_or_uuid)}?"
+    ):
         raise typer.Abort()
 
     job = with_client(
@@ -145,7 +152,11 @@ def systems_power_on(
         )
     )
 
-    console.print(f"Submitted PowerOn for {name_or_uuid}", style="green", markup=False)
+    console.print(
+        f"Submitted PowerOn for {terminal_field(name_or_uuid)}",
+        style="green",
+        markup=False,
+    )
     print_json(job)
 
 
@@ -164,7 +175,9 @@ def systems_power_off(
     """Power off a managed system (submits a PowerOff job)."""
     validate_wait_timing(wait, timeout, interval)
     op = "Immediate PowerOff" if immediate else "PowerOff"
-    if not yes and not typer.confirm(f"Really {op} system {name_or_uuid}?"):
+    if not yes and not typer.confirm(
+        f"Really {terminal_field(op)} system {terminal_field(name_or_uuid)}?"
+    ):
         raise typer.Abort()
 
     job = with_client(
@@ -179,7 +192,11 @@ def systems_power_off(
         )
     )
 
-    console.print(f"Submitted {op} for {name_or_uuid}", style="green", markup=False)
+    console.print(
+        f"Submitted {terminal_field(op)} for {terminal_field(name_or_uuid)}",
+        style="green",
+        markup=False,
+    )
     print_json(job)
 
 
@@ -197,7 +214,9 @@ def systems_summary(
     result = asdict(with_client(lambda hmc: fetch_system_summary(hmc, name_or_uuid)))
     print_inventory(result, selected, title="System Summary")
     for warning in result.get("warnings") or ():
-        err_console.print(warning, style="yellow", markup=False)
+        err_console.print(
+            terminal_field(warning, err=True), style="yellow", markup=False
+        )
 
 
 def systems_capacity(
