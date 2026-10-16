@@ -455,14 +455,25 @@ def _ipv6_leaks(text: str) -> list[str]:
     """Find addresses independently of the scrub rule, excluding HMC records and MACs."""
     found = []
     for match in _IPV6_LEAK_TOKEN.finditer(text):
-        value = match.group().strip(".")
+        token = match.group()
+        # A non-hex label can precede an address without whitespace (`IPv6:::1`).
+        # Find its final non-address character once, then consume one label colon.
+        label_end = max(
+            (m.end() for m in re.finditer(r"(?i)[^0-9a-f:.]", token)), default=0
+        )
+        label_colon = token.find(":", label_end) if label_end else -1
+        if label_end and label_colon < 0:
+            continue
+        value = token[label_colon + 1 :].strip(".")
         if not 2 <= len(value) <= 45 or ":" not in value or value == "2001:db8::1":
             continue
         if re.fullmatch(r"(?i)(?:[0-9a-f]{2}:){5,}[0-9a-f]{2}", value):
             continue
         if not _is_ipv6(value):
             # A literal backslash can precede an address opening with a hex letter.
-            if text[max(0, match.start() - 2) : match.start()].lower() not in (
+            if label_end or text[
+                max(0, match.start() - 2) : match.start()
+            ].lower() not in (
                 r"\b",
                 r"\f",
             ):

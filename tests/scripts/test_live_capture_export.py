@@ -2899,6 +2899,7 @@ def test_ipv6_backstop_keeps_non_addresses_and_placeholder(value: str) -> None:
 def test_ipv6_backstop_bounds_each_candidate() -> None:
     # Oversized runs must be consumed once, with no repeated suffix validation.
     assert export._ipv6_leaks("a:" * 100_000 + " a" * 100_000) == []
+    assert export._ipv6_leaks("label:" * 100_000 + "::1") == ["::1"]
 
 
 def test_ipv6_backstop_keeps_only_vocabulary_cli_key_separator() -> None:
@@ -2935,3 +2936,12 @@ def test_ipv6_leak_refuses_cli_output(
 def test_ipv6_backstop_reads_literal_escape_letter_as_a_hex_digit(letter: str) -> None:
     address = letter + "1:2:3:4:5:6:7:8"
     assert export._ipv6_leaks("C:\\" + address) == [address]
+
+
+@pytest.mark.parametrize("body", ["IPv6:::1", "addr:fe80::1", "outer:addr:fe80::1"])
+def test_ipv6_backstop_after_colon_delimited_labels(body: str) -> None:
+    tok = export.Tokenizer({}, set())
+    assert tok.leaks(body)
+    if body == "IPv6:::1":
+        record = export._tokenize_record(tok, {**_ssh("lshmc", body), "_src": "test"})
+        assert tok.leaks(json.dumps([record]))
