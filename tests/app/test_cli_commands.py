@@ -5568,10 +5568,13 @@ def test_lpar_inspection_rejects_wrong_system_uuid(fake_hmc, monkeypatch, comman
 
 
 @pytest.mark.parametrize("command", ["delete", "decommission", "capture-console"])
-def test_required_lpar_scope_rejects_before_hmc_calls(fake_hmc, command):
+def test_required_lpar_scope_rejects_before_hmc_calls(fake_hmc, command, monkeypatch):
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("TERM", "xterm")
+    monkeypatch.setattr("typer.rich_utils.FORCE_TERMINAL", True)
     result = RUNNER.invoke(cli.app, ["lpars", command, LPAR_UUID])
     assert result.exit_code == 2, result.output
-    assert "--system" in result.output
+    assert "--system" in unstyle(result.output)
     assert fake_hmc.calls == []
 
 
