@@ -55,10 +55,11 @@ import json
 import re
 import shlex
 import sys
+from collections.abc import Awaitable, Callable
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -1169,7 +1170,13 @@ async def _optical_mapping_left(call, inputs: LparResidueInputs) -> Finding | No
         raise StateUnreadable(
             f"an optical mapping for {inputs.lpar_name} names no partition or media"
         )
-    left = sorted({media for _, media in identities if media in inputs.iso_names})
+    left = sorted(
+        {
+            media
+            for _, media in cast(list[tuple[str, str]], identities)
+            if media in inputs.iso_names
+        }
+    )
     if not left:
         return None
     return Finding(
@@ -1244,7 +1251,7 @@ async def _unmapped_server_adapters(call, inputs: LparResidueInputs) -> Finding 
         raise StateUnreadable(
             f"a storage mapping for {inputs.lpar_name} names no server adapter; {compare}"
         )
-    mapped = {id_.split("/", 1)[0] for id_ in ids}
+    mapped = {id_.split("/", 1)[0] for id_ in cast(list[str], ids)}
     if len(slots) == len(mapped):
         return None
     if len(slots) < len(mapped):
@@ -1542,7 +1549,7 @@ def round2_inputs_from_document(
     config = runner._decode_saved_config(document.get("config"))
     artifacts = document.get("artifacts")
     saved = artifacts.get("lp3_baseline") if isinstance(artifacts, dict) else None
-    if not isinstance(saved, dict):
+    if not isinstance(artifacts, dict) or not isinstance(saved, dict):
         raise TypeError("round2 has no producer baseline")
     captured = independent_baseline.validate(saved.get("round2_snapshot"))
     hmc = document.get("hmc")
@@ -1639,7 +1646,9 @@ async def check_run(
         if inputs is None:
             continue
         try:
-            findings += await run_checks(call, inputs)
+            findings += await cast(Callable[..., Awaitable[list[Finding]]], run_checks)(
+                call, inputs
+            )
         except StateUnreadable as unreadable:
             findings += unreadable.findings
             unread.append(str(unreadable))
@@ -1701,7 +1710,7 @@ def _report(
     unwitnessed: list[int],
     unread: list[str],
 ) -> None:
-    run = document.get("run") if isinstance(document.get("run"), dict) else {}
+    run = value if isinstance(value := document.get("run"), dict) else {}
     artifacts = document.get("artifacts")
     partial = _is_partial(document)
     print(

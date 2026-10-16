@@ -64,7 +64,7 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import check_capability_inventory
 from fastmcp import Client
@@ -1128,6 +1128,7 @@ def _validate_declared_function(
                     f"unrecorded declared result overwritten in {function.name}"
                 )
             continue
+        assert isinstance(node.func, ast.Attribute)
         if node.func.attr == "record_with_expected":
             if len(node.args) != 5:
                 raise ValueError(
@@ -1217,16 +1218,18 @@ def _load_known_gaps(
     known: set[tuple[str, str]] = set()
     if environment is not None:
         for record in records:
-            for scope in record["implementation"]["missing_scope"]:
+            implementation = cast(dict[str, Any], record["implementation"])
+            operation = cast(str, record["operation"])
+            for scope in implementation["missing_scope"]:
                 if "confirmation" not in scope:
                     continue
                 fingerprint = check_capability_inventory.closure_fingerprint(
-                    repo_root, handlers[record["operation"]].rsplit(".", 1)[0]
+                    repo_root, handlers[operation].rsplit(".", 1)[0]
                 )
                 if check_capability_inventory.gap_is_current(
                     scope["confirmation"], environment, fingerprint
                 ):
-                    known.add((record["operation"], scope["variant"]))
+                    known.add((operation, scope["variant"]))
     return known
 
 

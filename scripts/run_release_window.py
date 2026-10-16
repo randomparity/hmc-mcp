@@ -292,6 +292,7 @@ class Execution:
                 )
                 self.safe = False
                 with selectors.DefaultSelector() as selector:
+                    assert process.stdout is not None
                     selector.register(process.stdout, selectors.EVENT_READ)
                     written, stage, deadline = 0, 0, 0.0
                     exited = None
