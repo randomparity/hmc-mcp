@@ -128,3 +128,22 @@ def test_short_alias_requires_documented_leading_zero():
 def test_representative_factual_meanings(code, terms):
     text = lookup_progress_code(code).definition.lower()
     assert all(term in text for term in terms)
+
+
+def test_catalog_lookup_is_independent_of_process_text_encoding(tmp_path):
+    import subprocess
+    import sys
+
+    proof = (
+        "import locale; locale.setlocale(locale.LC_CTYPE, 'C'); "
+        "from hmcpctl.progress_codes import lookup_progress_code; "
+        "assert lookup_progress_code('CA00E105').notation == 'CA00E105'"
+    )
+    result = subprocess.run(
+        [sys.executable, "-I", "-X", "utf8=0", "-c", proof],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr

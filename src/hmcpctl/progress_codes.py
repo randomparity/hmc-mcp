@@ -40,7 +40,9 @@ def _catalog() -> tuple[
     dict[str, ProgressCodeDefinition],
     tuple[tuple[re.Pattern[str], ProgressCodeDefinition], ...],
 ]:
-    data = json.loads(files("hmcpctl").joinpath("_progress_codes.json").read_text())
+    data = json.loads(
+        files("hmcpctl").joinpath("_progress_codes.json").read_text(encoding="utf-8")
+    )
     exact: dict[str, ProgressCodeDefinition] = {}
     patterns: list[tuple[int, re.Pattern[str], ProgressCodeDefinition]] = []
     aliases: dict[str, ProgressCodeDefinition] = {}
