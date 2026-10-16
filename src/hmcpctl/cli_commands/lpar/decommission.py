@@ -15,7 +15,10 @@ from ..runtime import with_client
 def lpars_decommission(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     system: str = typer.Option(
-        ..., "--system", "-s", help="Managed system name or UUID"
+        ...,
+        "--system",
+        "-s",
+        help="Managed system name or UUID; required for scoped ownership and cleanup checks",
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Inventory the blast radius without mutating"
