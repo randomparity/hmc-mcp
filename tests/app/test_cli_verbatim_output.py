@@ -409,7 +409,7 @@ def test_systems_list_table_prints_bracketed_system_name_verbatim(monkeypatch):
     system = {"UUID": "u1", "Resource": {"SystemName": MARKED, "State": "operating"}}
     _stub(monkeypatch, cli_systems, [system], "with_client")
 
-    result = RUNNER.invoke(cli.app, ["systems", "list"])
+    result = RUNNER.invoke(cli.app, ["systems", "list", "--format", "table"])
 
     assert result.exit_code == 0, result.output
     assert PRINTED_VERBATIM.search(result.stdout), result.stdout

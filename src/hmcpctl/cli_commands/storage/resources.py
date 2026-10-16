@@ -38,7 +38,15 @@ from ...operations.storage.resources import (
     upload_iso,
 )
 from ...resource_identity import resolve_vios_uuid
-from ..output import VerbatimTable, console, output, print_json, usage_error
+from ..output import (
+    InventoryFormat,
+    VerbatimTable,
+    console,
+    print_inventory,
+    print_json,
+    resolve_inventory_format,
+    usage_error,
+)
 from ..runtime import with_client
 
 
@@ -47,28 +55,29 @@ def storage_list_vgs(
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
-    as_json: bool = typer.Option(False, "--json"),
+    as_json: bool = typer.Option(False, "--json", "-j", help="Output JSON"),
+    format: InventoryFormat | None = typer.Option(
+        None,
+        "--format",
+        help="Output format (default: table on TTY, tsv when redirected)",
+    ),
 ) -> None:
     """List Volume Groups on a VIOS (free space, PVs, virtual disks)."""
-
+    selected = resolve_inventory_format(as_json, format)
     vgs = with_client(
         lambda hmc: list_volume_groups(hmc, vios, system_name_or_uuid=system)
     )
-
-    table = None
-    if not as_json:
-        table = VerbatimTable(title=f"Volume Groups on {vios}")
-        for col in ("Name", "UUID", "Free (GiB)", "Capacity (GiB)", "Diagnostic"):
-            table.add_column(col)
-        for v in vgs:
-            table.add_row(
-                v.name,
-                v.uuid,
-                "-" if v.free_space_gib is None else str(v.free_space_gib),
-                "-" if v.capacity_gib is None else str(v.capacity_gib),
-                "-" if v.free_space_diagnostic is None else v.free_space_diagnostic,
-            )
-    output([asdict(vg) for vg in vgs], as_json, table, "No volume groups found")
+    print_inventory(
+        [asdict(vg) for vg in vgs],
+        selected,
+        ("Name", "UUID", "Free (GiB)", "Capacity (GiB)", "Diagnostic"),
+        [
+            (v.name, v.uuid, v.free_space_gib, v.capacity_gib, v.free_space_diagnostic)
+            for v in vgs
+        ],
+        title=f"Volume Groups on {vios}",
+        empty_msg="No volume groups found",
+    )
 
 
 def storage_create_vg(
@@ -393,63 +402,55 @@ def storage_delete_media(
 def storage_get_media_repo(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Option(..., "--vg", help="Volume Group name or UUID"),
-    as_json: bool = typer.Option(False, "--json", help="Output as JSON"),
+    as_json: bool = typer.Option(False, "--json", "-j", help="Output JSON"),
+    format: InventoryFormat | None = typer.Option(
+        None,
+        "--format",
+        help="Output format (default: table on TTY, tsv when redirected)",
+    ),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
 ) -> None:
-    """Get the Virtual Media Repository (VMLibrary) from a volume group."""
+    """Get the Virtual Media Repository (RepositorySize is in GiB)."""
+    selected = resolve_inventory_format(as_json, format)
     result = with_client(
         lambda hmc: get_media_repository(hmc, vios, vg, system_name_or_uuid=system)
     )
-
-    if as_json:
-        print_json(result)
-    elif result:
-        console.print(
-            f"Media Repository on VG {vg} (VIOS {vios}):", style="green", markup=False
-        )
-        resource = result.get("Resource", {})
-        repo_name = resource.get("RepositoryName", "N/A")
-        repo_size = resource.get("RepositorySize", "N/A")
-        console.print(f"  Name: {repo_name}", markup=False)
-        console.print(f"  Size: {repo_size} GiB", markup=False)
-    else:
-        console.print("[yellow]No media repository found[/yellow]")
+    print_inventory(
+        result,
+        selected,
+        title="Media Repository (RepositorySize in GiB)",
+        empty_msg="No media repository found",
+    )
 
 
 def storage_list_optical_media(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Option(..., "--vg", help="Volume Group name or UUID"),
-    as_json: bool = typer.Option(False, "--json", help="Output as JSON"),
+    as_json: bool = typer.Option(False, "--json", "-j", help="Output JSON"),
+    format: InventoryFormat | None = typer.Option(
+        None,
+        "--format",
+        help="Output format (default: table on TTY, tsv when redirected)",
+    ),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
 ) -> None:
     """List Virtual Optical Media in the Virtual Media Repository."""
-    media_list = with_client(
+    selected = resolve_inventory_format(as_json, format)
+    media = with_client(
         lambda hmc: list_optical_media(hmc, vios, vg, system_name_or_uuid=system)
     )
-
-    if as_json:
-        print_json([asdict(media) for media in media_list])
-    elif media_list:
-        console.print(
-            f"Optical Media in repository on VG {vg} (VIOS {vios}):",
-            style="green",
-            markup=False,
-        )
-        table = VerbatimTable()
-        table.add_column("Media Name", style="cyan")
-        table.add_column("Size (MiB)", style="magenta")
-        for media in media_list:
-            table.add_row(
-                media.name,
-                "N/A" if media.size_mib is None else str(media.size_mib),
-            )
-        console.print(table)
-    else:
-        console.print("[yellow]No optical media found[/yellow]")
+    print_inventory(
+        [asdict(item) for item in media],
+        selected,
+        ("Media Name", "Size (MiB)"),
+        [(item.name, item.size_mib) for item in media],
+        title=f"Optical Media in VG {vg}",
+        empty_msg="No optical media found",
+    )
 
 
 def storage_mount_optical_media(
@@ -553,33 +554,29 @@ def storage_list_mappings(
     lpar: str | None = typer.Option(
         None, "--lpar", help="Scope to single LPAR by name or UUID"
     ),
-    as_json: bool = typer.Option(False, "--json", "-j", help="Output as raw JSON"),
+    as_json: bool = typer.Option(False, "--json", "-j", help="Output JSON"),
+    format: InventoryFormat | None = typer.Option(
+        None,
+        "--format",
+        help="Output format (default: table on TTY, tsv when redirected)",
+    ),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
 ) -> None:
     """List VirtualSCSIMappings on a VIOS (optionally scoped to an LPAR)."""
-
-    async def _go(hmc: HMCClient):
-        return await list_storage_mappings(hmc, vios, lpar, system_name_or_uuid=system)
-
-    mappings = with_client(_go)
-    if as_json:
-        print_json([asdict(mapping) for mapping in mappings])
-    else:
-        table = VerbatimTable(title=f"Storage Mappings on {vios}")
-        table.add_column("Mapping ID", style="cyan")
-        table.add_column("Client LPAR", style="green")
-        table.add_column("Backing Storage", style="yellow")
-        table.add_column("Type", style="magenta")
-        for m in mappings:
-            table.add_row(
-                m.id or "",
-                m.lpar_uuid or "",
-                m.backing_name or "",
-                m.backing_kind or "",
-            )
-        console.print(table)
+    selected = resolve_inventory_format(as_json, format)
+    mappings = with_client(
+        lambda hmc: list_storage_mappings(hmc, vios, lpar, system_name_or_uuid=system)
+    )
+    print_inventory(
+        [asdict(mapping) for mapping in mappings],
+        selected,
+        ("Mapping ID", "Client LPAR", "Backing Storage", "Type"),
+        [(m.id, m.lpar_uuid, m.backing_name, m.backing_kind) for m in mappings],
+        title=f"Storage Mappings on {vios}",
+        empty_msg="No storage mappings found",
+    )
 
 
 def storage_detach_mapping(
