@@ -338,14 +338,16 @@ _AFTER_LITERAL_U = (
 #: escape and keeps its digits before a space, comma, slash or tab, or at the end of the
 #: value (#1642). Digits with a non-zero one are a leak where no ASCII letter or digit
 #: follows them, or where six or more are joined to a word, as `_LIVE_HEX_RUN` counts a
-#: run, unless they open with the `0030` or `0000` the rule writes. A literal `\\f` or
+#: run. Only the bounded alternative exempts the `0030` or `0000` the rule writes;
+#: the joined alternative skips that prefix without backtracking into it. A literal `\\f` or
 #: `\\b` needs no such branch: `_AFTER_ESCAPE` starts a run after any `\\\\`. In a REST
 #: body that is JSON text, the scan reads a real escape as a literal one, so that body
 #: fails closed. The backslashes are matched from the first, so a run of them is scanned
 #: once.
 _LITERAL_U = (
-    r"(?<!\\)(?:\\\\)++u(?!00[03]0)"
-    r"(?:(?=[0-9A-Fa-f]{6})0*+[1-9A-Fa-f]|0*+[1-9A-Fa-f][0-9A-Fa-f]*+(?![0-9A-Za-z]))"
+    r"(?<!\\)(?:\\\\)++u"
+    r"(?:(?=[0-9A-Fa-f]{6})(?:00[03]0)?+0*+[1-9A-Fa-f]"
+    r"|(?!00[03]0)0*+[1-9A-Fa-f][0-9A-Fa-f]*+(?![0-9A-Za-z]))"
 )
 #: A whole hex run directly before a MAC separator and hex, or directly after hex and a
 #: separator: an octet, even when a word character adjoins its other end, as in
