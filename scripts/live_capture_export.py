@@ -982,7 +982,7 @@ def redact_identifier_keys(value: Any) -> Any:
         for key, item in value.items():
             if _key(key) in _DEVICE_ID_KEYS:
                 out[key] = _replace_value(item, "<REDACTED-DEVID>")
-            elif _key(key) in _SERIAL_KEYS:
+            elif _key(key) in _SERIAL_KEYS or "serial" in _key(key):
                 out[key] = _replace_value(item, "<REDACTED-SERIAL>", _SERIAL_KEPT)
             else:
                 out[key] = redact_identifier_keys(item)

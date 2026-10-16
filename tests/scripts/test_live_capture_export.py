@@ -2789,6 +2789,9 @@ def test_built_in_accounts_are_not_names() -> None:
         ("LogicalSerialNum", "<REDACTED-SERIAL>"),
         ("cluster_serial_num", "<REDACTED-SERIAL>"),
         ("peer_collective_serial_num", "<REDACTED-SERIAL>"),
+        ("frame_serial", "<REDACTED-SERIAL>"),
+        ("Chassis.Serial-ID", "<REDACTED-SERIAL>"),
+        ("SERIALNUMBERBACKUP", "<REDACTED-SERIAL>"),
     ],
 )
 def test_tool_output_identifiers_are_redacted(key: str, token: str) -> None:
@@ -2823,6 +2826,9 @@ def test_tool_output_identifiers_are_redacted(key: str, token: str) -> None:
         "logical_serial_num",
         "ClusterSerialNum",
         "PEER_COLLECTIVE_SERIAL_NUM",
+        "frame_serial",
+        "Chassis.Serial-ID",
+        "SERIALNUMBERBACKUP",
     ],
 )
 @pytest.mark.parametrize(
