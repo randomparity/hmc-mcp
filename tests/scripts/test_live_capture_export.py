@@ -2485,8 +2485,9 @@ FREE_TEXT_VALUES = [
     # A longer separated run is zeroed whole: a hyphenated WWPN, a dotted GUID.
     ("50-05-07-68-0a-1b-2c-3d", "00-00-00-00-00-00-00-00"),
     ("0002.c903.000a.1b2c", "0000.0000.0000.0000"),
+    ("198.51.100.207", export.PLACEHOLDER_IP),
 ]
-#: The free-text MAC and WWN scrub rules and backstops, found by their starts.
+#: The free-text MAC, WWN and IPv4 scrub rules and backstops, found by their starts.
 FREE_TEXT_RULES = [
     rule
     for rule in [rule for rule, _ in export.IDENTIFIER_RULES]
@@ -2521,7 +2522,9 @@ def test_free_text_value_after_a_json_escape_is_scrubbed(
     ("before", "after"), [("g", ""), ("1", ""), ("", "1"), ("", "g")]
 )
 @pytest.mark.parametrize("escaped", ESCAPED_CHARACTERS, ids=ascii)
-@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES[:4]])
+@pytest.mark.parametrize(
+    "value", [value for value, _ in FREE_TEXT_VALUES[:4] + FREE_TEXT_VALUES[-1:]]
+)
 def test_free_text_value_inside_a_longer_run_is_not_matched(
     encode: Any, escaped: str, value: str, before: str, after: str
 ) -> None:
@@ -2535,7 +2538,9 @@ def test_free_text_value_inside_a_longer_run_is_not_matched(
 #: A colon MAC is left out: after the letter, the IPv6 rule replaces it as an address.
 #: So is a longer separated run: after its first group, joined to the letter, the scrub
 #: rules zero the rest as a run of their own.
-@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES[1:4]])
+@pytest.mark.parametrize(
+    "value", [value for value, _ in FREE_TEXT_VALUES[1:4] + FREE_TEXT_VALUES[-1:]]
+)
 def test_value_after_an_escaped_backslash_and_n_fails_closed(value: str) -> None:
     """`\\\\n` is a backslash and the letter `n`, so the scrub rules read the value as
     joined to a word and keep it; the backstops read the `\\n` as an escape and report
@@ -2634,7 +2639,7 @@ def test_free_text_rules_after_a_long_backslash_run_do_not_backtrack() -> None:
     runs = "0a-" * 20_000 + "0ag " + "0a1b." * 20_000 + "0a1bg "
     zeroed = "00-" * 20_000 + "00 " + "0000." * 20_000 + "0000 "
     body = (escapes + runs + zeroed) * 5
-    assert len(FREE_TEXT_RULES) == 8
+    assert len(FREE_TEXT_RULES) == 10
     for rule in FREE_TEXT_RULES:
         pattern = rule.pattern.replace(export._SCRUB_START, r"(?<![\w\\])")
         pattern = pattern.replace(export._LEAK_START, r"(?<![\w\\])")
@@ -2642,6 +2647,18 @@ def test_free_text_rules_after_a_long_backslash_run_do_not_backtrack() -> None:
             pattern = pattern.replace(f"(?!{zeroed})", "")
         baseline = re.compile(pattern, rule.flags)
         assert _cost_ratio(rule, baseline, lambda match: match.group(0), body) < 10
+
+
+@pytest.mark.parametrize(
+    "escape", [r"\n", r"\r", r"\t", r"\f", r"\b", r"\u0001", r"\u00e9"]
+)
+def test_ipv4_after_a_written_escape_is_scrubbed(escape: str) -> None:
+    """#1683: raw captures may already hold the escape's written representation."""
+    tok = export.Tokenizer({}, set())
+    body = f"hdr{escape}198.51.100.7 x"
+    assert tok.tokenize(body) == f"hdr{escape}{export.PLACEHOLDER_IP} x"
+    assert tok.leaks(body) == ["198.51.100.7"]
+    assert tok.leaks(f"hdr{escape}{export.PLACEHOLDER_IP} x") == []
 
 
 def test_tool_record_the_rules_turn_into_invalid_json_fails_closed(
