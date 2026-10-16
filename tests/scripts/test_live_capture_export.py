@@ -2855,3 +2855,75 @@ def _fragment_only(init: Any) -> Any:
         self._private_words = [re.compile(p) for p in private]
 
     return patched
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "fe80::1:2",
+        "FE80::A",
+        "2001:db8::2",
+        "2001:db8:0:0:0:0:0:1",
+        "::",
+        "::1",
+        "::ffff:192.0.2.9",
+        "123:4:5:6:7:8:9:10",
+    ],
+)
+@pytest.mark.parametrize("before", ["", r"\n", r"\b", r"\\\t", r"\u0030"])
+def test_ipv6_leak_backstop(address: str, before: str) -> None:
+    assert address in export.Tokenizer({}, set()).leaks(f"addr {before}{address} end")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2001:db8::1",
+        "1:0:1:3",
+        "1:0:1:3:0:5:1",
+        "0A:1B:2C:3D:4E:5F",
+        "00:00:00:00:00:00",
+        "not:an:address",
+        "ns::IPAddress",
+        "Partition::State",
+        "abcd:12345::1",
+    ],
+)
+def test_ipv6_backstop_keeps_non_addresses_and_placeholder(value: str) -> None:
+    # Existing MAC backstops may report a live MAC; this check isolates IPv6 scanning.
+    assert export._ipv6_leaks(value) == []
+
+
+def test_ipv6_backstop_bounds_each_candidate() -> None:
+    # Oversized runs must be consumed once, with no repeated suffix validation.
+    assert export._ipv6_leaks("a:" * 100_000 + " a" * 100_000) == []
+
+
+def test_ipv6_backstop_keeps_only_vocabulary_cli_key_separator() -> None:
+    tok = export.Tokenizer({}, set())
+    assert tok.leaks('{"lshmc :: version": ["<text>"]}') == []
+    assert "::" in tok.leaks('{"lshmc :: version": ["::"]}')
+    assert "::1" in tok.leaks('{"lshmc :: ::1": []}')
+    assert "fe80::2" in tok.leaks('{"lshmc fe80::2 :: version": []}')
+    assert "::" in tok.leaks('{"raw": "lshmc :: version"}')
+
+
+@pytest.mark.parametrize("address", ["fe80::2", "::1", "::ffff:192.0.2.1"])
+def test_ipv6_leak_refuses_cli_output(
+    address: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
+) -> None:
+    monkeypatch.setattr(
+        export,
+        "IDENTIFIER_RULES",
+        tuple(
+            (rule, replacement)
+            for rule, replacement in export.IDENTIFIER_RULES
+            if rule is not export._IPV6
+        ),
+    )
+    raw = tmp_path / "capture.jsonl"
+    raw.write_text(json.dumps(_ssh("lshmc", address)) + "\n", encoding="utf-8")
+    output = tmp_path / "corpus.json"
+    assert export.main(["tokenize", str(raw), "--out", str(output)]) == 1
+    assert not output.exists()
+    assert "nothing written" in capsys.readouterr().err

@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import collections
 import csv
+import ipaddress
 import json
 import os
 import re
@@ -438,6 +439,35 @@ def _ipv6(match: re.Match[str]) -> str:
     if _is_ipv6(text) or (hex_letter and _is_ipv6(escape[-1] + text)):
         return escape + "2001:db8::1"
     return match.group(0)
+
+
+#: Consume escapes before hex text, so their digits or letters never join an address.
+#: Maximal possessive runs prevent retrying every suffix of oversized input.
+# A vocabulary CLI key begins with a command and its structural ` :: ` separator.
+# Consume only that prefix; the field name and every value are still scanned.
+_IPV6_LEAK_TOKEN = re.compile(
+    r'(?i)"ls[a-z0-9_-]+(?: [^":\\\r\n ]++)*+ :: (?=[^"\\\r\n]*+"\s*:)'
+    r'|\\(?:u[0-9a-f]{4}|[\\"/bfnrt])|[0-9a-z_.:]++'
+)
+
+
+def _ipv6_leaks(text: str) -> list[str]:
+    """Find addresses independently of the scrub rule, excluding HMC records and MACs."""
+    found = []
+    for match in _IPV6_LEAK_TOKEN.finditer(text):
+        value = match.group().strip(".")
+        if not 2 <= len(value) <= 45 or ":" not in value or value == "2001:db8::1":
+            continue
+        if not _is_ipv6(value) or re.fullmatch(
+            r"(?i)(?:[0-9a-f]{2}:){5,}[0-9a-f]{2}", value
+        ):
+            continue
+        try:
+            ipaddress.IPv6Address(value)
+        except ipaddress.AddressValueError:
+            continue
+        found.append(value)
+    return found
 
 
 def _email(match: re.Match[str]) -> str:
@@ -871,6 +901,7 @@ class Tokenizer:
                 for m in pattern.finditer(text)
                 if not m.groupdict().get("kept")
             ]
+        found += _ipv6_leaks(text)
         for pattern in self.private:
             found += [m.group(0) for m in pattern.finditer(text)]
         return found
