@@ -101,7 +101,7 @@ extend-immutable-calls = [
 "tests/unit/test_ownership.py" = ["PLE2502"]
 
 [tool.ty.src]
-include = ["src/hmcpctl", "scripts/live_test"]
+include = ["src/hmcpctl", "scripts"]
 
 [tool.pytest.ini_options]
 pythonpath = ["tests"]
