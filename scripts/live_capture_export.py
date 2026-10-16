@@ -154,10 +154,17 @@ _NS_PREFIX = rf"(?![!?])(?:(?:[^{_PREFIX_END_CLASS}\\]|{_NAME_ESCAPE})*+:)*"
 #: or a leading `!` or `?` still ends a value the backstops read (#1660). A comment, CDATA
 #: section or processing instruction never starts with `</`; text that is not XML but
 #: holds `</`, free text and `x:SerialNumber` is refused, never exported. Each segment
-#: ends at the first `:`, so a prefix matches one way only. Before the bare name,
-#: XML whitespace, `!` and `?` need no `:` (#1678); JSON whitespace escapes count too.
-#: This final run is possessive, so a long run is scanned once.
-_CLOSING_PREFIX = r"(?:[^:<>]*+:)*(?:[ \t\n\r!?]|\\++[nrt])*+"
+#: ends at its first literal or encoded colon (#1679). Encoded colons are accepted only
+#: here, so a malformed opening tag still reaches refusal through the leak backstop.
+#: Prefix characters cannot consume a separator, and backslash runs are possessive:
+#: JSON escaping at any depth costs one scan. Before the bare name, XML whitespace,
+#: `!` and `?` need no `:` (#1678); JSON whitespace escapes count too.
+_ENCODED_COLON = r"(?:\\++u003[aA]|&#(?:58|x3[aA]);)"
+_CLOSING_PREFIX = (
+    rf"(?:(?:[^:<>&\\]|&(?!#(?:58|x3[aA]);)|\\++(?!u003[aA]))*+"
+    rf"(?::|{_ENCODED_COLON}))*"
+    r"(?:[ \t\n\r!?]|\\++[nrt])*+"
+)
 #: Elements whose whole text a rule replaces: the element name pattern, the text the
 #: rule writes and, optionally, the keywords it keeps as evidence. The same entry builds
 #: the scrub rule and its `leaks()` backstop. Names match in any case, after any

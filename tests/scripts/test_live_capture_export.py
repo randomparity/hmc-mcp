@@ -963,6 +963,35 @@ def test_namespace_prefix_with_any_other_character_is_scrubbed(
     assert tok.leaks(scrubbed) == []
 
 
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize(
+    "separator", [r"\u003a", r"\u003A", "&#58;", "&#x3a;", "&#x3A;"]
+)
+@pytest.mark.parametrize("prefix", ["a{sep}", "a{sep}b:{sep}"])
+@pytest.mark.parametrize(
+    ("element", "value"),
+    [
+        ("X-API-Session", "SYN-77Q"),
+        ("PublicSSHKeyValue", "SYN-77Q"),
+        ("IPAddress", "SYN-77Q"),
+        ("SerialNumber", "SYN-77Q"),
+        ("WWPN", "SYN-77Q"),
+        ("MACAddress", "0A1B2C3D4E5F"),  # pragma: allowlist secret
+    ],
+)
+def test_value_behind_an_escaped_namespace_colon_is_refused(
+    element: str, value: str, separator: str, prefix: str, encode: Any
+) -> None:
+    """Regression #1679: encoded colons hid a value from scrub and leak rules."""
+    tok = export.Tokenizer({}, set())
+    name = prefix.format(sep=separator) + element
+    body = encode(f"<Root><{name}>{value}</{name}></Root>")
+    assert tok.tokenize(body) == body
+    assert tok.leaks(body) == [value]
+    with pytest.raises(export.LeakError, match="private value.*nothing written"):
+        export.tokenize_records(_records(_rest("/e", body)))
+
+
 #: Prefixes the scrub rules end or refuse: one of XML's spaces, a quote, `=`, the literal
 #: text `\u0020`, and a leading `!` or `?`. No rule scrubs the value, so only the
 #: backstop stops it (#1660).
@@ -1761,6 +1790,29 @@ def test_closing_tag_with_many_prefixes_does_not_backtrack(segment: str) -> None
             rule.pattern.replace(export._CLOSING_PREFIX, export._NS_PREFIX)
         )
         assert _cost_ratio(rule, opening, "", body) < 10
+
+
+@pytest.mark.parametrize(
+    ("segment", "count"),
+    [
+        (r"a\u003a", 5_000),
+        ("a&#58;", 5_000),
+        ("a&#x3A;", 5_000),
+        ("\\" * 5_000 + "u003a", 20),
+    ],
+)
+def test_encoded_closing_prefix_scans_each_segment_once(
+    segment: str, count: int
+) -> None:
+    """An encoded separator or a long backslash run costs a single linear scan."""
+    body = ("&gt;zz</" + segment * count + "x>") * 5
+    rules = [
+        rule for rule in export.ALWAYS_LEAKS if export._CLOSING_PREFIX in rule.pattern
+    ]
+    assert len(rules) == 6
+    for rule in rules:
+        scan = re.compile(rule.pattern.replace(export._CLOSING_PREFIX, r"[^<>]*+"))
+        assert _cost_ratio(rule, scan, "", body) < 10
 
 
 def test_mac_leak_check_after_many_backslash_u_does_not_backtrack() -> None:
