@@ -979,6 +979,32 @@ UNSCRUBBED_PREFIXES = [
 
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("prefix", [" ", "\t", "\n", "\r", "!", "?", " !?\t"])
+@pytest.mark.parametrize(
+    ("element", "value"),
+    [
+        ("X-API-Session", "SYN-77Q"),
+        ("PublicSSHKeyValue", "SYN-77Q"),
+        ("IPAddress", "SYN-77Q"),
+        ("SerialNumber", "SYN-77Q"),
+        ("WWPN", "SYN-77Q"),
+        ("MACAddress", "0A1B2C3D4E5F"),  # pragma: allowlist secret
+    ],
+)
+def test_value_behind_a_separator_free_malformed_closing_name_is_a_leak(
+    element: str, value: str, prefix: str, encode: Any
+) -> None:
+    """Regression #1678: XML whitespace, ! and ? need no namespace separator."""
+    tok = export.Tokenizer({}, set())
+    name = f"{prefix}{element}"
+    body = encode(f"<Root><{name}>{value}</{name}></Root>")
+    assert tok.tokenize(body) == body
+    assert tok.leaks(body) == [value]
+    with pytest.raises(export.LeakError, match="private value.*nothing written"):
+        export.tokenize_records(_records(_rest("/e", body)))
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
 @pytest.mark.parametrize("prefix", UNSCRUBBED_PREFIXES)
 @pytest.mark.parametrize(
     ("element", "value"),
