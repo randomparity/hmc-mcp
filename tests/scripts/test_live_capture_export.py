@@ -1473,6 +1473,37 @@ def test_digits_after_an_escaped_backslash_u_are_a_leak(
 
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("prefix", ["0030", "0000"])
+@pytest.mark.parametrize("digits", ["1B2C3", "00001B", "000001"])
+def test_literal_zero_opener_does_not_hide_joined_mac_digits(
+    encode: Any, prefix: str, digits: str
+) -> None:
+    """Regression #1671: the output-prefix exemption hid surviving joined digits."""
+    body = encode(f"<MACAddress>\\\\u{prefix}{digits}x</MACAddress>")
+    tok = export.Tokenizer({}, set())
+    assert tok.leaks(body) == [body[body.index(">") + 1 : body.index("</")]]
+
+
+@pytest.mark.parametrize("kind", ["rest", "tool"])
+@pytest.mark.parametrize("prefix", ["0030", "0000"])
+def test_literal_zero_opener_export_fails_closed(kind: str, prefix: str) -> None:
+    body = f"<MACAddress>\\u{prefix}1B2C3x</MACAddress>"
+    record = (
+        _rest("/e", body)
+        if kind == "rest"
+        else {
+            "kind": "tool",
+            "step": "t",
+            "tool": "t",
+            "ok": True,
+            "data": {"raw": body},
+        }
+    )
+    with pytest.raises(export.LeakError):
+        export.tokenize_records(_records(record))
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
 @pytest.mark.parametrize(
     "value", ["\\\\u0030 0000", "\\\\u003000 00", "\\\\u0000 0000", "\\\\u0A1Bx"]
 )
