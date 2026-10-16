@@ -442,9 +442,12 @@ def _email(match: re.Match[str]) -> str:
     """Redact an e-mail address; a run of local-part characters with no `@` stays.
 
     The rule takes the whole run, so a run with no address is scanned once rather than
-    again from each of its positions, which were bound to fail the same way.
+    again from each of its positions, which were bound to fail the same way. An escape
+    is consumed first, even without a following run, so its letter stays intact.
     """
-    return "user@example.test" if match.group(1) else match.group(0)
+    if match.group("domain"):
+        return (match.group("escape") or "") + "user@example.test"
+    return match.group(0)
 
 
 #: A JSON escape and the hex run it directly precedes, or a hex run at a word boundary.
@@ -516,7 +519,11 @@ SECRET_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
 )
 IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     (
-        re.compile(r"(?i)\b[\w.+-]++(@[a-z0-9-]+(?:\.[a-z0-9-]+)+\b)?"),
+        re.compile(
+            rf"(?i)(?:(?P<escape>{'|'.join(_JSON_ESCAPES)})|\b)"
+            r"[\w.+-]++(?P<domain>@[a-z0-9-]+(?:\.[a-z0-9-]+)+\b)?"
+            rf"|(?:{'|'.join(_JSON_ESCAPES)})"
+        ),
         _email,
     ),
     (
