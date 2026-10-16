@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import sys
+from collections.abc import Iterable, Sequence
+from enum import Enum
 from typing import TYPE_CHECKING, Any, NoReturn, TypeVar
 
 import typer
@@ -130,3 +133,82 @@ def partition_not_found(value: str) -> NoReturn:
     """Report a failed partition lookup consistently across CLI domains."""
     err_console.print(f"Partition '{value}' not found", style="yellow", markup=False)
     raise typer.Exit(code=1)
+
+
+class InventoryFormat(str, Enum):
+    table = "table"
+    tsv = "tsv"
+    json = "json"
+
+
+def resolve_inventory_format(
+    as_json: bool, format: InventoryFormat | None
+) -> InventoryFormat:
+    """Select inventory output before performing backend I/O."""
+    if as_json and format not in (None, InventoryFormat.json):
+        usage_error("--json/-j conflicts with --format; select one output format")
+    if as_json:
+        return InventoryFormat.json
+    if format is not None:
+        return format
+    return InventoryFormat.table if sys.stdout.isatty() else InventoryFormat.tsv
+
+
+def inventory_field(entry: dict[str, Any], *names: str) -> Any:
+    """Read an inventory resource field, retaining empty strings and numeric zero."""
+    for name in names:
+        value = _resource(entry).get(name)
+        if value is not None:
+            return value.get("text") if isinstance(value, dict) else value
+    return None
+
+
+def _inventory_cell(value: Any) -> str:
+    return (
+        value
+        if isinstance(value, str)
+        else json.dumps(value, ensure_ascii=False, default=str, separators=(",", ":"))
+    )
+
+
+def _tsv_cell(value: Any) -> str:
+    if value is None:
+        return r"\N"
+    return (
+        _inventory_cell(value)
+        .replace("\\", "\\\\")
+        .replace("\t", r"\t")
+        .replace("\n", r"\n")
+        .replace("\r", r"\r")
+    )
+
+
+def print_inventory(
+    data: Any,
+    format: InventoryFormat,
+    columns: tuple[str, ...] = ("Field", "Value"),
+    rows: Iterable[Sequence[Any]] | None = None,
+    *,
+    title: str | None = None,
+    empty_msg: str = "No results",
+) -> None:
+    """Render raw inventory projections without routing machine output through Rich."""
+    if format == InventoryFormat.json:
+        typer.echo(json.dumps(data, ensure_ascii=False, default=str, indent=2))
+        return
+    values = list((data or {}).items() if rows is None else rows)
+    if format == InventoryFormat.tsv:
+        typer.echo("\t".join(_tsv_cell(column) for column in columns))
+        for row in values:
+            typer.echo("\t".join(_tsv_cell(value) for value in row), color=True)
+    else:
+        table = VerbatimTable(title=title)
+        for column in columns:
+            table.add_column(column)
+        for row in values:
+            table.add_row(
+                *("-" if value is None else _inventory_cell(value) for value in row)
+            )
+        console.print(table)
+    if not values:
+        err_console.print(empty_msg, style="yellow", markup=False)

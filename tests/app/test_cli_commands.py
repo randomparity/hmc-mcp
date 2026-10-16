@@ -1013,10 +1013,9 @@ def test_lpars_summary_renders_numeric_zero(monkeypatch):
     result = RUNNER.invoke(cli.app, ["lpars", "summary", "zero-lpar"])
 
     assert result.exit_code == 0
-    assert "Current Memory (MiB)" in result.stdout
-    assert "│ 0" in result.stdout
-    assert "Current Proc Units" in result.stdout
-    assert "0.0" in result.stdout
+    rows = dict(line.split("\t") for line in result.stdout.splitlines()[1:])
+    assert rows["current_memory_mib"] == "0"
+    assert rows["current_proc_units"] == "0.0"
 
 
 def test_lpars_show_by_uuid(fake_hmc):
@@ -2482,7 +2481,8 @@ def test_storage_list_vgs_renders_a_table(fake_hmc, monkeypatch):
     )
 
     result = RUNNER.invoke(
-        cli.app, ["storage", "list-vgs", VIOS_UUID, "--system", "system-a"]
+        cli.app,
+        ["storage", "list-vgs", VIOS_UUID, "--system", "system-a", "--format", "table"],
     )
 
     assert result.exit_code == 0
@@ -2887,11 +2887,13 @@ def test_storage_get_media_repo_labels_the_size_in_gib(fake_hmc, monkeypatch):
     )
 
     result = RUNNER.invoke(
-        cli.app, ["storage", "get-media-repo", VIOS_UUID, "--vg", VG_UUID]
+        cli.app,
+        ["storage", "get-media-repo", VIOS_UUID, "--vg", VG_UUID, "--format", "table"],
     )
 
     assert result.exit_code == 0
-    assert "Size: 64 GiB" in result.stdout
+    assert "RepositorySize in GiB" in result.stdout
+    assert '"RepositorySize":"64"' in result.stdout
 
 
 def test_storage_get_media_repo_reports_empty(fake_hmc, monkeypatch):
@@ -2907,7 +2909,7 @@ def test_storage_get_media_repo_reports_empty(fake_hmc, monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert "No media repository found" in result.stdout
+    assert "No media repository found" in result.stderr
 
 
 def test_storage_get_media_repo_json(fake_hmc, monkeypatch):
@@ -2958,7 +2960,7 @@ def test_storage_list_optical_media_reports_empty(fake_hmc, monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert "No optical media found" in result.stdout
+    assert "No optical media found" in result.stderr
 
 
 def test_storage_list_optical_media_json(fake_hmc, monkeypatch):
@@ -5559,7 +5561,9 @@ def test_lpars_refcode_definitions_and_unknowns(monkeypatch, as_json):
 
     _patch_ssh_command(monkeypatch, fake)
     args = ["lpars", "refcodes", "sys1", "web01", "--count", "2"]
-    result = RUNNER.invoke(cli.app, args + (["--json"] if as_json else []))
+    result = RUNNER.invoke(
+        cli.app, args + (["--json"] if as_json else ["--format", "table"])
+    )
     assert result.exit_code == 0, result.output
     if as_json:
         rows = json.loads(result.stdout)
@@ -5585,7 +5589,9 @@ def test_refcode_table_escapes_terminal_controls_but_json_preserves_them(
 
     _patch_ssh_command(monkeypatch, fake)
     args = ["lpars", "refcodes", "sys1", "web01"]
-    result = RUNNER.invoke(cli.app, args + (["--json"] if as_json else []))
+    result = RUNNER.invoke(
+        cli.app, args + (["--json"] if as_json else ["--format", "table"])
+    )
     assert result.exit_code == 0, result.output
     if as_json:
         assert json.loads(result.stdout)[0]["refcode"] == raw
@@ -5659,7 +5665,10 @@ def test_lpar_inspection_disambiguates_duplicate_names(
         "find_partition_by_name",
         MethodType(HMCClient.find_partition_by_name, fake_hmc),
     )
-    result = RUNNER.invoke(cli.app, ["lpars", command, LPAR_NAME, "-s", system])
+    args = ["lpars", command, LPAR_NAME, "-s", system]
+    if command == "show":
+        args.append("--json")
+    result = RUNNER.invoke(cli.app, args)
     assert result.exit_code == 0, result.output
     if command == "show":
         assert json.loads(result.stdout)["UUID"] == expected
