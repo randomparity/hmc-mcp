@@ -211,7 +211,10 @@ def _power_lpar(
 def lpars_delete(
     name_or_uuid: str = typer.Argument(..., help="Partition name or UUID"),
     system: str = typer.Option(
-        ..., "--system", "-s", help="Managed system name or UUID"
+        ...,
+        "--system",
+        "-s",
+        help="Managed system name or UUID; required for scoped ownership and cleanup checks",
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
     ownership_override: bool = typer.Option(

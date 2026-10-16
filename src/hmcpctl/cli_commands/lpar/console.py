@@ -98,7 +98,10 @@ def lpars_capture_console(
         ..., metavar="LPAR", help="LPAR name or UUID"
     ),
     system_name_or_uuid: str = typer.Option(
-        ..., "--system", "-s", help="Managed system name or UUID hosting the LPAR"
+        ...,
+        "--system",
+        "-s",
+        help="Managed system name or UUID; required to select the LPAR console host",
     ),
     duration_seconds: float = typer.Option(
         30.0, "--duration", help="Maximum capture duration in seconds (at most 3600)"

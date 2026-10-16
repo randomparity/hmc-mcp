@@ -21,8 +21,8 @@ hmcpctl report utilization --csv fleet.csv   # CPU/memory/disk/adapter allocatio
 hmcpctl report utilization --html fleet.html # the same survey as one offline HTML page
 hmcpctl lpars list                   # all LPARs
 hmcpctl lpars list --system <uuid>   # LPARs of one system
-hmcpctl lpars show mylpar            # by name or UUID (JSON)
-hmcpctl lpars state mylpar           # just "running", "not activated", ...
+hmcpctl lpars show mylpar --system <uuid>  # scoped name or UUID (JSON)
+hmcpctl lpars state mylpar --system <uuid> # just "running", "not activated", ...
 hmcpctl lpars summary mylpar         # one-call summary: state, RMC, memory, CPU, OS, adapters
 hmcpctl lpars get-minimum-affinity-policy mylpar sys1 --json
 hmcpctl lpars system-memopt-score sys1
@@ -30,7 +30,7 @@ hmcpctl lpars plan-memopt-scores sys1 --prioritize-name web --exclude-name batch
 hmcpctl lpars plan-system-memopt-score sys1 --prioritize-id 3 --exclude-id 9 --json
 hmcpctl lpars create web01 --system <uuid> --mem 8192 --vcpus 2 --procs 0.2
 hmcpctl lpars modify web01 --mem 16384 --procs 2.0   # assign resources
-hmcpctl lpars delete web01           # destroy (must be powered off)
+hmcpctl lpars delete web01 --system <uuid> # destroy (must be powered off)
 hmcpctl lpars decommission web01 --system <uuid> --dry-run   # preview blast radius
 hmcpctl lpars power-on mylpar        # submits a PowerOn job (asks first)
 hmcpctl lpars power-off mylpar --immediate
@@ -252,3 +252,18 @@ reported no machine type-model-serial: those cannot be deduplicated, so one mana
 HMCs counts twice. A roll-up over no systems reads 0. A text cell that would start with
 `=`, `+`, `-` or `@` is written with a leading `'` so a spreadsheet shows it rather than
 evaluating it.
+
+
+### Managed-system scope for inspection
+
+`lpars show` and `lpars state` now accept `--system NAME_OR_UUID` (or `-s`),
+so inspection can carry the same scope as deletion. Without scope, ambiguous
+names still fail. With scope, both names and UUIDs must belong to that system;
+a UUID previously accepted with an unrelated system is now rejected. Correct
+the system selector instead of retrying the mismatched target. This also applies
+to shared LPAR/VIOS selectors used by lifecycle and storage commands.
+
+`lpars delete` and `lpars decommission` require `--system` for scoped ownership
+and cleanup checks. `lpars capture-console` requires it to select the console
+host. A UUID or `--ownership-override` does not remove those requirements.
+An unreadable system is reported as unavailable, rather than as an empty system.
