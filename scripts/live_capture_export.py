@@ -447,7 +447,7 @@ def _ipv6(match: re.Match[str]) -> str:
 # Consume only that prefix; the field name and every value are still scanned.
 _IPV6_LEAK_TOKEN = re.compile(
     r'(?i)"ls[a-z0-9_-]+(?: [^":\\\r\n ]++)*+ :: (?=[^"\\\r\n]*+"\s*:)'
-    r'|\\(?:u[0-9a-f]{4}|[\\"/bfnrt])|[0-9a-z_.:]++'
+    r'|\\{1,2}(?:u[0-9a-f]{4}|[bfnrt])|\\[\\"/]|[0-9a-z_.:]++'
 )
 
 
@@ -458,10 +458,16 @@ def _ipv6_leaks(text: str) -> list[str]:
         value = match.group().strip(".")
         if not 2 <= len(value) <= 45 or ":" not in value or value == "2001:db8::1":
             continue
-        if not _is_ipv6(value) or re.fullmatch(
-            r"(?i)(?:[0-9a-f]{2}:){5,}[0-9a-f]{2}", value
-        ):
+        if re.fullmatch(r"(?i)(?:[0-9a-f]{2}:){5,}[0-9a-f]{2}", value):
             continue
+        if not _is_ipv6(value):
+            # A literal backslash can precede an address opening with a hex letter.
+            if text[max(0, match.start() - 2) : match.start()].lower() not in (
+                r"\b",
+                r"\f",
+            ):
+                continue
+            value = text[match.start() - 1] + value
         try:
             ipaddress.IPv6Address(value)
         except ipaddress.AddressValueError:

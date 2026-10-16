@@ -2870,7 +2870,9 @@ def _fragment_only(init: Any) -> Any:
         "123:4:5:6:7:8:9:10",
     ],
 )
-@pytest.mark.parametrize("before", ["", r"\n", r"\b", r"\\\t", r"\u0030"])
+@pytest.mark.parametrize(
+    "before", ["", r"\n", r"\b", r"\\b", r"\\f", r"\\\t", r"\u0030", r"\\u0030"]
+)
 def test_ipv6_leak_backstop(address: str, before: str) -> None:
     assert address in export.Tokenizer({}, set()).leaks(f"addr {before}{address} end")
 
@@ -2927,3 +2929,9 @@ def test_ipv6_leak_refuses_cli_output(
     assert export.main(["tokenize", str(raw), "--out", str(output)]) == 1
     assert not output.exists()
     assert "nothing written" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("letter", ["b", "f"])
+def test_ipv6_backstop_reads_literal_escape_letter_as_a_hex_digit(letter: str) -> None:
+    address = letter + "1:2:3:4:5:6:7:8"
+    assert export._ipv6_leaks("C:\\" + address) == [address]
