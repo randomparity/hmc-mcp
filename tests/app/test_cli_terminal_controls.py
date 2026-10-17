@@ -5,8 +5,11 @@ from __future__ import annotations
 import errno
 import json
 import os
+import select
 import subprocess
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import click
 import pytest
@@ -41,35 +44,29 @@ def _child(
     try:
         if input_pair:
             os.write(input_pair[0], input.encode())
-        result = subprocess.run(
-            [sys.executable, "-c", source],
-            input=None if input_pair else input.encode(),
-            stdin=input_pair[1] if input_pair else None,
-            stdout=pairs[0][1] if pairs[0] else subprocess.PIPE,
-            stderr=pairs[1][1] if pairs[1] else subprocess.PIPE,
-            env=env,
-            timeout=20,
-            check=False,
-        )
-        streams = [result.stdout, result.stderr]
-        for index, pair in enumerate(pairs):
-            if pair is None:
-                continue
-            master, slave = pair
-            os.close(slave)
-            pairs[index] = (master, -1)
-            chunks = []
-            while True:
-                try:
-                    chunk = os.read(master, 65536)
-                except OSError as exc:
-                    if exc.errno != errno.EIO:
-                        raise
-                    break
-                if not chunk:
-                    break
-                chunks.append(chunk)
-            streams[index] = b"".join(chunks).replace(b"\r\n", b"\n")
+        finished = threading.Event()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            readers = [
+                pool.submit(_drain_pty, pair[0], finished) if pair else None
+                for pair in pairs
+            ]
+            try:
+                result = subprocess.run(
+                    [sys.executable, "-c", source],
+                    input=None if input_pair else input.encode(),
+                    stdin=input_pair[1] if input_pair else None,
+                    stdout=pairs[0][1] if pairs[0] else subprocess.PIPE,
+                    stderr=pairs[1][1] if pairs[1] else subprocess.PIPE,
+                    env=env,
+                    timeout=20,
+                    check=False,
+                )
+            finally:
+                finished.set()
+            streams = [result.stdout, result.stderr]
+            for index, reader in enumerate(readers):
+                if reader:
+                    streams[index] = reader.result().replace(b"\r\n", b"\n")
         return result.returncode, *(stream.decode() for stream in streams)
     finally:
         for pair in [*pairs, input_pair]:
@@ -77,6 +74,63 @@ def _child(
                 for descriptor in pair:
                     if descriptor >= 0:
                         os.close(descriptor)
+
+
+def _drain_pty(master, finished):
+    # Drain while the child writes; macOS drops unread data on the last slave close.
+    chunks = []
+    while True:
+        child_finished = finished.is_set()
+        if not select.select([master], [], [], 0.1)[0]:
+            if child_finished:
+                break
+            continue
+        try:
+            chunk = os.read(master, 65536)
+        except OSError as exc:
+            if exc.errno != errno.EIO:
+                raise
+            break
+        if not chunk:
+            break
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def test_pty_drains_final_write_when_completion_follows_empty_select(monkeypatch):
+    import pty
+
+    master, slave = pty.openpty()
+    finished = threading.Event()
+    original_select = select.select
+    first = True
+
+    def completing_select(*args):
+        nonlocal first
+        if first:
+            first = False
+            os.write(slave, b"final output")
+            finished.set()
+            return [], [], []
+        return original_select(*args)
+
+    monkeypatch.setattr(select, "select", completing_select)
+    try:
+        assert _drain_pty(master, finished) == b"final output"
+    finally:
+        os.close(slave)
+        os.close(master)
+
+
+def test_child_drains_both_terminals_before_exit():
+    code, stdout, stderr = _child(
+        "import sys\nsys.stdout.write('o' * 131072)\nsys.stderr.write('e' * 131072)",
+        stdout_tty=True,
+        stderr_tty=True,
+    )
+    assert code == 0
+    assert stdout == "o" * 131072
+    assert stderr == "e" * 131072
 
 
 @pytest.mark.parametrize("method", ["get", "post"])
