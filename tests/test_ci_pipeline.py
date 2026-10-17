@@ -19,7 +19,7 @@ TOOL_PINS = {
     "ty==0.0.75",
     "zizmor==1.29.0",
 }
-TY_INCLUDE = ["src/hmcpctl", "scripts/live_test"]
+TY_INCLUDE = ["src/hmcpctl", "scripts"]
 RUFF_EXTEND_SELECT = {
     "E401",
     "E402",
@@ -45,10 +45,11 @@ RUFF_PER_FILE_IGNORE_MODULES = {
     "tests/unit/test_ownership.py",
 }
 BASELINED_FINDINGS = {
-    "docs/capabilities/maturity.json": 57,
+    "docs/capabilities/maturity.json": 59,
     "justfile": 1,
+    # Public PDF checksum and extracted code-inventory checksum (#1690).
+    "src/hmcpctl/_progress_codes.json": 2,
     "tests/app/test_cli.py": 2,
-    "tests/app/test_cli_e2e.py": 1,
     "tests/conftest.py": 1,
     # An enum type name long enough to read as Base64 entropy, once per enum list (#1202).
     "tests/fixtures/live/vocabulary/enums-v10r3-p8-8247-22l.json": 1,
@@ -61,8 +62,8 @@ BASELINED_FINDINGS = {
     "tests/fixtures/live/vocabulary/enums-v11r2-p11-9242-21b.json": 1,
     "tests/fixtures/live/vocabulary/enums-v11r2-p11-9824-42a.json": 1,
     "tests/fixtures/live/vocabulary/enums-v11r2-p9-9009-42a.json": 1,
+    "tests/fixtures/progress-code-inventory.json": 1,
     "tests/unit/test_ssh.py": 1,
-    "tests/unit/test_client.py": 1,
 }
 ACTION_PINS = {
     "actions/checkout": (

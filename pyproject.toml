@@ -12,6 +12,7 @@ dependencies = [
     "httpx>=0.28.1,<1",
     "pydantic>=2.13.4,<3",
     "pydantic-settings>=2.15.0,<3",
+    "truststore>=0.10.4,<1",
     "typing-extensions>=4.16.0,<5",
 ]
 
@@ -100,7 +101,7 @@ extend-immutable-calls = [
 "tests/unit/test_ownership.py" = ["PLE2502"]
 
 [tool.ty.src]
-include = ["src/hmcpctl", "scripts/live_test"]
+include = ["src/hmcpctl", "scripts"]
 
 [tool.pytest.ini_options]
 pythonpath = ["tests"]
