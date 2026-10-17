@@ -75,7 +75,9 @@ logger = logging.getLogger(__name__)
 #: The terminal outcomes of a bounded capture. ``contention`` is not a stop
 #: reason: it raises :class:`ConsoleHeldError` instead, per issue #385's
 #: requirement that "another session holds the vterm" be a distinct error.
-StopReason = Literal["duration", "max_bytes", "idle", "remote-close", "error"]
+StopReason = Literal[
+    "duration", "max_bytes", "idle", "remote-close", "error", "interrupted"
+]
 
 _State = Literal[
     "new",
@@ -382,6 +384,7 @@ async def _collect_output(
     max_bytes: int,
     idle_timeout_seconds: float,
     on_chunk: Callable[[bytes], None] | None = None,
+    stop_on_cancel: bool = False,
 ) -> tuple[bytes, StopReason, str | None]:
     """Read the stream until one of the three client-side bounds fires (P8).
 
@@ -414,6 +417,8 @@ async def _collect_output(
         except TimeoutError:
             continue  # loop top decides whether duration or idle fired
         except asyncio.CancelledError:
+            if stop_on_cancel:
+                return bytes(buf), "interrupted", None
             raise
         except Exception as exc:  # noqa: BLE001 - a mid-capture read failure ends the capture as an error result, not a raise
             logger.error("console stream read failed mid-capture: %s", exc)
@@ -1493,6 +1498,7 @@ async def capture_lpar_console(
     max_bytes: int,
     idle_timeout_seconds: float,
     on_chunk: Callable[[bytes], None] | None = None,
+    stop_on_cancel: bool = False,
 ) -> ConsoleCapture:
     """Capture up to the given bounds from *lpar_name*'s console.
 
@@ -1527,25 +1533,42 @@ async def capture_lpar_console(
         on_chunk: Optional callback called with each raw chunk as it arrives,
             before it is appended to the internal buffer.  The CLI uses this
             to write bytes to its output sink in real time (issue #1674).
+        stop_on_cancel: Return an interrupted outcome after cleanup instead of
+            propagating cancellation; the CLI opts in for its SIGINT contract.
     """
     _validate_bounds(duration_seconds, max_bytes, idle_timeout_seconds)
-    async with ConsoleSession(hmc, system_name, lpar_name) as session:
-        data, stop_reason, error = await _collect_output(
-            session, duration_seconds, max_bytes, idle_timeout_seconds, on_chunk
-        )
+    data = b""
+    session = ConsoleSession(hmc, system_name, lpar_name)
+    try:
+        async with session:
+            data, stop_reason, error = await _collect_output(
+                session,
+                duration_seconds,
+                max_bytes,
+                idle_timeout_seconds,
+                on_chunk,
+                stop_on_cancel,
+            )
+    except asyncio.CancelledError:
+        if not stop_on_cancel:
+            raise
+        stop_reason, error = "interrupted", None
     if session._state == "lost" and stop_reason != "error":
         # A bound fired on the loss report, or the release scan found it unread.
-        stop_reason = "error"
+        if stop_reason != "interrupted":
+            stop_reason = "error"
         error = _error_detail(
             ConsoleHoldLostError("another client's rmvterm ended the capture's hold")
         )
-    if HELD_SENTINEL in data:
+    if HELD_SENTINEL in data and stop_reason != "interrupted":
         raise ConsoleHeldError(
             f"The console of {lpar_name!r} on {system_name!r} printed the HMC "
             f"contention sentence {HELD_SENTINEL.decode()!r} after acquisition; "
             f"a release of the capture's own hold ran "
             f"(released={session.released is True})."
         )
+    if HELD_SENTINEL in data and stop_reason == "interrupted" and error is None:
+        error = "ConsoleHeldError: contention sentence appeared after acquisition"
     return ConsoleCapture(
         system=system_name,
         lpar=lpar_name,

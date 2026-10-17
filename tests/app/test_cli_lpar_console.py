@@ -70,6 +70,7 @@ def _capture_side_effect(
         max_bytes: int,
         idle_timeout_seconds: float,
         on_chunk: Callable[[bytes], None] | None = None,
+        stop_on_cancel: bool = False,
     ) -> ConsoleCapture:
         if on_chunk is not None:
             on_chunk(data)
@@ -117,6 +118,7 @@ def test_options_reach_the_capture_and_bytes_reach_stdout(client, capture):
         max_bytes=4096,
         idle_timeout_seconds=3.5,
         on_chunk=ANY,
+        stop_on_cancel=True,
     )
     assert result.stdout_bytes == DATA
     assert f"stop reason: idle; bytes: {len(DATA)}; released: true" in result.stderr
@@ -127,9 +129,12 @@ def test_defaults_match_the_mcp_tool(client, capture):
 
     assert result.exit_code == 0, result.stderr
     tool = inspect.signature(hmc_capture_lpar_console).parameters
-    # on_chunk is the streaming callback added by this command; it is not an
-    # MCP tool parameter.  Compare only the shared capture-bound parameters.
-    actual = {k: v for k, v in capture.await_args.kwargs.items() if k != "on_chunk"}
+    # Streaming and interrupt handling are CLI-only; compare shared bounds.
+    actual = {
+        k: v
+        for k, v in capture.await_args.kwargs.items()
+        if k not in {"on_chunk", "stop_on_cancel"}
+    }
     assert actual == {
         name: tool[name].default
         for name in ("duration_seconds", "max_bytes", "idle_timeout_seconds")
@@ -214,13 +219,15 @@ def test_contention_exits_1_and_leaves_no_output_file(capture, tmp_path):
     assert not target.exists()
 
 
-def test_interrupted_capture_removes_the_output_file(capture, tmp_path):
+def test_interrupt_without_capture_proof_retains_empty_output(capture, tmp_path):
     capture.side_effect = KeyboardInterrupt
     target = tmp_path / "console.log"
 
-    RUNNER.invoke(cli.app, [*COMMAND, "--output", str(target)])
+    result = RUNNER.invoke(cli.app, [*COMMAND, "--output", str(target)])
 
-    assert not target.exists()
+    assert result.exit_code == 3
+    assert target.read_bytes() == b""
+    assert "release was not proven" in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -308,6 +315,7 @@ def test_bytes_are_written_as_chunks_arrive_not_after_capture(
         max_bytes: int,
         idle_timeout_seconds: float,
         on_chunk: Callable[[bytes], None] | None = None,
+        stop_on_cancel: bool = False,
     ) -> ConsoleCapture:
         nonlocal done
         if on_chunk is not None:
@@ -401,3 +409,78 @@ def test_lost_hold_reports_the_new_holder_without_rmvterm_advice(capture):
     assert result.exit_code == 3
     assert "another client ended this hold" in result.stderr
     assert "rmvterm -m" not in result.stderr
+
+
+@pytest.mark.parametrize("released,code", [(True, 130), (False, 3)])
+def test_interrupted_outcome_retains_bytes(capture, tmp_path, released, code):
+    capture.side_effect = _capture_side_effect(
+        _capture(stop_reason="interrupted", released=released)
+    )
+    target = tmp_path / "partial.bin"
+    result = RUNNER.invoke(cli.app, [*COMMAND, "--output", str(target)])
+    assert result.exit_code == code
+    assert target.read_bytes() == DATA
+
+
+@pytest.mark.parametrize("released,code", [(True, 130), (False, 3)])
+@pytest.mark.parametrize("failure", ["write", "close"])
+def test_interrupted_write_failure_keeps_flushed_bytes(
+    capture, monkeypatch, tmp_path, released, code, failure
+):
+    target = tmp_path / "partial.bin"
+    create = cli_console._create_exclusive
+
+    class Sink:
+        def __init__(self, path):
+            self.file = create(path)
+            self.writes = 0
+
+        def write(self, data):
+            self.writes += 1
+            if failure == "write" and self.writes == 2:
+                raise OSError("output unavailable")
+            return self.file.write(data)
+
+        def flush(self):
+            self.file.flush()
+
+        def close(self):
+            self.file.close()
+            if failure == "close":
+                raise OSError("output unavailable")
+
+    monkeypatch.setattr(cli_console, "_create_exclusive", Sink)
+
+    async def interrupted(*args, on_chunk, **kwargs):
+        on_chunk(DATA)
+        on_chunk(b"tail")
+        return _capture(stop_reason="interrupted", released=released)
+
+    capture.side_effect = interrupted
+    result = RUNNER.invoke(cli.app, [*COMMAND, "--output", str(target)])
+    assert result.exit_code == code
+    assert target.read_bytes() == DATA + (b"tail" if failure == "close" else b"")
+    assert "output unavailable" in result.stderr
+
+
+def test_interrupt_without_capture_proof_reports_write_failure(
+    capture, monkeypatch, tmp_path
+):
+    target = tmp_path / "partial.bin"
+    create = cli_console._create_exclusive
+
+    def full_disk(path):
+        create(path).close()
+        return io.BufferedWriter(_FullDisk())
+
+    monkeypatch.setattr(cli_console, "_create_exclusive", full_disk)
+
+    async def interrupted(*args, on_chunk, **kwargs):
+        on_chunk(DATA)
+        raise KeyboardInterrupt
+
+    capture.side_effect = interrupted
+    result = RUNNER.invoke(cli.app, [*COMMAND, "--output", str(target)])
+    assert result.exit_code == 3
+    assert target.exists()
+    assert "No space left on device" in result.stderr
