@@ -14,6 +14,10 @@ from rich.console import Console, RenderableType
 from rich.style import StyleType
 from rich.table import Table
 from rich.text import Text, TextType
+from typer import _click
+from typer._click.globals import get_current_context
+
+from ..resource_identity import ResourceNotFoundError
 
 if TYPE_CHECKING:
     from ..operations.systems.fleet import FleetListing
@@ -150,14 +154,41 @@ def report_unreadable(listing: FleetListing) -> None:
 
 def fail(exc: Exception, *, code: int = 1, guidance: str = "") -> NoReturn:
     """Report an exception and exit with the requested runtime-error code."""
+    message = str(exc)
+    if isinstance(exc, ResourceNotFoundError):
+        commands = {
+            "managed system": "systems list",
+            "LPAR": "lpars list",
+            "VIOS": "vios list",
+        }
+        if command := commands.get(exc.resource_kind):
+            message = (
+                f"No {exc.resource_kind} named {exc.selector!r} found. "
+                f"Use hmcpctl {command} to inspect available resources."
+            )
     err_console.print(
-        Text.assemble(("Error:", "red"), f" {terminal_field(exc, err=True)}", guidance)
+        Text.assemble(
+            ("Error:", "red"), f" {terminal_field(message, err=True)}", guidance
+        )
     )
     raise typer.Exit(code=code)
 
 
-def usage_error(message: str, *, guidance: str = "") -> NoReturn:
+def usage_error(
+    message: str, *, guidance: str = "", ctx: _click.Context | None = None
+) -> NoReturn:
     """Report invalid command arguments using Typer's usage-error exit code."""
+    ctx = ctx or get_current_context(silent=True)
+    if ctx is not None:
+        err_console.print(
+            ctx.get_usage(), markup=False, highlight=False, soft_wrap=True
+        )
+        err_console.print(
+            f"Try '{terminal_field(ctx.command_path, err=True)} --help' for help.",
+            markup=False,
+            highlight=False,
+            soft_wrap=True,
+        )
     err_console.print(
         Text.assemble(
             ("Error:", "red"), f" {terminal_field(message, err=True)}", guidance
@@ -169,7 +200,8 @@ def usage_error(message: str, *, guidance: str = "") -> NoReturn:
 def partition_not_found(value: str) -> NoReturn:
     """Report a failed partition lookup consistently across CLI domains."""
     err_console.print(
-        f"Partition '{terminal_field(value, err=True)}' not found",
+        f"Partition '{terminal_field(value, err=True)}' not found. "
+        "Use hmcpctl lpars list to inspect available partitions.",
         style="yellow",
         markup=False,
     )

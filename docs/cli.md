@@ -9,6 +9,30 @@ used over SSH; this guide covers the `hmcpctl` application.
 The [bare-CEC LPAR recipe](recipes/bare-cec-lpar.md) walks a dedicated-I/O partition from
 create to delete.
 
+## Discover commands and repair input
+
+LPAR and storage help starts with inventory, then separates lifecycle, console,
+configuration, disks, optical media and mapping tasks into panels. Use group help
+before choosing a command, then command help for its required inputs.
+
+Connection options belong before the group, including `--profile`, `--host`,
+`--user` and TLS options. For example:
+
+```bash
+hmcpctl --profile sample systems list
+hmcpctl --profile sample lpars list --system system1
+hmcpctl --profile sample vios list
+hmcpctl --profile sample storage list-vgs vios1 --system system1
+```
+
+Move `hmcpctl lpars list --profile sample` to
+`hmcpctl --profile sample lpars list`. Usage errors now print concise stderr
+text, usage and a `--help` hint, retaining exit 2. Missing required inputs are
+listed together when the parser can determine them without executing the command;
+unknown options and invalid values retain their own diagnostics. Resource misses
+suggest CLI inventory commands. Reuse your root connection options for those
+commands; a failed inventory read remains an error, not an empty result.
+
 ## Terminal text and machine streams
 
 Human terminal fields display nonprintable characters as visible escapes: an ESC becomes
