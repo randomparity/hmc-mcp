@@ -46,6 +46,7 @@ from ...resource_identity import resolve_vios_uuid
 from ..output import (
     InventoryFormat,
     confirm_on_stderr,
+    err_console,
     print_inventory,
     resolve_inventory_format,
     terminal_field,
@@ -87,15 +88,22 @@ def _confirm_storage(yes: bool, text: str) -> None:
                 else:
                     escaped.extend(f"\\x{byte:02x}" for byte in os.fsencode(char))
             tokens.append("$'" + "".join(escaped) + "'")
-    invocation = terminal_field(" ".join(tokens), err=True)
+    invocation = " ".join(tokens)
     if sys.stdin is None or not sys.stdin.isatty():
-        typer.echo(
-            "Error: noninteractive storage mutation requires --yes/-y.", err=True
+        err_console.print(
+            "Error: noninteractive storage mutation requires --yes/-y.\n"
+            "With the same connection options, run in Bash/Zsh:\n"
+            f"{terminal_field(invocation, err=True)}",
+            markup=False,
+            highlight=False,
+            soft_wrap=True,
         )
-        typer.echo("With the same connection options, run in Bash/Zsh:", err=True)
-        typer.echo(invocation, err=True, color=True)
         raise typer.Exit(2)
-    confirm_on_stderr(f"{text}\nCommand (Bash/Zsh): {invocation}", abort=True)
+    confirm_on_stderr(
+        f"{terminal_field(text, err=True)}\n"
+        f"Command (Bash/Zsh): {terminal_field(invocation, err=True)}",
+        abort=True,
+    )
 
 
 def _print_mutation(
