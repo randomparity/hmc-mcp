@@ -16,8 +16,8 @@ Add optional additive `mapping_evidence` to the blast-radius object, retaining e
 `storage_mappings` and both counts unchanged. Each scalar-string record contains known
 VIOS UUID/name, mapping kind, observed UUID, supported mapping ID, backing device,
 missing identity description, target relationship, disposition and reason. Unknown
-values are explicit; no synthesized mapping identity. Collect unresolved and matched
-mappings; unrelated mappings remain excluded, unless existing vSCSI validation cannot
+values are explicit; no synthesized mapping identity. Use case-insensitive UUID identity for additive evidence, independently of legacy
+matching; include every authoritative detach target and unresolved mapping; unrelated mappings remain excluded, unless existing vSCSI validation cannot
 prove their client identity, in which case report unproven evidence without widening guards.
 Unavailable source evidence retains known VIOS identity and reason, with unknown mapping
 kind/identity; unavailable fleet discovery also gets an explicit source record.
@@ -33,11 +33,10 @@ regardless of mapping disposition. No failed request is proof of absence.
 
 CLI adds existing --format table|tsv|json and --json/-j selection before I/O.
 JSON remains the dataclass envelope with additive evidence. Human/TSV rendering uses
-existing print_inventory with scalar rows: Section, Item, Field, Value. Enumerated
+existing print_inventory/VerbatimTable owners with scalar rows: Section, Item, Field, Value. Enumerated
 paths flatten step dictionaries/sequences and evidence without container repr cells;
-empty containers have explicit empty rows. Tables use one bounded field/value record
-at a time where needed to prevent narrow-column identifier loss. Warnings and summary
-go to stderr; TSV stdout is one header and escaped scalar rows. No output.py redesign.
+empty containers have explicit empty rows. Tables use one folding field/value column to prevent narrow-column ellipsis. Warnings and summary
+go to stderr, including confirmation through existing confirm_on_stderr; TSV stdout is one header and escaped scalar rows. No output.py redesign.
 
 For known vSCSI VIOS UUID, emit `hmcpctl storage list-mappings VIOS --system SYSTEM
 --format tsv`, shell-quoting each argument, without --lpar. vFC inspection uses the
@@ -45,15 +44,18 @@ existing `hmcpctl raw get` path scoped to the observed VIOS UUID with the combin
 ViosSCSIMapping,ViosFCMapping group query. Missing VIOS UUID falls back to scoped
 `hmcpctl vios list --system SYSTEM --format tsv`, to discover identity before inspecting.
 Explain that uncertainty proves neither another tenant nor permission to delete.
-The CLI uses its supplied system selector and actual known VIOS UUID only.
+The CLI uses its supplied system selector and actual known VIOS UUID only. JSON
+keeps these presentation-only commands on stderr beside warnings.
 
 ## Success and validation
 C1/C2/C5: operation tests assert retained evidence, unchanged legacy inventories/counts,
-no extra mutation calls, and planned/detached/failed/retained/unproven outcomes.
+no extra mutation calls, and planned/detached/failed/retained/unproven outcomes,
+including uppercase linked UUIDs with lowercase target selectors.
 C3/C4/C6: render dry-run and actual results for missing client, missing ID, unrelated
 mapping, unreadable VIOS and partial detach. Parse inspection argv with the real CLI
 at a stubbed transport boundary. Exercise narrow redirected TSV and explicit JSON/table;
-full identifiers and scalar values survive, JSON has no preamble, ANSI help is unstyled.
+full identifiers and scalar values survive, JSON has no preamble (also after accepted
+confirmation), declined confirmation performs no I/O, ANSI help is unstyled.
 C7: docs/cli.md and affected recipes explain format migration and explicit backing cleanup.
 Offline fixtures prove this slice; no live HMC evidence is claimed.
 
