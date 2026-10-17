@@ -217,6 +217,95 @@ hmcpctl lpars power-on web01
 > partitioning it into filesystems is the guest OS's job (NIM, cloud-init,
 > `mkfs`), not the HMC's.
 
+## Cleanup journey: inspect, decommission, then choose backing files
+
+Install the `app` extra and expose `hmcpctl` using [README installation](../README.md#install).
+Configure the intended connection as described in [configuration](configuration.md).
+Put connection options before the group: `hmcpctl --profile NAME systems list`.
+Use that same profile for every command below. Start with discovery:
+
+```sh
+hmcpctl --help
+hmcpctl lpars --help
+hmcpctl storage --help
+hmcpctl systems list --json
+```
+
+Choose the intended system from that output and copy its full UUID into `SYSTEM`.
+Then carry each observed identifier forward; these shell variables are deliberate
+operator selections, not instructions to choose the first inventory row.
+
+```sh
+SYSTEM='<selected system UUID>'
+hmcpctl lpars list --system "$SYSTEM" --json
+hmcpctl vios list --system "$SYSTEM" --json
+LPAR='<selected LPAR UUID>'
+VIOS='<selected VIOS UUID>'
+hmcpctl lpars show "$LPAR" --system "$SYSTEM" --json
+hmcpctl storage list-vgs "$VIOS" --system "$SYSTEM" --json
+VG='<selected VG name or UUID>'
+hmcpctl storage list-optical-media "$VIOS" --system "$SYSTEM" --vg "$VG" --json
+hmcpctl storage list-mappings "$VIOS" --system "$SYSTEM" --json
+hmcpctl lpars decommission "$LPAR" --system "$SYSTEM" --dry-run --json
+```
+
+Inventory JSON for LPARs and VIOS has `entries` and `unreadable_systems`; do not
+interpret an incomplete fleet read as proof of absence. Explicit system scope
+constrains UUIDs as well as names. A duplicate name or a UUID outside the chosen
+system is a refusal to investigate, not a reason to drop `--system`.
+
+Read the dry-run's `blast_radius.mapping_evidence` and `steps`. Match the intended
+disk and ISO names to the observed VIOS/VG and their LPAR relationship; repository
+membership alone does not establish ownership. Save those exact names before
+removing the LPAR. A `planned detach` is a plan, not a completed change. For
+`unproven` evidence, run the emitted `Inspect:` command from stderr without adding
+`--lpar`: the filter could hide the unresolved mapping. Missing client or mapping
+identity is neither proof of another tenant nor permission to delete. Stop until
+that evidence is resolved; `--yes` does not bypass containment or ownership checks.
+
+After reviewing the plan and obtaining permission for the intended destruction:
+
+```sh
+hmcpctl lpars decommission "$LPAR" --system "$SYSTEM" --yes --json
+```
+
+Check the exit status and `workflow_completed`, `resource_deleted`, and each
+step's status. Partial failure can leave earlier mapping detaches completed while
+later steps are failed or skipped; inspect actual state before any retry. Do not
+continue to backing-file deletion merely because some steps succeeded.
+Decommission retains backing storage. Once the LPAR cleanup is complete, make
+separate explicit decisions about the exact unused disk and ISO:
+
+```sh
+DISK='<verified intended disk name>'
+ISO='<verified intended ISO name>'
+hmcpctl storage list-mappings "$VIOS" --system "$SYSTEM" --json
+hmcpctl storage delete-disk "$VIOS" --system "$SYSTEM" --vg "$VG" --name "$DISK" --yes
+hmcpctl storage delete-media "$VIOS" --system "$SYSTEM" --vg "$VG" --name "$ISO" --yes
+hmcpctl storage list-optical-media "$VIOS" --system "$SYSTEM" --vg "$VG" --json
+```
+
+Mapped disks and mounted media are refused even with `--yes`. Leave unrelated
+files and the shared VG/repository in place. Storage mutation summaries report
+request outcomes; they do not independently prove final hardware state. Add
+`--json` to parse a mutation result; redirected inventory defaults to lossless TSV.
+For non-TTY storage input, use explicit `--yes` after authorization: piping `y`
+or selecting JSON is not consent.
+
+Earlier commands used positional VG/media arguments and sometimes `--confirm`.
+Use the exact replacements in [selector migration](#storage-selector-migration)
+and [consent migration](#storage-consent-migration); `delete-media` is the ISO
+command. Replace `--no-json` with `--format table` or `--format tsv` as explained
+in [inventory migration](#inventory-output-and-migration). Decommission's flat
+rows and retained JSON envelope are covered by [evidence migration](#decommission-evidence-and-output-migration).
+
+The automated journey in `tests/app/test_cli_e2e.py` uses real subprocess I/O,
+synthetic HTTPS responses, and a substituted SSH command transport. It proves
+offline composition, including guard refusals and injected partial failures;
+it is **not live HMC evidence**. Hardware verification remains outstanding until
+a separately authorized window follows [live testing](live-testing.md), including
+preflight, the named arm, recovery, and commit-stamped generated evidence.
+
 ## Inventory output and migration
 
 These commands accept `--format table|tsv|json` and the JSON alias `--json`/`-j`:

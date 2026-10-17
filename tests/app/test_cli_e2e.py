@@ -14,15 +14,21 @@ from __future__ import annotations
 
 import hashlib
 import ipaddress
+import json
 import secrets
+import shlex
 import ssl
 import struct
+import subprocess
+import sys
 import threading
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 import pytest
+from click import unstyle
 from conftest import live_fixture
 from typer.testing import CliRunner
 
@@ -205,12 +211,12 @@ def _self_signed_cert(tmp_path: Path) -> tuple[str, str]:
 
 
 @pytest.fixture
-def mock_hmc(tmp_path):
+def mock_hmc(tmp_path, request):
     """A threaded HTTPS mock HMC and its trusted certificate path."""
     certfile, keyfile = _self_signed_cert(tmp_path)
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(certfile=certfile, keyfile=keyfile)
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), _MockHMC)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), getattr(request, "param", _MockHMC))
     httpd.request_log = []
     httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -220,6 +226,8 @@ def mock_hmc(tmp_path):
     finally:
         httpd.shutdown()
         httpd.server_close()
+        thread.join(timeout=5)
+        assert not thread.is_alive()
 
 
 def _env(port: int, certificate_path: str) -> dict[str, str]:
@@ -463,3 +471,513 @@ def test_ssl_cert_file_wins_over_ssl_cert_dir_e2e(mock_hmc, tmp_path):
 
     assert result.exit_code == 0
     assert "server1" in result.output
+
+
+# Constructed journey state, using the captured storage fixtures' XML vocabulary.
+# This is offline composition evidence, not a capture or a hardware verification.
+_UOM = "http://www.ibm.com/xmlns/systems/power/firmware/uom/mc/2012_10/"
+_SYSTEM = "33333333-3333-4333-8333-333333333333"
+_OTHER_SYSTEM = "44444444-4444-4444-8444-444444444444"
+_LPAR = "11111111-1111-4111-8111-111111111111"
+_OTHER_LPAR = "22222222-2222-4222-8222-222222222222"
+_VIOS = "55555555-5555-4555-8555-555555555555"
+_VG = "66666666-6666-4666-8666-666666666666"
+_VIOS_PATH = f"/rest/api/uom/VirtualIOServer/{_VIOS}"
+_VG_PATH = f"{_VIOS_PATH}/VolumeGroup/{_VG}"
+_DISK = "cleanup-[disk]-雪-" + "long-" * 15
+_ISO = "cleanup-[image]-雪.iso"
+
+
+def _entry(kind, uuid, body):
+    return (
+        f'<entry xmlns="http://www.w3.org/2005/Atom"><id>urn:uuid:{uuid}</id>'
+        f'<content><{kind} xmlns="{_UOM}">{body}</{kind}></content></entry>'
+    ).encode()
+
+
+def _feed(*entries):
+    return (
+        b'<feed xmlns="http://www.w3.org/2005/Atom">' + b"".join(entries) + b"</feed>"
+    )
+
+
+def _mapping(name, kind, field, target, lpar=_LPAR):
+    device = (
+        "VirtualOpticalTargetDevice"
+        if kind == "VirtualOpticalMedia"
+        else "LogicalVolumeVirtualTargetDevice"
+    )
+    link = (
+        f'<AssociatedLogicalPartition href="/rest/api/uom/LogicalPartition/{lpar}"/>'
+        if lpar
+        else ""
+    )
+    return (
+        f"<VirtualSCSIMapping>{link}<ServerAdapter><AdapterName>vhost0</AdapterName>"
+        f"</ServerAdapter><TargetDevice><{device}>"
+        f"<TargetName>{target}</TargetName></{device}>"
+        f"</TargetDevice><Storage><{kind}><{field}>{name}</{field}></{kind}>"
+        "</Storage></VirtualSCSIMapping>"
+    )
+
+
+def _cleanup_state():
+    mappings = (
+        _mapping(_DISK, "VirtualDisk", "DiskName", "vtscsi0")
+        + _mapping(_ISO, "VirtualOpticalMedia", "MediaName", "vtscsi1")
+        + _mapping("keep-disk", "VirtualDisk", "DiskName", "vtscsi2", _OTHER_LPAR)
+    )
+    vios = _entry(
+        "VirtualIOServer",
+        _VIOS,
+        f"<Metadata><Atom><AtomID>{_VIOS}</AtomID></Atom></Metadata>"
+        "<PartitionName>vios-a</PartitionName><PartitionID>10</PartitionID>"
+        f'<AssociatedManagedSystem href="/rest/api/uom/ManagedSystem/{_SYSTEM}"/>'
+        f"<VirtualSCSIMappings>{mappings}</VirtualSCSIMappings>"
+        "<VirtualFibreChannelMappings/>",
+    )
+    disks = "".join(
+        f"<VirtualDisk><DiskName>{name}</DiskName><DiskCapacity>1</DiskCapacity>"
+        "</VirtualDisk>"
+        for name in (_DISK, "keep-disk")
+    )
+    media = "".join(
+        f"<VirtualOpticalMedia><MediaName>{name}</MediaName><Size>1</Size>"
+        "</VirtualOpticalMedia>"
+        for name in (_ISO, "keep.iso")
+    )
+    vg = _entry(
+        "VolumeGroup",
+        _VG,
+        "<GroupName>datavg</GroupName><GroupCapacity>20</GroupCapacity>"
+        f"<FreeSpace>16</FreeSpace><VirtualDisks>{disks}</VirtualDisks>"
+        "<MediaRepositories><VirtualMediaRepository><RepositoryName>VMLibrary</RepositoryName>"
+        f"<OpticalMedia>{media}</OpticalMedia></VirtualMediaRepository></MediaRepositories>",
+    )
+    lpars = {
+        uuid: _entry(
+            "LogicalPartition",
+            uuid,
+            f"<PartitionName>{name}</PartitionName><PartitionID>{index}</PartitionID>"
+            "<PartitionState>not activated</PartitionState><PartitionType>AIX/Linux</PartitionType>",
+        )
+        for index, (uuid, name) in enumerate(
+            ((_LPAR, "cleanup"), (_OTHER_LPAR, "keep")), 1
+        )
+    }
+    return {
+        "vios": vios,
+        "vg": vg,
+        "lpars": lpars,
+        "fail_delete": False,
+        "fail_mapping": False,
+    }
+
+
+class _CleanupHMC(_MockHMC):
+    def _send(self, body, code=200):
+        self.send_response(code)
+        self.send_header("Content-Type", "application/xml")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("ETag", '"journey-v1"')
+        self.end_headers()
+        self.wfile.write(body)
+        self.wfile.flush()
+
+    def do_GET(self):
+        path = self.path.split("?")[0]
+        state = self.server.journey
+        self.server.request_log.append(("GET", self.path, b""))
+        routes = {
+            f"{_VIOS_PATH}/VolumeGroup": _feed(state["vg"]),
+            _VG_PATH: state["vg"],
+            _VIOS_PATH: state["vios"],
+            f"/rest/api/uom/ManagedSystem/{_SYSTEM}/VirtualIOServer": _feed(
+                state["vios"]
+            ),
+            f"/rest/api/uom/ManagedSystem/{_OTHER_SYSTEM}/VirtualIOServer": _feed(),
+            f"/rest/api/uom/ManagedSystem/{_SYSTEM}/LogicalPartition": _feed(
+                *state["lpars"].values()
+            ),
+            f"/rest/api/uom/ManagedSystem/{_OTHER_SYSTEM}/LogicalPartition": _feed(),
+        }
+        summaries = []
+        for uuid, name in ((_SYSTEM, "frame-a"), (_OTHER_SYSTEM, "frame-b")):
+            summaries.append({"UUID": uuid, "SystemName": name, "State": "operating"})
+            routes[f"/rest/api/uom/ManagedSystem/{uuid}"] = _entry(
+                "ManagedSystem",
+                uuid,
+                f"<SystemName>{name}</SystemName><State>operating</State>",
+            )
+        routes["/rest/api/uom/ManagedSystem/quick/All"] = json.dumps(summaries).encode()
+        for uuid, entry in state["lpars"].items():
+            routes[f"/rest/api/uom/LogicalPartition/{uuid}"] = entry
+            routes[f"/rest/api/uom/LogicalPartition/{uuid}/quick/PartitionState"] = (
+                b"not activated"
+            )
+            for kind in (
+                "ClientNetworkAdapter",
+                "VirtualSCSIClientAdapter",
+                "VirtualFibreChannelClientAdapter",
+                "VirtualNICDedicated",
+            ):
+                routes[f"/rest/api/uom/LogicalPartition/{uuid}/{kind}"] = _feed()
+        self._send(routes.get(path, b""), 200 if path in routes else 404)
+
+    def do_POST(self):
+        body = self._drain_body()
+        self.server.request_log.append(("POST", self.path, body))
+        path = self.path.split("?")[0]
+        if self.headers.get("If-Match") != '"journey-v1"':
+            self._send(b"", 412)
+            return
+        posts = [
+            item
+            for item in self.server.request_log
+            if isinstance(item, tuple) and item[0] == "POST"
+        ]
+        if (
+            path == _VIOS_PATH
+            and self.server.journey["fail_mapping"]
+            and len(posts) == 2
+        ):
+            self._send(b"", 412)
+            return
+        key, uuid = ("vg", _VG) if path == _VG_PATH else ("vios", _VIOS)
+        if path not in (_VG_PATH, _VIOS_PATH):
+            self._send(b"", 404)
+            return
+        wrapper = ET.fromstring(_entry("Placeholder", uuid, ""))
+        content = wrapper.find("{http://www.w3.org/2005/Atom}content")
+        content.remove(content[0])
+        content.append(ET.fromstring(body))
+        self.server.journey[key] = ET.tostring(wrapper)
+        self._send(self.server.journey[key])
+
+    def do_DELETE(self):
+        self._drain_body()
+        self.server.request_log.append(("DELETE", self.path, b""))
+        if self.path == f"/rest/api/uom/LogicalPartition/{_LPAR}":
+            if self.server.journey["fail_delete"]:
+                self._send(b"<Message>injected delete failure</Message>", 500)
+                return
+            del self.server.journey["lpars"][_LPAR]
+        elif self.path != "/rest/api/web/Logon":
+            self._send(b"", 404)
+            return
+        self._send(b"", 204)
+
+
+# Run the installed console script after replacing only the SSH command transport.
+# The subprocess keeps real selectors, ownership parsing, operations and rendering.
+_CLEANUP_LAUNCH = r"""
+import runpy, shlex, sys
+from hmcpctl.ssh import profiles
+async def command(config, cmd):
+    tokens = shlex.split(cmd)
+    assert tokens == ["lssyscfg", "-r", "lpar", "-m", "frame-a", "--filter",
+                      "lpar_names=cleanup", "-F", "description"], tokens
+    return "[hmcpctl owner:journey created:2026-10-17]"
+profiles.run_hmc_command = command
+script = sys.argv.pop(1)
+sys.argv[0] = script
+runpy.run_path(script, run_name="__main__")
+"""
+
+
+@pytest.fixture
+def cleanup_cli(mock_hmc, tmp_path):
+    from test_entry_point_equivalence import _child_env, _launchers
+
+    server, cert = mock_hmc
+    server.journey = _cleanup_state()
+    executable = _launchers()[0][0]
+    env = {
+        k: v
+        for k, v in _child_env(tmp_path).items()
+        if not k.upper().startswith(("HMC_", "HMCPCTL_"))
+    }
+    env.update(_env(server.server_address[1], cert))
+    env.update(
+        HMC_AGENT_ID="journey",
+        XDG_CONFIG_HOME=str(tmp_path),
+        HMCPCTL_STATE_DIR=str(tmp_path / "state"),
+        NO_PROXY="127.0.0.1",
+        COLUMNS="40",
+        TERM="xterm",
+        GITHUB_ACTIONS="1",
+    )
+
+    def invoke(*args, code=0, width=40, input_text=""):
+        result = subprocess.run(
+            [sys.executable, "-c", _CLEANUP_LAUNCH, executable, *args],
+            input=input_text,
+            text=True,
+            capture_output=True,
+            cwd=tmp_path,
+            env={**env, "COLUMNS": str(width)},
+            timeout=30,
+            check=False,
+        )
+        assert result.returncode == code, f"{args}\n{result.stdout}\n{result.stderr}"
+        # CI styles help despite NO_COLOR; machine output must remain byte-clean.
+        bounded = unstyle(result.stdout) if "--help" in args else result.stdout
+        assert len(bounded) < 20000, args
+        assert len(result.stderr) < 20000, args
+        return result
+
+    return invoke, server
+
+
+def _mutations(server):
+    return [
+        item
+        for item in server.request_log
+        if isinstance(item, tuple)
+        and item[0] in ("POST", "DELETE")
+        and item[1] != "/rest/api/web/Logon"
+    ]
+
+
+@pytest.mark.parametrize("mock_hmc", [_CleanupHMC], indirect=True)
+def test_cleanup_journey(cleanup_cli):
+    run, server = cleanup_cli
+    for group in ("systems", "lpars", "vios", "storage"):
+        assert "Usage:" in unstyle(run(group, "--help").stdout)
+    assert not server.request_log
+    systems = json.loads(run("systems", "list", "--json").stdout)
+    system = next(
+        row["UUID"] for row in systems if row["Resource"]["SystemName"] == "frame-a"
+    )
+    lpars = json.loads(run("lpars", "list", "--system", system, "--json").stdout)
+    lpar = next(
+        row["UUID"]
+        for row in lpars["entries"]
+        if row["Resource"]["PartitionName"] == "cleanup"
+    )
+    vios = json.loads(run("vios", "list", "--system", system, "--json").stdout)[
+        "entries"
+    ][0]["UUID"]
+    vg = json.loads(
+        run("storage", "list-vgs", vios, "--system", system, "--json").stdout
+    )[0]
+    media = json.loads(
+        run("storage", "list-optical-media", vios, "--vg", vg["name"], "--json").stdout
+    )
+    iso = next(row["name"] for row in media if row["name"] != "keep.iso")
+    shown = json.loads(run("lpars", "show", lpar, "--system", system, "--json").stdout)
+    assert shown["UUID"] == lpar
+    preview = json.loads(
+        run(
+            "lpars", "decommission", lpar, "--system", system, "--dry-run", "--json"
+        ).stdout
+    )
+    assert preview["dry_run"] and not preview["resource_deleted"]
+    evidence = preview["blast_radius"]["mapping_evidence"]
+    disk = next(
+        row["backing_device"] for row in evidence if row["backing_device"] == _DISK
+    )
+    assert {
+        row["disposition"] for row in evidence if row["backing_device"] in (disk, iso)
+    } == {"planned detach"}
+    assert not _mutations(server)
+    for operation, name, message in (
+        ("delete-disk", disk, "mapped"),
+        ("delete-media", iso, "mounted"),
+    ):
+        args = ("storage", operation, vios, "--vg", vg["uuid"], "--name", name)
+        refused = run(*args, "--json", code=2, input_text="y\n")
+        assert "requires --yes" in refused.stderr
+        guarded = run(*args, "--yes", code=1)
+        assert message in guarded.stderr
+        assert not _mutations(server)
+    completed = json.loads(
+        run("lpars", "decommission", lpar, "--system", system, "--yes", "--json").stdout
+    )
+    assert completed["workflow_completed"] and completed["resource_deleted"]
+    assert (
+        _LPAR not in server.journey["lpars"] and _OTHER_LPAR in server.journey["lpars"]
+    )
+    assert (
+        disk.encode() in server.journey["vg"] and iso.encode() in server.journey["vg"]
+    )
+    assert [item[0] for item in _mutations(server)] == ["POST", "POST", "DELETE"]
+    for operation, name in (("delete-disk", disk), ("delete-media", iso)):
+        result = run(
+            "storage", operation, vios, "--vg", vg["name"], "--name", name, "--yes"
+        )
+        assert len(result.stdout) < 1200
+        assert name in result.stdout and "GroupCapacity" not in result.stdout
+    remaining = ET.fromstring(server.journey["vg"])
+    assert [e.text for e in remaining.iter(f"{{{_UOM}}}DiskName")] == ["keep-disk"]
+    assert [e.text for e in remaining.iter(f"{{{_UOM}}}MediaName")] == ["keep.iso"]
+    assert b"keep-disk" in server.journey["vios"]
+    assert len(_mutations(server)) == 5
+
+
+@pytest.mark.parametrize("mock_hmc", [_CleanupHMC], indirect=True)
+def test_cleanup_refuses_wrong_system_and_duplicate_name(cleanup_cli):
+    run, server = cleanup_cli
+    systems = json.loads(run("systems", "list", "--json").stdout)
+    wrong_system = next(
+        row["UUID"] for row in systems if row["Resource"]["SystemName"] == "frame-b"
+    )
+    lpars = json.loads(run("lpars", "list", "--system", "frame-a", "--json").stdout)
+    target = next(
+        row for row in lpars["entries"] if row["Resource"]["PartitionName"] == "cleanup"
+    )
+    for command, flags in (("show", ()), ("decommission", ("--yes",))):
+        refused = run(
+            "lpars", command, target["UUID"], "--system", wrong_system, *flags, code=1
+        )
+        assert target["UUID"] in refused.stderr and wrong_system in refused.stderr
+        assert not _mutations(server)
+    server.journey["lpars"][_OTHER_LPAR] = server.journey["lpars"][_OTHER_LPAR].replace(
+        b">keep<", b">cleanup<"
+    )
+    duplicate = run(
+        "lpars",
+        "decommission",
+        target["Resource"]["PartitionName"],
+        "--system",
+        "frame-a",
+        "--yes",
+        code=1,
+    )
+    assert "ambiguous" in duplicate.stderr.lower()
+    assert _LPAR in duplicate.stderr and _OTHER_LPAR in duplicate.stderr
+    assert not _mutations(server)
+
+
+@pytest.mark.parametrize("mock_hmc", [_CleanupHMC], indirect=True)
+def test_cleanup_unresolved_mapping_inspection_and_refusal(cleanup_cli):
+    run, server = cleanup_cli
+    unknown = _mapping("unproven-disk", "VirtualDisk", "DiskName", "vtscsi9", lpar=None)
+    server.journey["vios"] = server.journey["vios"].replace(
+        b"</VirtualSCSIMappings>", unknown.encode() + b"</VirtualSCSIMappings>"
+    )
+    preview = run(
+        "lpars", "decommission", "cleanup", "--system", "frame-a", "--dry-run", "--json"
+    )
+    data = json.loads(preview.stdout)
+    row = next(
+        row
+        for row in data["blast_radius"]["mapping_evidence"]
+        if row["backing_device"] == "unproven-disk"
+    )
+    assert (
+        row["disposition"] == "unproven"
+        and "AssociatedLogicalPartition" in row["missing_identity"]
+    )
+    inspection = next(
+        line.removeprefix("Inspect: ")
+        for line in preview.stderr.splitlines()
+        if line.startswith("Inspect: ")
+    )
+    argv = shlex.split(inspection)
+    assert argv[0] == "hmcpctl" and "--lpar" not in argv
+    assert row["vios_uuid"] in argv
+    inspected = run(*argv[1:])
+    assert "unproven-disk" in inspected.stdout
+    assert "Uncertainty" in preview.stderr
+    failed = json.loads(
+        run(
+            "lpars",
+            "decommission",
+            data["lpar_uuid"],
+            "--system",
+            "frame-a",
+            "--yes",
+            "--json",
+            code=1,
+        ).stdout
+    )
+    assert not failed["workflow_completed"] and not failed["resource_deleted"]
+    assert {step["step"]: step["status"] for step in failed["steps"]} == {
+        "power_off": "skipped",
+        "detach_storage_mappings": "error",
+        "detach_adapters": "skipped",
+        "delete_lpar": "skipped",
+    }
+    assert not _mutations(server)
+    assert _LPAR in server.journey["lpars"]
+    assert b"unproven-disk" in server.journey["vios"]
+
+
+@pytest.mark.parametrize("mock_hmc", [_CleanupHMC], indirect=True)
+@pytest.mark.parametrize("failure", ["mapping", "delete"])
+def test_cleanup_partial_failure_preserves_backing_and_prior_effects(
+    cleanup_cli, failure
+):
+    run, server = cleanup_cli
+    server.journey[f"fail_{failure}"] = True
+    initial_vg = server.journey["vg"]
+    preview = json.loads(
+        run(
+            "lpars",
+            "decommission",
+            "cleanup",
+            "--system",
+            "frame-a",
+            "--dry-run",
+            "--json",
+        ).stdout
+    )
+    result = json.loads(
+        run(
+            "lpars",
+            "decommission",
+            preview["lpar_uuid"],
+            "--system",
+            "frame-a",
+            "--yes",
+            "--json",
+            code=1,
+        ).stdout
+    )
+    assert not result["resource_deleted"] and not result["workflow_completed"]
+    steps = {step["step"]: step for step in result["steps"]}
+    remaining = json.loads(run("storage", "list-mappings", _VIOS, "--json").stdout)
+    dispositions = {
+        row["backing_device"]: row["disposition"]
+        for row in result["blast_radius"]["mapping_evidence"]
+    }
+    assert dispositions[_DISK] == "detached"
+    if failure == "mapping":
+        assert steps["detach_storage_mappings"]["status"] == "error"
+        assert (
+            steps["detach_adapters"]["status"]
+            == steps["delete_lpar"]["status"]
+            == "skipped"
+        )
+        assert [item[0] for item in _mutations(server)] == ["POST", "POST"]
+        assert [row["backing_name"] for row in remaining] == [_ISO, "keep-disk"]
+        assert dispositions[_ISO] == "failed"
+    else:
+        assert steps["detach_storage_mappings"]["status"] == "ok"
+        assert steps["delete_lpar"]["status"] == "error"
+        assert "injected delete failure" in steps["delete_lpar"]["result"]
+        assert [item[0] for item in _mutations(server)] == ["POST", "POST", "DELETE"]
+        assert [row["backing_name"] for row in remaining] == ["keep-disk"]
+        assert dispositions[_ISO] == "detached"
+    assert all(item[1] != _VG_PATH for item in _mutations(server))
+    assert _LPAR in server.journey["lpars"] and server.journey["vg"] == initial_vg
+
+
+@pytest.mark.parametrize("mock_hmc", [_CleanupHMC], indirect=True)
+@pytest.mark.parametrize("width", [40, 80, 200])
+def test_cleanup_redirected_identifiers_round_trip(cleanup_cli, width):
+    run, server = cleanup_cli
+    systems = run("systems", "list", width=width).stdout.splitlines()
+    headings = systems[0].split("\t")
+    system = dict(zip(headings, systems[1].split("\t"), strict=True))["UUID"]
+    assert system == _SYSTEM
+    vios_rows = run("vios", "list", "--system", system, width=width).stdout.splitlines()
+    vios = dict(zip(vios_rows[0].split("\t"), vios_rows[1].split("\t"), strict=True))[
+        "UUID"
+    ]
+    mappings = run(
+        "storage", "list-mappings", vios, "--system", system, width=width
+    ).stdout
+    assert _DISK in mappings and _ISO in mappings and "…" not in mappings
+    assert not _mutations(server)
