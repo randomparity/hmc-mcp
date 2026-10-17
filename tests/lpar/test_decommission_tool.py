@@ -2035,3 +2035,71 @@ async def test_unresolved_duplicate_remains_unproven(monkeypatch, dry_run):
     assert len(unresolved) == 1
     assert unresolved[0]["disposition"] == "unproven"
     hmc.delete_storage_mapping.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "kind,field",
+    [
+        ("PhysicalVolume", "VolumeName"),
+        ("VirtualDisk", "DiskName"),
+        ("LogicalUnit", "UnitName"),
+        ("VirtualOpticalMedia", "MediaName"),
+    ],
+)
+async def test_evidence_preserves_wrapped_backing_text(monkeypatch, kind, field):
+    hmc = _client()
+    _patch_common(monkeypatch, [])
+    resource = element_to_dict(
+        fromstring(f"""<VirtualIOServer>
+      <VirtualSCSIMappings><VirtualSCSIMapping>
+        <AssociatedLogicalPartition href="/rest/api/uom/LogicalPartition/{LPAR_UUID}"/>
+        <ServerAdapter><AdapterName ksv="V1_0">vhost0</AdapterName></ServerAdapter>
+        <TargetDevice><VirtualSCSITargetDevice><TargetName ksv="V1_0">vtscsi0</TargetName></VirtualSCSITargetDevice></TargetDevice>
+        <Storage><{kind}><{field} ksv="V1_0">known-backing</{field}></{kind}></Storage>
+      </VirtualSCSIMapping></VirtualSCSIMappings></VirtualIOServer>""")
+    )
+    hmc.get_vios_storage_detail.return_value = {"Resource": resource}
+    result = await decommission_lpar(hmc, "system-a", LPAR_UUID, dry_run=True)
+    row = result.blast_radius["mapping_evidence"][0]
+    assert row["backing_device"] == "known-backing"
+    assert row["mapping_id"] == "vhost0/vtscsi0"
+    assert "backing_device" not in result.blast_radius["storage_mappings"][0]
+
+
+@pytest.mark.asyncio
+async def test_empty_metadata_collection_has_no_mapping_evidence(monkeypatch):
+    hmc = _client()
+    _patch_common(monkeypatch, [])
+    resource = element_to_dict(
+        fromstring("""<VirtualIOServer>
+      <VirtualSCSIMappings group="ViosSCSIMapping"><Metadata><Atom/></Metadata></VirtualSCSIMappings>
+      <VirtualFibreChannelMappings group="ViosFCMapping"><Metadata><Atom/></Metadata></VirtualFibreChannelMappings>
+      </VirtualIOServer>""")
+    )
+    hmc.get_vios_storage_detail.return_value = {"Resource": resource}
+    result = await decommission_lpar(hmc, "system-a", LPAR_UUID, dry_run=True)
+    assert result.blast_radius["mapping_evidence"] == ()
+
+
+@pytest.mark.asyncio
+async def test_evidence_preserves_wrapped_vios_and_fc_identity(monkeypatch):
+    hmc = _client()
+    _patch_common(monkeypatch, [])
+    resource = element_to_dict(
+        fromstring(f"""<VirtualIOServer>
+      <PartitionName ksv="V1_0">known-vios</PartitionName>
+      <VirtualSCSIMappings/>
+      <VirtualFibreChannelMappings><VirtualFibreChannelMapping>
+      <UUID ksv="V1_0">aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa</UUID>
+      <AssociatedLogicalPartition href="/rest/api/uom/LogicalPartition/{LPAR_UUID}"/>
+      <Port><WWPNPair ksv="V1_0">known-port-pair</WWPNPair></Port>
+      </VirtualFibreChannelMapping></VirtualFibreChannelMappings></VirtualIOServer>""")
+    )
+    hmc.list_vios.return_value = [{"UUID": VIOS_UUID, "Resource": resource}]
+    hmc.get_vios_storage_detail.return_value = {"Resource": resource}
+    result = await decommission_lpar(hmc, "system-a", LPAR_UUID, dry_run=True)
+    row = result.blast_radius["mapping_evidence"][0]
+    assert row["vios_name"] == "known-vios"
+    assert row["uuid"] == row["mapping_id"] == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    assert row["backing_device"] == "known-port-pair"

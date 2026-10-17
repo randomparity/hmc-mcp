@@ -31,6 +31,7 @@ from ...jobs import (
     wait_for_submitted_job,
 )
 from ...resource_identity import is_uuid, resolve_system_uuid
+from ...xmlutil import leaf_text
 from .workflow_contract import WorkflowStep
 
 _ADAPTER_ORDER: tuple[AdapterType, ...] = (
@@ -538,12 +539,34 @@ def collect_storage_records(
     return tuple(storage_mappings), unresolved
 
 
+def _evidence_backing_device(mapping: dict[str, Any]) -> str:
+    storage = _resource({"Resource": mapping.get("Storage")})
+    for section, field_name in (
+        ("PhysicalVolume", "VolumeName"),
+        ("VirtualDisk", "DiskName"),
+        ("LogicalUnit", "UnitName"),
+        ("VirtualOpticalMedia", "MediaName"),
+    ):
+        device = _resource({"Resource": storage.get(section)})
+        name = _text(leaf_text(device.get(field_name)))
+        if name is not None:
+            return name
+    port = _resource({"Resource": mapping.get("Port")})
+    return _text(leaf_text(port.get("WWPNPair"))) or "unknown"
+
+
 def _mapping_evidence(
     resource: dict[str, Any], vios_uuid: str, lpar_uuid: str, partition_id: str | None
 ) -> list[dict[str, str]]:
     evidence = []
     for block, kind in _STORAGE_MAPPING_TYPES:
-        for mapping in _records(resource.get(block), kind):
+        collection = resource.get(block)
+        if isinstance(collection, dict) and all(
+            key.startswith("@") or (key == "Metadata" and value == {"Atom": ""})
+            for key, value in collection.items()
+        ):
+            continue
+        for mapping in _records(collection, kind):
             if not mapping:
                 continue
             client = mapping_lpar_uuid(mapping)
@@ -554,9 +577,8 @@ def _mapping_evidence(
             scsi = kind == "VirtualSCSIMapping"
             if matches is False and (valid_client or not scsi):
                 continue
-            identity = (
-                storage_mapping_id(mapping) if scsi else _text(mapping.get("UUID"))
-            )
+            observed_uuid = _text(leaf_text(mapping.get("UUID")))
+            identity = storage_mapping_id(mapping) if scsi else observed_uuid
             missing = []
             if not valid_client:
                 missing.append("AssociatedLogicalPartition UUID")
@@ -584,9 +606,7 @@ def _mapping_evidence(
                         "TargetDevice.TargetName",
                     ),
                 ):
-                    name = _text(
-                        value.get("text") if isinstance(value, dict) else value
-                    )
+                    name = _text(leaf_text(value))
                     record[field] = name or "unknown"
                     if not name:
                         missing.append(label)
@@ -598,6 +618,7 @@ def _mapping_evidence(
             elif identity is None:
                 missing.append("mapping UUID")
             record.update(
+                uuid=observed_uuid or "unknown",
                 mapping_id=identity or "unknown",
                 client_uuid=client or "unknown",
                 missing_identity=", ".join(missing) or "none",
@@ -605,13 +626,7 @@ def _mapping_evidence(
                 disposition="retained"
                 if matches is True and (not scsi or not missing)
                 else "unproven",
-                backing_device=record.get("backing_device")
-                or _named_storage_value(
-                    _resource({"Resource": mapping.get("Storage")}),
-                    "VirtualOpticalMedia",
-                    "MediaName",
-                )
-                or "unknown",
+                backing_device=_evidence_backing_device(mapping),
                 backing_storage="retained",
                 reason="No mapping detach proven; backing storage is retained.",
             )
@@ -664,6 +679,9 @@ async def _inventory_storage_mappings(
     for vios in sources:
         vios_uuid = _text(vios.get("UUID"))
         vios_name = _text(_resource(vios).get("PartitionName")) or "unknown"
+        evidence_name = (
+            _text(leaf_text(_resource(vios).get("PartitionName"))) or "unknown"
+        )
         if vios_uuid is None or not is_uuid(vios_uuid):
             source_warnings.append(
                 "Storage blast radius may be incomplete: listed VIOS "
@@ -672,7 +690,7 @@ async def _inventory_storage_mappings(
             )
             evidence.append(
                 _unavailable_evidence(
-                    vios_uuid or "unknown", vios_name, source_warnings[-1]
+                    vios_uuid or "unknown", evidence_name, source_warnings[-1]
                 )
             )
             continue
@@ -683,7 +701,7 @@ async def _inventory_storage_mappings(
                 f"VIOS {vios_uuid!r} storage detail unavailable: {exc}"
             )
             evidence.append(
-                _unavailable_evidence(vios_uuid, vios_name, source_warnings[-1])
+                _unavailable_evidence(vios_uuid, evidence_name, source_warnings[-1])
             )
             continue
         if detail is None:
@@ -692,7 +710,7 @@ async def _inventory_storage_mappings(
                 "no storage detail, so its storage mappings could not be inventoried."
             )
             evidence.append(
-                _unavailable_evidence(vios_uuid, vios_name, source_warnings[-1])
+                _unavailable_evidence(vios_uuid, evidence_name, source_warnings[-1])
             )
             continue
         detail_resource = detail.get("Resource")
@@ -701,7 +719,7 @@ async def _inventory_storage_mappings(
                 f"VIOS {vios_uuid!r} returned malformed storage detail."
             )
             evidence.append(
-                _unavailable_evidence(vios_uuid, vios_name, source_warnings[-1])
+                _unavailable_evidence(vios_uuid, evidence_name, source_warnings[-1])
             )
             continue
         records, unresolved_count = collect_storage_records(
@@ -713,10 +731,10 @@ async def _inventory_storage_mappings(
         observed = _mapping_evidence(
             detail_resource, vios_uuid, lpar_uuid, partition_id_text
         )
-        evidence.extend(dict(row, vios_name=vios_name) for row in observed)
+        evidence.extend(dict(row, vios_name=evidence_name) for row in observed)
         if failures and not observed:
             evidence.append(
-                _unavailable_evidence(vios_uuid, vios_name, "; ".join(failures))
+                _unavailable_evidence(vios_uuid, evidence_name, "; ".join(failures))
             )
         targets.extend(found)
         errors.extend(failures)
