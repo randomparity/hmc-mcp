@@ -255,18 +255,30 @@ def test_empty_or_idempotent_return_does_not_claim_completion(monkeypatch, comma
     [
         ("RUNNING", "submitted", 0),
         ("COMPLETED_WITH_WARNINGS", "failed", 1),
+        ("COMPLETED_WITH_ERROR", "failed", 1),
         ("COMPLETED_OK", "completed", 0),
     ],
 )
-def test_returned_job_is_not_opaque_success(monkeypatch, status, expected, code):
-    command, args, _, _ = CASES[2]
-    data = {"Resource": {"JobID": "job-test", "Status": status}}
+@pytest.mark.parametrize("case_index", [2, 9])
+def test_returned_job_is_not_opaque_success(
+    monkeypatch, status, expected, code, case_index
+):
+    command, args, _, _ = CASES[case_index]
+    resource = {"JobID": "job-test", "Status": status}
+    data = (
+        StorageMapResult("lp-test", resource, LOCATION)
+        if case_index == 9
+        else {"Resource": resource}
+    )
     result, _ = _invoke(monkeypatch, command, args, data, ("--json",))
     assert result.exit_code == code, result.output
     decoded = json.loads(result.stdout)
     assert decoded["outcome"] == expected
     assert decoded["job_id"] == "job-test"
     assert decoded["job_status"] == status
+    detailed, _ = _invoke(monkeypatch, command, args, data, ("--details",))
+    assert detailed.exit_code == code, detailed.output
+    assert json.loads(detailed.stdout) == (asdict(data) if is_dataclass(data) else data)
 
 
 def test_attach_partial_preserves_error_and_location_without_successful_raw_step(

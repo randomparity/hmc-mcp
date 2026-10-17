@@ -66,13 +66,15 @@ def _print_mutation(
         summary["change_location"] = asdict(location)
         summary["change_location_summary"] = location.summary()
     source = raw.get("resource", raw) if isinstance(raw, dict) else None
-    resource = source.get("Resource") if isinstance(source, dict) else None
+    resource = source.get("Resource", source) if isinstance(source, dict) else None
     if isinstance(resource, dict) and resource.get("JobID"):
-        job = job_outcome(summary["operation"], source)
+        job = job_outcome(summary["operation"], {"Resource": resource})
         summary.update(job_id=job.job_id, job_status=job.status, error=job.error)
-        summary["outcome"] = (
-            "failed" if job.error else ("submitted" if job.timed_out else "completed")
-        )
+        summary["outcome"] = "completed"
+        if job.error:
+            summary["outcome"] = "failed"
+        elif job.timed_out:
+            summary["outcome"] = "submitted"
         summary["verification"] = "returned job status"
     print_inventory(raw if details else summary, selected, title="Storage result")
     if summary["outcome"] == "failed":
@@ -159,7 +161,6 @@ def storage_create_vg(
         vg,
         selected,
         details,
-        location=None,
     )
 
 
@@ -214,7 +215,6 @@ def storage_create_disk(
         disk,
         selected,
         details,
-        location=None,
     )
 
 
@@ -263,7 +263,6 @@ def storage_delete_disk(
         disk,
         selected,
         details,
-        location=None,
     )
 
 
@@ -325,6 +324,11 @@ def storage_attach_disk(
 
     result = with_client(_go)
     raw = asdict(result)
+    outcome = "request_succeeded"
+    if result.dry_run:
+        outcome = "dry_run"
+    elif not result.workflow_completed:
+        outcome = "incomplete"
     summary = {
         "operation": "attach-disk",
         "target": name,
@@ -333,9 +337,7 @@ def storage_attach_disk(
         "lpar": lpar,
         "lpar_uuid": result.lpar_uuid,
         "system": system,
-        "outcome": "dry_run"
-        if result.dry_run
-        else ("request_succeeded" if result.workflow_completed else "incomplete"),
+        "outcome": outcome,
         "steps": [
             {
                 "step": step.step,
@@ -490,7 +492,6 @@ def storage_create_media_repo(
         result,
         selected,
         details,
-        location=None,
     )
 
 
@@ -547,7 +548,6 @@ def storage_create_media(
         result,
         selected,
         details,
-        location=None,
     )
 
 
@@ -591,7 +591,6 @@ def storage_delete_media_repo(
         result,
         selected,
         details,
-        location=None,
     )
 
 
@@ -641,7 +640,6 @@ def storage_delete_media(
         result,
         selected,
         details,
-        location=None,
     )
 
 
