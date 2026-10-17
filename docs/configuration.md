@@ -195,6 +195,17 @@ CA through `HMC_CA_BUNDLE` or `SSL_CERT_FILE` (see [TLS trust](#tls-trust)) and 
 `HMC_VERIFY_SSL=true` (`--verify-ssl`) — otherwise the HMC credentials are at risk of
 man-in-the-middle interception.
 
+The CLI displays these warnings without Python source locations. When verification
+comes from the field default, a separate notice explains the planned 1.0 change.
+Use `hmcpctl --no-verify-ssl systems list` to explicitly retain verification off,
+or configure certificate trust and use `hmcpctl --verify-ssl systems list`.
+
+TLS-disabled audit events remain separate, once per client construction. With no
+configured logging handler, terminal stderr displays their timestamp, host and
+setting source in a compact line; redirected stderr retains JSON for collectors.
+Configured audit handlers receive the original records. See
+[Audit transport](authorization-audit.md#routing-levels-and-silencing) for delivery details.
+
 ## TLS trust
 
 With `HMC_VERIFY_SSL=true` the client determines what to trust from three sources, in this order:
