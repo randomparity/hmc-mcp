@@ -7,15 +7,77 @@ registers every command on the groups defined here before exposing the root app.
 
 from __future__ import annotations
 
+from typing import Any, NoReturn
+
 import typer
+from typer import _click
 from typer._click.core import ParameterSource
+from typer.core import TyperCommand, TyperGroup
 
 from .capabilities import capabilities
+from .output import usage_error
 from .runtime import GlobalOpts
 from .serve import serve
 
+
+class CLICommand(TyperCommand):
+    """Enrich only known missing-input errors using the installed parser."""
+
+    def parse_args(self, ctx: _click.Context, args: list[str]) -> list[str]:
+        original = list(args)
+        try:
+            return super().parse_args(ctx, args)
+        except _click.exceptions.MissingParameter as exc:
+            opts, _, _ = self.make_parser(ctx).parse_args(original)
+            missing = []
+            for param in self.get_params(ctx):
+                if not param.required:
+                    continue
+                value = opts.get(param.name)
+                if value is None:
+                    value = param.value_from_envvar(ctx)
+                if value is None:
+                    value = param.get_default(ctx, call=False)
+                if not callable(value) and param.value_is_missing(value):
+                    missing.append(param.get_error_hint(ctx))
+            if not missing:
+                raise
+            raise _click.exceptions.UsageError(
+                "Missing required inputs: " + ", ".join(missing), ctx=ctx
+            ) from exc
+
+
+class CLIGroup(TyperGroup):
+    """Keep Typer parsing and suggestions, with the CLI's stderr renderer."""
+
+    def parse_args(self, ctx: _click.Context, args: list[str]) -> list[str]:
+        try:
+            return super().parse_args(ctx, args)
+        except _click.exceptions.UsageError as exc:
+            self.report_usage(exc)
+
+    def invoke(self, ctx: _click.Context) -> Any:
+        try:
+            return super().invoke(ctx)
+        except _click.exceptions.UsageError as exc:
+            self.report_usage(exc)
+
+    @staticmethod
+    def report_usage(exc: _click.exceptions.UsageError) -> NoReturn:
+        if isinstance(exc, _click.exceptions.NoArgsIsHelpError):
+            raise exc
+        guidance = ""
+        if (
+            isinstance(exc, _click.exceptions.NoSuchOption)
+            and exc.option_name == "--profile"
+        ):
+            guidance = "\nPlace root options before the group: hmcpctl --profile NAME GROUP COMMAND"
+        usage_error(exc.format_message(), guidance=guidance, ctx=exc.ctx)
+
+
 app = typer.Typer(
     name="hmcpctl",
+    cls=CLIGroup,
     help="IBM HMC (Hardware Management Console) MCP server and CLI.",
     no_args_is_help=True,
 )
