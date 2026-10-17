@@ -106,7 +106,11 @@ class DecommissionAdapterRecord(TypedDict):
     uuid: str
 
 
-class DecommissionBlastRadius(TypedDict):
+class _MappingEvidence(TypedDict, total=False):
+    mapping_evidence: tuple[dict[str, str], ...]
+
+
+class DecommissionBlastRadius(_MappingEvidence):
     """Stable inventory returned before an LPAR decommission mutates resources."""
 
     lpar_uuid: str
@@ -165,6 +169,7 @@ class _Inventory:
     warnings: tuple[str, ...]
     vscsi_detaches: tuple[_VScsiDetach, ...]
     vscsi_inventory_errors: tuple[str, ...]
+    mapping_evidence: tuple[dict[str, str], ...]
 
     def blast_radius(self) -> DecommissionBlastRadius:
         return {
@@ -533,6 +538,103 @@ def collect_storage_records(
     return tuple(storage_mappings), unresolved
 
 
+def _mapping_evidence(
+    resource: dict[str, Any], vios_uuid: str, lpar_uuid: str, partition_id: str | None
+) -> list[dict[str, str]]:
+    evidence = []
+    for block, kind in _STORAGE_MAPPING_TYPES:
+        for mapping in _records(resource.get(block), kind):
+            if not mapping:
+                continue
+            client = mapping_lpar_uuid(mapping)
+            valid_client = client is not None and is_uuid(client)
+            matches = _mapping_matches_target(mapping, lpar_uuid, partition_id)
+            if valid_client:
+                matches = client.casefold() == lpar_uuid.casefold()
+            scsi = kind == "VirtualSCSIMapping"
+            if matches is False and (valid_client or not scsi):
+                continue
+            identity = (
+                storage_mapping_id(mapping) if scsi else _text(mapping.get("UUID"))
+            )
+            missing = []
+            if not valid_client:
+                missing.append("AssociatedLogicalPartition UUID")
+            record = _mapping_record(mapping, vios_uuid, kind)
+            if scsi:
+                adapter = _resource({"Resource": mapping.get("ServerAdapter")})
+                target = _resource({"Resource": mapping.get("TargetDevice")})
+                devices = [
+                    value for key, value in target.items() if not key.startswith("@")
+                ]
+                device = (
+                    devices[0]
+                    if len(devices) == 1 and isinstance(devices[0], dict)
+                    else {}
+                )
+                for field, value, label in (
+                    (
+                        "server_adapter",
+                        adapter.get("AdapterName"),
+                        "ServerAdapter.AdapterName",
+                    ),
+                    (
+                        "target_device",
+                        device.get("TargetName"),
+                        "TargetDevice.TargetName",
+                    ),
+                ):
+                    name = _text(
+                        value.get("text") if isinstance(value, dict) else value
+                    )
+                    record[field] = name or "unknown"
+                    if not name:
+                        missing.append(label)
+                if identity is None and all(
+                    record[field] != "unknown"
+                    for field in ("server_adapter", "target_device")
+                ):
+                    missing.append("supported mapping identifier")
+            elif identity is None:
+                missing.append("mapping UUID")
+            record.update(
+                mapping_id=identity or "unknown",
+                client_uuid=client or "unknown",
+                missing_identity=", ".join(missing) or "none",
+                relationship="target" if matches is True else "unknown",
+                disposition="retained"
+                if matches is True and (not scsi or not missing)
+                else "unproven",
+                backing_device=record.get("backing_device")
+                or _named_storage_value(
+                    _resource({"Resource": mapping.get("Storage")}),
+                    "VirtualOpticalMedia",
+                    "MediaName",
+                )
+                or "unknown",
+                backing_storage="retained",
+                reason="No mapping detach proven; backing storage is retained.",
+            )
+            evidence.append(record)
+    return evidence
+
+
+def _unavailable_evidence(vios_uuid: str, name: str, reason: str) -> dict[str, str]:
+    return {
+        "vios_uuid": vios_uuid,
+        "vios_name": name,
+        "type": "unknown",
+        "mapping_id": "unknown",
+        "uuid": "unknown",
+        "backing_device": "unknown",
+        "missing_identity": "storage inventory unavailable or incomplete",
+        "disposition": "unproven",
+        "relationship": "unknown",
+        "backing_storage": "retained",
+        "reason": reason,
+    }
+
+
 async def _inventory_storage_mappings(
     hmc: HMCClient, system_uuid: str, lpar_uuid: str, partition_id: int | None
 ) -> tuple[
@@ -541,10 +643,13 @@ async def _inventory_storage_mappings(
     tuple[str, ...],
     tuple[_VScsiDetach, ...],
     tuple[str, ...],
+    tuple[dict[str, str], ...],
 ]:
     storage_mappings: list[dict[str, str]] = []
     unresolved = 0
     source_warnings: list[str] = []
+    evidence: list[dict[str, str]] = []
+
     targets: list[_VScsiDetach] = []
     errors: list[str] = []
     partition_id_text = str(partition_id) if partition_id is not None else None
@@ -552,15 +657,23 @@ async def _inventory_storage_mappings(
         sources = await hmc.list_vios(system_uuid)
     except HMCError as exc:
         source_warnings.append(f"VIOS inventory could not be read: {exc}")
+        evidence.append(
+            _unavailable_evidence("unknown", "unknown", source_warnings[-1])
+        )
         sources = []
     for vios in sources:
         vios_uuid = _text(vios.get("UUID"))
+        vios_name = _text(_resource(vios).get("PartitionName")) or "unknown"
         if vios_uuid is None or not is_uuid(vios_uuid):
-            vios_name = _text(_resource(vios).get("PartitionName")) or "unknown"
             source_warnings.append(
                 "Storage blast radius may be incomplete: listed VIOS "
                 f"{vios_name!r} has no UUID, so its storage mappings could not be "
                 "inventoried."
+            )
+            evidence.append(
+                _unavailable_evidence(
+                    vios_uuid or "unknown", vios_name, source_warnings[-1]
+                )
             )
             continue
         try:
@@ -569,17 +682,26 @@ async def _inventory_storage_mappings(
             source_warnings.append(
                 f"VIOS {vios_uuid!r} storage detail unavailable: {exc}"
             )
+            evidence.append(
+                _unavailable_evidence(vios_uuid, vios_name, source_warnings[-1])
+            )
             continue
         if detail is None:
             source_warnings.append(
                 f"Storage blast radius may be incomplete: VIOS {vios_uuid!r} returned "
                 "no storage detail, so its storage mappings could not be inventoried."
             )
+            evidence.append(
+                _unavailable_evidence(vios_uuid, vios_name, source_warnings[-1])
+            )
             continue
         detail_resource = detail.get("Resource")
         if not isinstance(detail_resource, dict):
             source_warnings.append(
                 f"VIOS {vios_uuid!r} returned malformed storage detail."
+            )
+            evidence.append(
+                _unavailable_evidence(vios_uuid, vios_name, source_warnings[-1])
             )
             continue
         records, unresolved_count = collect_storage_records(
@@ -588,6 +710,14 @@ async def _inventory_storage_mappings(
         storage_mappings.extend(records)
         unresolved += unresolved_count
         found, failures = _vscsi_detach_inventory(detail_resource, vios_uuid, lpar_uuid)
+        observed = _mapping_evidence(
+            detail_resource, vios_uuid, lpar_uuid, partition_id_text
+        )
+        evidence.extend(dict(row, vios_name=vios_name) for row in observed)
+        if failures and not observed:
+            evidence.append(
+                _unavailable_evidence(vios_uuid, vios_name, "; ".join(failures))
+            )
         targets.extend(found)
         errors.extend(failures)
     return (
@@ -598,6 +728,7 @@ async def _inventory_storage_mappings(
             sorted(targets, key=lambda item: (item["vios_uuid"], item["mapping_id"]))
         ),
         tuple(source_warnings + errors),
+        tuple(evidence),
     )
 
 
@@ -644,6 +775,7 @@ async def _inventory(
         source_warnings,
         detaches,
         errors,
+        evidence,
     ) = await _inventory_storage_mappings(hmc, system_uuid, lpar_uuid, partition_id)
 
     return _Inventory(
@@ -662,6 +794,7 @@ async def _inventory(
         + tuple(error for error in errors if error not in source_warnings),
         vscsi_detaches=detaches,
         vscsi_inventory_errors=errors,
+        mapping_evidence=evidence,
     )
 
 
@@ -737,7 +870,11 @@ async def _detach_storage_mappings(
             return WorkflowStep(
                 "detach_storage_mappings",
                 "error",
-                {"mappings": tuple(detached), "error": str(exc)},
+                {
+                    "mappings": tuple(detached),
+                    "error": str(exc),
+                    "failed_mapping": mapping,
+                },
             )
         detached.append(mapping)
     return WorkflowStep("detach_storage_mappings", "ok", {"mappings": tuple(detached)})
@@ -805,6 +942,45 @@ def _build_decommission_result(
     dry_run: bool,
     steps: tuple[WorkflowStep, ...],
 ) -> DecommissionResult:
+    blast_radius = inventory.blast_radius()
+    evidence = [dict(row) for row in inventory.mapping_evidence]
+    mapping_step = next(
+        (step for step in steps if step.step == "detach_storage_mappings"), None
+    )
+    outcome = (
+        mapping_step.result
+        if mapping_step and isinstance(mapping_step.result, dict)
+        else {}
+    )
+    for row in evidence:
+        identity = {"vios_uuid": row["vios_uuid"], "mapping_id": row["mapping_id"]}
+        if (
+            row["type"] != "VirtualSCSIMapping"
+            or row["disposition"] == "unproven"
+            or identity not in inventory.vscsi_detaches
+        ):
+            continue
+        if identity in outcome.get("mappings", ()) and not dry_run:
+            row.update(
+                disposition="detached",
+                reason="Mapping detach completed; backing storage retained.",
+            )
+        elif identity == outcome.get("failed_mapping"):
+            row.update(
+                disposition="failed",
+                reason=f"Detach request failed; resulting mapping state is unproven: {outcome['error']}",
+            )
+        elif dry_run and not inventory.vscsi_inventory_errors:
+            row.update(
+                disposition="planned detach",
+                reason="Dry-run only; no mutation performed.",
+            )
+        else:
+            row.update(
+                disposition="retained",
+                reason="Detach not attempted; workflow blocked or stopped.",
+            )
+    blast_radius["mapping_evidence"] = tuple(evidence)
     return DecommissionResult(
         resource_deleted=resource_deleted,
         workflow_completed=workflow_completed,
@@ -812,7 +988,7 @@ def _build_decommission_result(
         dry_run=dry_run,
         steps=steps,
         warnings=inventory.warnings,
-        blast_radius=inventory.blast_radius(),
+        blast_radius=blast_radius,
     )
 
 

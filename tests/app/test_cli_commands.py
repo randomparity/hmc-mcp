@@ -1744,6 +1744,7 @@ def test_lpars_decommission_help_lists_cli_contract(fake_hmc):
         "--timeout-seconds",
         "--poll-interval",
         "--json",
+        "--format",
         "--yes",
     }
 
@@ -1762,7 +1763,7 @@ def test_lpars_decommission_dry_run_skips_confirmation(fake_hmc):
     )
 
     assert result.exit_code == 0, result.output
-    assert "DRY RUN" in result.stdout
+    assert "DRY RUN" in result.stderr
     assert "power_off" in result.stdout
     assert "dry_run" in result.stdout
     assert "Aborted" not in result.stderr
@@ -1794,7 +1795,7 @@ def test_lpars_decommission_confirmed_prompt_names_target_and_executes(fake_hmc)
     assert (
         f"Decommission LPAR '{LPAR_NAME}' on system '{SYSTEM_UUID}'?" in result.output
     )
-    assert "decommissioned successfully" in result.stdout
+    assert "decommissioned successfully" in result.stderr
     assert "vSCSI mappings before client adapters" in result.output
     assert "retains backing storage" in result.output
     names = [name for name, _, _ in fake_hmc.calls]
@@ -1818,7 +1819,7 @@ def test_lpars_decommission_yes_executes_workflow(fake_hmc):
     )
 
     assert result.exit_code == 0, result.output
-    assert "decommissioned successfully" in result.stdout
+    assert "decommissioned successfully" in result.stderr
     names = [name for name, _, _ in fake_hmc.calls]
     assert "delete_logical_partition" in names
     assert "Aborted" not in result.stderr
@@ -1841,7 +1842,7 @@ def test_lpars_decommission_incomplete_human_result_exits_1_after_rendering(fake
     )
 
     assert result.exit_code == 1
-    assert "was not fully decommissioned" in result.stdout
+    assert "was not fully decommissioned" in result.stderr
     assert "delete_lpar" in result.stdout
     assert "error" in result.stdout
     assert all(
@@ -1986,6 +1987,7 @@ def test_lpars_decommission_json_renders_dataclass_shape(fake_hmc):
                 },
             ],
             "storage_mappings": [],
+            "mapping_evidence": [],
             "unresolved_storage_mapping_count": 0,
             "unavailable_storage_source_count": 0,
         },

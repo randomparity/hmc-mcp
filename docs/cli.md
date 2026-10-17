@@ -266,7 +266,43 @@ are missing when the entry lacks this metadata. `systems health` uses categories
 
 `lpars state` remains one scalar state line. Refcode JSON retains raw code and
 definition data; its table path keeps terminal sanitation. Console capture and
-raw REST streams keep their existing byte-stream contracts. Storage mutations use the result convention below; decommission output is unchanged.
+raw REST streams keep their existing byte-stream contracts. Storage mutations and
+decommission use the result conventions below.
+
+## Decommission evidence and output migration
+
+`lpars decommission` now uses a table on a terminal and lossless TSV when redirected.
+Use `--format table|tsv|json` explicitly, or `--json/-j` for the established JSON
+envelope. Conflicting format choices fail before I/O. Summaries, warnings and
+confirmation go to stderr. TSV has `Section`, `Item`, `Field`, `Value` columns;
+steps use their names, mapping items use zero-based display indexes (not mapping IDs),
+and nested step fields use dotted keys and `[index]` paths. Empty collections read
+`empty`; missing scalar values and escaping follow the inventory TSV convention.
+Tables fold long scalar values rather than ellipsizing nested records.
+
+JSON retains existing fields/counts and adds `blast_radius.mapping_evidence`.
+Evidence includes known VIOS, mapping kind, observed UUID, supported mapping ID,
+backing device, missing identity and disposition. `unknown` means unavailable evidence,
+not an invented identifier. A vSCSI mapping ID uses the supported server/target-device
+names; HMC mappings need not have UUIDs. `planned detach` is dry-run only; `detached`
+means its detach returned successfully; `retained` means no detach was attempted;
+`failed` means the request failed and its resulting mapping state remains unproven;
+`unproven` identifies incomplete identity/inventory. Backing storage stays retained.
+
+```sh
+hmcpctl lpars decommission web01 --system frame-a --dry-run --format tsv
+hmcpctl storage list-mappings <vios-uuid> --system frame-a --format tsv
+hmcpctl lpars decommission web01 --system frame-a --yes --json
+```
+
+Use the emitted inspection command for the observed VIOS. Do not add `--lpar` when
+investigating unresolved mappings: that filter can hide them. vFC/source inspection
+uses a UUID-scoped `raw get` with both mapping groups; missing VIOS identity instead
+requests scoped VIOS discovery. JSON emits these commands on stderr. Put connection
+options such as `--profile NAME` before the group when selecting a nondefault HMC.
+Uncertainty is neither proof of another tenant nor permission to delete. Resolve the
+identity and guards before retrying; backing-disk/media cleanup remains a separate,
+explicit decision, never an automatic consequence of a successful decommission.
 
 ## Storage mutation output migration
 
