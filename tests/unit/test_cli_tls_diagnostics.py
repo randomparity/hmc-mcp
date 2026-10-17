@@ -305,3 +305,16 @@ def test_fallback_follows_actual_stderr_destination(cli_boundary, monkeypatch):
     runtime.run_cli_coroutine(emit)
     assert first.getvalue() == ""
     assert json.loads(second.getvalue())["host"] == "hmc.test"
+
+
+def test_migration_default_filter_survives_sequential_cli_calls(
+    cli_boundary, monkeypatch
+):
+    cli_boundary()
+    monkeypatch.setattr(runtime, "build_config", lambda **kw: _config())
+    warnings.simplefilter("default", core.HMCVerifySSLDefaultWarning)
+    first = CliRunner().invoke(cli.app, ["systems", "list"])
+    second = CliRunner().invoke(cli.app, ["systems", "list"])
+    assert "1.0" in first.stderr
+    assert "1.0" not in second.stderr
+    assert second.exit_code == 1

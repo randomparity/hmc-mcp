@@ -81,7 +81,7 @@ def ssh_config() -> HMCConfig:
 def run_cli_coroutine(fn: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
     """Run a coroutine-returning closure through the CLI error path."""
     try:
-        with warnings.catch_warnings(), cli_audit_sink():
+        with cli_audit_sink():
             original = warnings.formatwarning
 
             def format_warning(
