@@ -102,7 +102,7 @@ BUILT_IN_ACCOUNTS = {"root", "hscroot", "hscpe", "admin"}
 Replacement = str | Callable[[re.Match[str]], str]
 
 #: A 16-hex WWN, other than a LUN address: two digits and fourteen zeros. Its start is
-#: the rule's: `_SCRUB_START` or `_LEAK_START`.
+#: supplied by each scrub rule or survivor guard.
 _WWN_16 = r"(?![0-9a-fA-F]{2}0{14}\b)[0-9a-fA-F]{16}\b"
 
 #: Elements whose whole text is a device identifier.
@@ -154,8 +154,17 @@ _NS_PREFIX = rf"(?![!?])(?:(?:[^{_PREFIX_END_CLASS}\\]|{_NAME_ESCAPE})*+:)*"
 #: or a leading `!` or `?` still ends a value the backstops read (#1660). A comment, CDATA
 #: section or processing instruction never starts with `</`; text that is not XML but
 #: holds `</`, free text and `x:SerialNumber` is refused, never exported. Each segment
-#: ends at the first `:`, so a prefix matches one way only.
-_CLOSING_PREFIX = r"(?:[^:<>]*+:)*"
+#: ends at its first literal or encoded colon (#1679). Encoded colons are accepted only
+#: here, so a malformed opening tag still reaches refusal through the leak backstop.
+#: Prefix characters cannot consume a separator, and backslash runs are possessive:
+#: JSON escaping at any depth costs one scan. Before the bare name, XML whitespace,
+#: `!` and `?` need no `:` (#1678); JSON whitespace escapes count too.
+_ENCODED_COLON = r"(?:\\++u003[aA]|&#(?:58|x3[aA]);)"
+_CLOSING_PREFIX = (
+    rf"(?:(?:[^:<>&\\]|&(?!#(?:58|x3[aA]);)|\\++(?!u003[aA]))*+"
+    rf"(?::|{_ENCODED_COLON}))*"
+    r"(?:[ \t\n\r!?]|\\++[nrt])*+"
+)
 #: Elements whose whole text a rule replaces: the element name pattern, the text the
 #: rule writes and, optionally, the keywords it keeps as evidence. The same entry builds
 #: the scrub rule and its `leaks()` backstop. Names match in any case, after any
@@ -191,7 +200,26 @@ _SERIAL_ELEMENT = (
 #: before it. The unquoted rule reads no escape, so in `json.dumps` text a value runs on
 #: over a `\n`: over-scrubbing, never a leak. The quoted rule keeps the backslashes
 #: before its closing quote, so `json.dumps` text stays valid JSON (#1641).
-_KEYWORD_SERIAL_KEY = "(?:virtual|logical|cluster|peer_collective)_serial_num"
+_SERIAL_NAMES = (
+    "SerialNumber",
+    "LogicalSerialNumber",
+    "VirtualSerialNumber",
+    "serial",
+    "serial_num",
+    "virtual_serial_num",
+    "logical_serial_num",
+    "cluster_serial_num",
+    "peer_collective_serial_num",
+)
+_KEYWORD_SERIAL_KEY = (
+    "(?:"
+    + "|".join(
+        name.removesuffix("_serial_num")
+        for name in _SERIAL_NAMES
+        if name.endswith("_serial_num")
+    )
+    + ")_serial_num"
+)
 #: The other keys the key=value rules scrub, which keep no keyword.
 _DEVICE_ID_KEY = "(?:unique_id|udid|wwpns?|wwnn|serial_num)"
 _SERIAL_KEPT_RE = "(?-i:none|auto)"
@@ -262,7 +290,8 @@ def _element_leak(element: str, value: str, keep: str | None = None) -> re.Patte
     it to its end, as the scrub rule does.
     """
     written = re.escape(value.replace("<", "&lt;").replace(">", "&gt;"))
-    closing = rf"(?=</{_CLOSING_PREFIX}{element}\b)"
+    # Nested JSON text retains its slash escape; later serialization doubles backslashes.
+    closing = rf"(?=<\\*+/{_CLOSING_PREFIX}{element}\b)"
     kept = (
         rf"(?P<kept><(?>{_NS_PREFIX}{element}\b){_ATTRS}(?<!/)>(?:{keep}){closing})|"
         if keep
@@ -283,8 +312,8 @@ _AFTER_ESCAPE = "|".join(f"(?<={escape})" for escape in _JSON_ESCAPES)
 #: `n` or `u0041` reads the same, and so does an escape of a word character such as
 #: `\u00e9`: over-scrubbing, never a leak.
 _KEY_START = rf"(?:(?<!\w)|{_AFTER_ESCAPE})"
-#: Where a free-text MAC or WWN the scrub rules replace starts: after a character that
-#: is neither a word character nor a backslash, or after a backslash run read from its
+#: Where a free-text MAC, WWN or IPv4 address the scrub rules replace starts: after a
+#: character that is neither a word character nor a backslash, or a backslash run from its
 #: first backslash, so pairs are escaped backslashes (#1669). The run is pairs alone,
 #: pairs and a JSON escape, or pairs and a lone backslash before anything but an
 #: escape letter, as in raw text. It is the `escape` group, which the rule writes back.
@@ -295,8 +324,8 @@ _SCRUB_START = (
     r"(?:(?<![\w\\])|(?<!\\)(?P<escape>(?:\\\\)++"
     r"|(?:\\\\)*+\\(?:[bfnrt]|u[0-9A-Fa-f]{4}|(?![bfnrtu]))))"
 )
-#: Where a backstop reads a free-text MAC or WWN as starting: as `_SCRUB_START`, but
-#: after any `_AFTER_ESCAPE`, even an escaped backslash and an `n`, so a value the scrub
+#: Where a backstop reads a free-text MAC, WWN or IPv4 address as starting: as
+#: `_SCRUB_START`, but after any `_AFTER_ESCAPE`, even an escaped backslash and an `n`, so a value the scrub
 #: rules read as joined to that letter fails closed (#1669).
 _LEAK_START = rf"(?:(?<![\w\\])|{_AFTER_ESCAPE})"
 #: Free-text MACs in each separator style: a guard, the run, and the run zeroed whole as
@@ -385,9 +414,24 @@ _LIVE_HEX_RUN = (
 #: keeps. The closing tag is checked before the run is searched, and neither check
 #: backtracks out of the text run, so the scan stays linear.
 _MAC_LEAK = re.compile(
-    rf"(?:(?<![^<>])(?=[^<>]*+</{_CLOSING_PREFIX}(?i:\w*MACAddress))(?=[^<>]*?{_LIVE_HEX_RUN})"
-    rf"[^<>]++|\]\]>(?=(?:\s|\\[nrt])*+</{_CLOSING_PREFIX}(?i:\w*MACAddress)))"
+    rf"(?:(?<![^<>])(?=[^<>]*+<\\*+/{_CLOSING_PREFIX}(?i:\w*MACAddress))(?=[^<>]*?{_LIVE_HEX_RUN})"
+    rf"[^<>]++|\]\]>(?=(?:\s|\\[nrt])*+<\\*+/{_CLOSING_PREFIX}(?i:\w*MACAddress)))"
 )
+
+
+#: Share the MAC scrubber's exact value spans with the raw-text backstop: an actual
+#: Unicode escape before zeroed MAC digits can otherwise look like a live identifier.
+_MAC_ELEMENT = re.compile(
+    rf"(<(?>{_NS_PREFIX}(?i:\w*MACAddress\w*+)){_TAG_TAIL})([^<]+)"
+)
+_RAW_IDENTIFIER_VALUE = (
+    rf"(?:{_WWN_16}|"
+    + "|".join(rf"{guard}(?!{zeroed}){run}" for guard, run, zeroed in _MAC_FORMS[1:])
+    + ")"
+)
+_RAW_IDENTIFIER_LEAK = re.compile(rf"(?<=\\u){_RAW_IDENTIFIER_VALUE}")
+#: Only an even slash run is a literal backslash-u in JSON produced by the caller.
+_JSON_RAW_IDENTIFIER_LEAK = re.compile(rf"(?<!\\)(?:\\\\)++u{_RAW_IDENTIFIER_VALUE}")
 
 
 #: An IPv6 address, or a colon-separated HMC record `_ipv6` keeps, up to a word boundary.
@@ -583,7 +627,10 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
         HMC_HOST,
     ),
     _element_rule(*_ADDRESS_ELEMENT),
-    (re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"), PLACEHOLDER_IP),
+    (
+        re.compile(rf"{_SCRUB_START}(?:\d{{1,3}}\.){{3}}\d{{1,3}}\b"),
+        rf"\g<escape>{PLACEHOLDER_IP}",
+    ),
     # Anywhere, even inside `1eU8375.42A.XXXXXXX-V100-C3`; the slot suffix after the
     # prefix is generic and code joins on it, so it stays.
     (re.compile(r"U[0-9A-Za-z]{4}\.[0-9A-Za-z]{3}\.[0-9A-Za-z]{7}"), "<REDACTED-LOC>"),
@@ -615,7 +662,7 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     # value: text after it belongs to its parent. This rule leaves it, and `_MAC_LEAK`
     # reports it only when it ends at a closing MAC tag.
     (
-        re.compile(rf"(<(?>{_NS_PREFIX}(?i:\w*MACAddress\w*+)){_TAG_TAIL})([^<]+)"),
+        _MAC_ELEMENT,
         _mac_element,
     ),
     *(
@@ -630,7 +677,9 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
 )
 #: Shapes that may never appear in a tokenized output, whatever was collected.
 ALWAYS_LEAKS = (
-    re.compile(rf"\b(?!{re.escape(PLACEHOLDER_IP)}\b)(?:\d{{1,3}}\.){{3}}\d{{1,3}}\b"),
+    re.compile(
+        rf"{_LEAK_START}(?!{re.escape(PLACEHOLDER_IP)}\b)(?:\d{{1,3}}\.){{3}}\d{{1,3}}\b"
+    ),
     re.compile(r"U[0-9A-Za-z]{4}\.[0-9A-Za-z]{3}\.[0-9A-Za-z]{7}"),
     re.compile(r"-L[0-9A-F]{8,}"),
     re.compile(rf"{_LEAK_START}{_WWN_16}"),
@@ -879,7 +928,8 @@ class Tokenizer:
             return self.names[word[:-1]] + "."
         return word
 
-    def tokenize(self, text: str | None) -> str | None:
+    def tokenize(self, text: str | None, *, json_encoded: bool = False) -> str | None:
+        """Scrub raw text; json_encoded opts in only for JSON made by the caller."""
         if text is None:
             return None
         xml = text.lstrip().startswith("<")
@@ -900,6 +950,15 @@ class Tokenizer:
         if xml:
             # The token must not open an element, or the body would stop parsing.
             text = re.sub(r"<(REDACTED-[A-Z]+)>", r"&lt;\1&gt;", text)
+        # Check this call's exact representation before fields are serialized together.
+        mac_values = iter(_MAC_ELEMENT.finditer(text))
+        mac_value = next(mac_values, None)
+        raw_rule = _JSON_RAW_IDENTIFIER_LEAK if json_encoded else _RAW_IDENTIFIER_LEAK
+        for match in raw_rule.finditer(text):
+            while mac_value is not None and mac_value.end(2) <= match.start():
+                mac_value = next(mac_values, None)
+            if mac_value is None or match.start() < mac_value.start(2):
+                raise LeakError("a raw identifier survived tokenizing; nothing written")
         return text
 
     def leaks(self, text: str) -> list[str]:
@@ -937,27 +996,19 @@ _DEVICE_ID_KEYS = {_key(n) for n in _DEVICE_ID_ELEMENTS.split("|")} | {
     "luudid",
     "tierudid",
 }
-_SERIAL_KEYS = {
-    "serialnumber",
-    "logicalserialnumber",
-    "virtualserialnumber",
-    "serial",
-    "serialnum",
-    "virtualserialnum",
-    "logicalserialnum",
-    "clusterserialnum",
-    "peercollectiveserialnum",
-}
+_SERIAL_KEYS = {_key(name) for name in _SERIAL_NAMES}
 #: The keywords a serial element keeps (#1593), kept here on the same terms: only as the
 #: whole value, in their documented case.
 _SERIAL_KEPT = frozenset(_SERIAL_ELEMENT[2].split("|"))
 
 
 def _replace_value(value: Any, token: str, keep: frozenset[str] = frozenset()) -> Any:
-    """*value* with its text replaced by *token*; `@attrs` and *keep* values are kept."""
+    """Replace text by *token*, retaining ordinary attributes and *keep* values."""
     if isinstance(value, dict):
         return {
-            k: v if k == "@attrs" else _replace_value(v, token, keep)
+            k: redact_identifier_keys(v)
+            if k == "@attrs"
+            else _replace_value(v, token, keep)
             for k, v in value.items()
         }
     if isinstance(value, list):
@@ -972,7 +1023,7 @@ def redact_identifier_keys(value: Any) -> Any:
         for key, item in value.items():
             if _key(key) in _DEVICE_ID_KEYS:
                 out[key] = _replace_value(item, "<REDACTED-DEVID>")
-            elif _key(key) in _SERIAL_KEYS:
+            elif _key(key) in _SERIAL_KEYS or "serial" in _key(key):
                 out[key] = _replace_value(item, "<REDACTED-SERIAL>", _SERIAL_KEPT)
             else:
                 out[key] = redact_identifier_keys(item)
@@ -980,6 +1031,21 @@ def redact_identifier_keys(value: Any) -> Any:
     if isinstance(value, list):
         return [redact_identifier_keys(v) for v in value]
     return value
+
+
+def _has_raw_identifier(data: Any) -> bool:
+    """Check actual unsanitized strings and keys without scrub-span exemptions."""
+    pending = [data]
+    while pending:
+        value = pending.pop()
+        if isinstance(value, dict):
+            pending.extend(value)
+            pending.extend(value.values())
+        elif isinstance(value, (list, tuple)):
+            pending.extend(value)
+        elif isinstance(value, str) and _RAW_IDENTIFIER_LEAK.search(value):
+            return True
+    return False
 
 
 def _tokenize_record(tok: Tokenizer, record: dict[str, Any]) -> dict[str, Any]:
@@ -993,19 +1059,27 @@ def _tokenize_record(tok: Tokenizer, record: dict[str, Any]) -> dict[str, Any]:
         headers = {
             k.lower(): v for k, v in (record.get("response_headers") or {}).items()
         }
+        # Reserve the scrubbed field's position to preserve serialized output order.
         out.update(
             method=record.get("method"),
-            path=tok.tokenize(record.get("path")),
+            path=None,
             accept=record.get("accept"),
             status=record.get("status"),
             content_type=headers.get("content-type"),
+        )
+    elif kind == "ssh":
+        out.update(command=None, exit_status=record.get("exit_status"))
+    if _has_raw_identifier(out):
+        raise LeakError("a raw identifier is in capture metadata; nothing written")
+    if kind == "rest":
+        out.update(
+            path=tok.tokenize(record.get("path")),
             body=tok.tokenize(record.get("body")),
             exception=tok.tokenize(record.get("exception")),
         )
     elif kind == "ssh":
         out.update(
             command=tok.tokenize(record.get("command")),
-            exit_status=record.get("exit_status"),
             stdout=tok.tokenize(record.get("stdout")),
             stderr=tok.tokenize(record.get("stderr")),
             exception=tok.tokenize(record.get("exception")),
@@ -1017,7 +1091,7 @@ def _tokenize_record(tok: Tokenizer, record: dict[str, Any]) -> dict[str, Any]:
         rest = redact_identifier_keys(rest)
         try:
             out["record"] = json.loads(
-                tok.tokenize(json.dumps(rest, default=str)) or "{}"
+                tok.tokenize(json.dumps(rest, default=str), json_encoded=True) or "{}"
             )
         except json.JSONDecodeError as exc:
             raise BrokenBodyError(
@@ -1454,6 +1528,8 @@ def _write_scanned(data: Any, out: Path, private: Sequence[str]) -> None:
         raise LeakError(
             f"{len(leaks)} private value(s) in the derived output; nothing written"
         )
+    if _has_raw_identifier(data):
+        raise LeakError("a raw identifier is in the derived output; nothing written")
     out.write_text(text, encoding="utf-8")
 
 

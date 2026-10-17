@@ -16,6 +16,10 @@ release categories. Domain-module APIs remain pre-release and are not facade mov
 
 ### Added
 
+- Offline POWER9 progress-code lookup and 2,202 independently written definitions,
+  with public IBM page/code provenance. CLI, MCP and partition inspection reference-code
+  rows carry definitions and explicit unknowns while preserving raw codes (#1690).
+
 - Bare-CEC live testing exercises the installed CLI state, reference-code and job-show
   paths with separate asserted CLI observations. Release-window reports state CLI
   coverage or gaps for each claim; v0.1.0 remains MCP-only evidence (#1477).

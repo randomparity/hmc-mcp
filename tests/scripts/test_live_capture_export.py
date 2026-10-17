@@ -8,6 +8,7 @@ tokenized, and an SSH key comment leaking a host.
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import re
@@ -23,6 +24,30 @@ assert MODULE_SPEC is not None
 assert MODULE_SPEC.loader is not None
 export = importlib.util.module_from_spec(MODULE_SPEC)
 MODULE_SPEC.loader.exec_module(export)
+
+
+def test_serial_names_share_one_source() -> None:
+    """#1682: one added name reaches both consumers without editing either."""
+    tree = ast.parse(MODULE_PATH.read_text(encoding="utf-8"))
+    names = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "_SERIAL_NAMES"
+            for target in node.targets
+        )
+    )
+    assert isinstance(names.value, ast.Tuple)
+    names.value.elts.append(ast.Constant(value="probe_serial_num"))
+    namespace: dict[str, Any] = {"__name__": "serial_name_probe"}
+    # Execute only the repository module already imported above, with one added test name.
+    exec(  # noqa: S102
+        compile(ast.fix_missing_locations(tree), str(MODULE_PATH), "exec"), namespace
+    )
+    assert re.fullmatch(namespace["_KEYWORD_SERIAL_KEY"], "probe_serial_num")
+    assert "probeserialnum" in namespace["_SERIAL_KEYS"]
+
 
 SYSTEM = "labsys42"
 LPAR = "labsys42-lp3"
@@ -963,6 +988,35 @@ def test_namespace_prefix_with_any_other_character_is_scrubbed(
     assert tok.leaks(scrubbed) == []
 
 
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize(
+    "separator", [r"\u003a", r"\u003A", "&#58;", "&#x3a;", "&#x3A;"]
+)
+@pytest.mark.parametrize("prefix", ["a{sep}", "a{sep}b:{sep}"])
+@pytest.mark.parametrize(
+    ("element", "value"),
+    [
+        ("X-API-Session", "SYN-77Q"),
+        ("PublicSSHKeyValue", "SYN-77Q"),
+        ("IPAddress", "SYN-77Q"),
+        ("SerialNumber", "SYN-77Q"),
+        ("WWPN", "SYN-77Q"),
+        ("MACAddress", "0A1B2C3D4E5F"),  # pragma: allowlist secret
+    ],
+)
+def test_value_behind_an_escaped_namespace_colon_is_refused(
+    element: str, value: str, separator: str, prefix: str, encode: Any
+) -> None:
+    """Regression #1679: encoded colons hid a value from scrub and leak rules."""
+    tok = export.Tokenizer({}, set())
+    name = prefix.format(sep=separator) + element
+    body = encode(f"<Root><{name}>{value}</{name}></Root>")
+    assert tok.tokenize(body) == body
+    assert tok.leaks(body) == [value]
+    with pytest.raises(export.LeakError, match="private value.*nothing written"):
+        export.tokenize_records(_records(_rest("/e", body)))
+
+
 #: Prefixes the scrub rules end or refuse: one of XML's spaces, a quote, `=`, the literal
 #: text `\u0020`, and a leading `!` or `?`. No rule scrubs the value, so only the
 #: backstop stops it (#1660).
@@ -976,6 +1030,32 @@ UNSCRUBBED_PREFIXES = [
     "?x:",
     "!:",
 ]
+
+
+@pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
+@pytest.mark.parametrize("prefix", [" ", "\t", "\n", "\r", "!", "?", " !?\t"])
+@pytest.mark.parametrize(
+    ("element", "value"),
+    [
+        ("X-API-Session", "SYN-77Q"),
+        ("PublicSSHKeyValue", "SYN-77Q"),
+        ("IPAddress", "SYN-77Q"),
+        ("SerialNumber", "SYN-77Q"),
+        ("WWPN", "SYN-77Q"),
+        ("MACAddress", "0A1B2C3D4E5F"),  # pragma: allowlist secret
+    ],
+)
+def test_value_behind_a_separator_free_malformed_closing_name_is_a_leak(
+    element: str, value: str, prefix: str, encode: Any
+) -> None:
+    """Regression #1678: XML whitespace, ! and ? need no namespace separator."""
+    tok = export.Tokenizer({}, set())
+    name = f"{prefix}{element}"
+    body = encode(f"<Root><{name}>{value}</{name}></Root>")
+    assert tok.tokenize(body) == body
+    assert tok.leaks(body) == [value]
+    with pytest.raises(export.LeakError, match="private value.*nothing written"):
+        export.tokenize_records(_records(_rest("/e", body)))
 
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
@@ -1008,6 +1088,60 @@ def test_value_behind_a_malformed_closing_name_is_a_leak(
     assert (value in scrubbed) is not escaped
 
 
+@pytest.mark.parametrize("depth", [0, 1, 2])
+@pytest.mark.parametrize(
+    ("element", "value"),
+    [
+        ("X-API-Session", "SYN-77Q"),
+        ("PublicSSHKeyValue", "SYN-77Q"),
+        ("IPAddress", "SYN-77Q"),
+        ("SerialNumber", "SYN0001"),
+        ("WWPN", "SYN-77Q"),
+        ("MACAddress", "0A1B2C3D4E5F"),  # pragma: allowlist secret
+    ],
+)
+def test_json_escaped_closing_slash_reports_unscrubbed_values(
+    element: str, value: str, depth: int
+) -> None:
+    """#1680: inner JSON text survives outer capture decoding and later serialization."""
+    name = f'a"b:{element}'
+    body = json.dumps(f"<Root><{name}>{value}</{name}></Root>").replace("</", r"<\/")
+    for _ in range(depth):
+        body = json.dumps(body)
+    tok = export.Tokenizer({}, set())
+    assert tok.tokenize(body) == body
+    assert tok.leaks(body) == [value]
+    with pytest.raises(export.LeakError, match="private value.*nothing written"):
+        export.tokenize_records(_records(_rest("/e", body)))
+
+
+@pytest.mark.parametrize("element", ["SerialNumber", "MACAddress"])
+def test_json_escaped_closing_slash_reports_cdata(element: str) -> None:
+    body = json.dumps(f'<a"b:{element}><![CDATA[SYN0001]]> </a"b:{element}>')
+    body = body.replace("</", r"<\/")
+    assert export.Tokenizer({}, set()).leaks(body) != []
+
+
+@pytest.mark.parametrize("kind", ["rest", "ssh", "tool"])
+def test_inner_json_closing_slash_survives_capture_loading_and_refuses_export(
+    kind: str, tmp_path: Path
+) -> None:
+    body = json.dumps('<a"b:SerialNumber>SYN0001</a"b:SerialNumber>').replace(
+        "</", r"<\/"
+    )
+    record = {
+        "rest": _rest("/e", body),
+        "ssh": _ssh("read", body),
+        "tool": {"kind": "tool", "result": {"text": body}},
+    }[kind]
+    raw = tmp_path / "capture.jsonl"
+    raw.write_text(json.dumps(record) + "\n", encoding="utf-8")
+    records = export.load_raw([raw])
+    assert {k: v for k, v in records[0].items() if k != "_src"} == record
+    with pytest.raises(export.LeakError, match="private value.*nothing written"):
+        export.tokenize_records(records)
+
+
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
 @pytest.mark.parametrize("prefix", UNSCRUBBED_PREFIXES)
 @pytest.mark.parametrize("element", ["SerialNumber", "MACAddress"])
@@ -1023,12 +1157,13 @@ def test_cdata_behind_a_malformed_closing_name_is_a_leak(
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
 @pytest.mark.parametrize("prefix", UNSCRUBBED_PREFIXES)
+@pytest.mark.parametrize("closing", ["</", r"<\/"])
 def test_kept_keyword_before_a_malformed_closing_name_is_not_a_leak(
-    prefix: str, encode: Any
+    prefix: str, encode: Any, closing: str
 ) -> None:
     """A keyword after a well-formed opening tag is kept whatever closes it (#1660)."""
     tok = export.Tokenizer({}, set())
-    assert tok.leaks(encode(f"<SerialNumber>none</{prefix}SerialNumber>")) == []
+    assert tok.leaks(encode(f"<SerialNumber>none{closing}{prefix}SerialNumber>")) == []
 
 
 @pytest.mark.parametrize("encode", [str, json.dumps], ids=["raw", "json"])
@@ -1721,11 +1856,14 @@ def test_many_unclosed_openings_do_not_backtrack(element: str) -> None:
 @pytest.mark.parametrize(
     "segment", ["a:", '!"=:', "a b\t:", "SerialNumberx:", "IPAddress_:"]
 )
-def test_closing_tag_with_many_prefixes_does_not_backtrack(segment: str) -> None:
+@pytest.mark.parametrize("closing", ["</", r"<\/", "<" + "\\" * 5_000 + "/"])
+def test_closing_tag_with_many_prefixes_does_not_backtrack(
+    segment: str, closing: str
+) -> None:
     """Each closing prefix segment ends at its first `:`, so a closing tag of many
     segments that never names the element costs about what the scrub rules' prefix
     does (#1660). With a segment that could take a `:`, this body never finished."""
-    body = ("&gt;zz</" + segment * 5_000 + "x>") * 5
+    body = ("&gt;zz" + closing + segment * 5_000 + "x>") * 5
     rules = [
         rule for rule in export.ALWAYS_LEAKS if export._CLOSING_PREFIX in rule.pattern
     ]
@@ -1735,6 +1873,29 @@ def test_closing_tag_with_many_prefixes_does_not_backtrack(segment: str) -> None
             rule.pattern.replace(export._CLOSING_PREFIX, export._NS_PREFIX)
         )
         assert _cost_ratio(rule, opening, "", body) < 10
+
+
+@pytest.mark.parametrize(
+    ("segment", "count"),
+    [
+        (r"a\u003a", 5_000),
+        ("a&#58;", 5_000),
+        ("a&#x3A;", 5_000),
+        ("\\" * 5_000 + "u003a", 20),
+    ],
+)
+def test_encoded_closing_prefix_scans_each_segment_once(
+    segment: str, count: int
+) -> None:
+    """An encoded separator or a long backslash run costs a single linear scan."""
+    body = ("&gt;zz</" + segment * count + "x>") * 5
+    rules = [
+        rule for rule in export.ALWAYS_LEAKS if export._CLOSING_PREFIX in rule.pattern
+    ]
+    assert len(rules) == 6
+    for rule in rules:
+        scan = re.compile(rule.pattern.replace(export._CLOSING_PREFIX, r"[^<>]*+"))
+        assert _cost_ratio(rule, scan, "", body) < 10
 
 
 def test_mac_leak_check_after_many_backslash_u_does_not_backtrack() -> None:
@@ -2324,8 +2485,9 @@ FREE_TEXT_VALUES = [
     # A longer separated run is zeroed whole: a hyphenated WWPN, a dotted GUID.
     ("50-05-07-68-0a-1b-2c-3d", "00-00-00-00-00-00-00-00"),
     ("0002.c903.000a.1b2c", "0000.0000.0000.0000"),
+    ("198.51.100.207", export.PLACEHOLDER_IP),
 ]
-#: The free-text MAC and WWN scrub rules and backstops, found by their starts.
+#: The free-text MAC, WWN and IPv4 scrub rules and backstops, found by their starts.
 FREE_TEXT_RULES = [
     rule
     for rule in [rule for rule, _ in export.IDENTIFIER_RULES]
@@ -2360,7 +2522,9 @@ def test_free_text_value_after_a_json_escape_is_scrubbed(
     ("before", "after"), [("g", ""), ("1", ""), ("", "1"), ("", "g")]
 )
 @pytest.mark.parametrize("escaped", ESCAPED_CHARACTERS, ids=ascii)
-@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES[:4]])
+@pytest.mark.parametrize(
+    "value", [value for value, _ in FREE_TEXT_VALUES[:4] + FREE_TEXT_VALUES[-1:]]
+)
 def test_free_text_value_inside_a_longer_run_is_not_matched(
     encode: Any, escaped: str, value: str, before: str, after: str
 ) -> None:
@@ -2374,7 +2538,9 @@ def test_free_text_value_inside_a_longer_run_is_not_matched(
 #: A colon MAC is left out: after the letter, the IPv6 rule replaces it as an address.
 #: So is a longer separated run: after its first group, joined to the letter, the scrub
 #: rules zero the rest as a run of their own.
-@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES[1:4]])
+@pytest.mark.parametrize(
+    "value", [value for value, _ in FREE_TEXT_VALUES[1:4] + FREE_TEXT_VALUES[-1:]]
+)
 def test_value_after_an_escaped_backslash_and_n_fails_closed(value: str) -> None:
     """`\\\\n` is a backslash and the letter `n`, so the scrub rules read the value as
     joined to a word and keep it; the backstops read the `\\n` as an escape and report
@@ -2472,15 +2638,33 @@ def test_free_text_rules_after_a_long_backslash_run_do_not_backtrack() -> None:
     escapes = "\\" * 20_000 + "u00e9 \\n\\t\\f\\b0a1b \\\\\\b0:1B "
     runs = "0a-" * 20_000 + "0ag " + "0a1b." * 20_000 + "0a1bg "
     zeroed = "00-" * 20_000 + "00 " + "0000." * 20_000 + "0000 "
-    body = (escapes + runs + zeroed) * 5
-    assert len(FREE_TEXT_RULES) == 8
-    for rule in FREE_TEXT_RULES:
+    body = (escapes + r"\u" + runs + r"\u" + zeroed) * 5
+    assert len(FREE_TEXT_RULES) == 10
+    for rule in [
+        *FREE_TEXT_RULES,
+        export._RAW_IDENTIFIER_LEAK,
+        export._JSON_RAW_IDENTIFIER_LEAK,
+    ]:
         pattern = rule.pattern.replace(export._SCRUB_START, r"(?<![\w\\])")
         pattern = pattern.replace(export._LEAK_START, r"(?<![\w\\])")
+        pattern = pattern.replace(r"(?<=\\u)", "(?!)")
+        pattern = pattern.replace(r"(?<!\\)(?:\\\\)++u", "(?!)")
         for _, _, zeroed in export._MAC_FORMS:
             pattern = pattern.replace(f"(?!{zeroed})", "")
         baseline = re.compile(pattern, rule.flags)
         assert _cost_ratio(rule, baseline, lambda match: match.group(0), body) < 10
+
+
+@pytest.mark.parametrize(
+    "escape", [r"\n", r"\r", r"\t", r"\f", r"\b", r"\u0001", r"\u00e9"]
+)
+def test_ipv4_after_a_written_escape_is_scrubbed(escape: str) -> None:
+    """#1683: raw captures may already hold the escape's written representation."""
+    tok = export.Tokenizer({}, set())
+    body = f"hdr{escape}198.51.100.7 x"
+    assert tok.tokenize(body) == f"hdr{escape}{export.PLACEHOLDER_IP} x"
+    assert tok.leaks(body) == ["198.51.100.7"]
+    assert tok.leaks(f"hdr{escape}{export.PLACEHOLDER_IP} x") == []
 
 
 def test_tool_record_the_rules_turn_into_invalid_json_fails_closed(
@@ -2653,6 +2837,9 @@ def test_built_in_accounts_are_not_names() -> None:
         ("LogicalSerialNum", "<REDACTED-SERIAL>"),
         ("cluster_serial_num", "<REDACTED-SERIAL>"),
         ("peer_collective_serial_num", "<REDACTED-SERIAL>"),
+        ("frame_serial", "<REDACTED-SERIAL>"),
+        ("Chassis.Serial-ID", "<REDACTED-SERIAL>"),
+        ("SERIALNUMBERBACKUP", "<REDACTED-SERIAL>"),
     ],
 )
 def test_tool_output_identifiers_are_redacted(key: str, token: str) -> None:
@@ -2687,6 +2874,9 @@ def test_tool_output_identifiers_are_redacted(key: str, token: str) -> None:
         "logical_serial_num",
         "ClusterSerialNum",
         "PEER_COLLECTIVE_SERIAL_NUM",
+        "frame_serial",
+        "Chassis.Serial-ID",
+        "SERIALNUMBERBACKUP",
     ],
 )
 @pytest.mark.parametrize(
@@ -2714,6 +2904,23 @@ def test_tool_output_serial_keeps_only_keywords(
     out = corpus[-1]["record"]["data"]
     assert out[key] == expected
     assert out["nested"][key] == {"@attrs": {"ksv": "V1"}, "#text": expected}
+
+
+@pytest.mark.parametrize("key", ["SerialNumber", "backup_serial"])
+def test_tool_output_serial_attributes_redact_identifier_keys(key: str) -> None:
+    tool = {
+        "kind": "tool",
+        "step": "t",
+        "tool": "x",
+        "data": {
+            "frame_serial": {"@attrs": {"ksv": "V1", key: "x9q"}, "#text": "auto"}
+        },
+    }
+    corpus = export.tokenize_records(_records(tool))
+    assert corpus[-1]["record"]["data"]["frame_serial"] == {
+        "@attrs": {"ksv": "V1", key: "<REDACTED-SERIAL>"},
+        "#text": "auto",
+    }
 
 
 def test_long_uppercase_hex_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2945,3 +3152,277 @@ def test_ipv6_backstop_after_colon_delimited_labels(body: str) -> None:
     if body == "IPv6:::1":
         record = export._tokenize_record(tok, {**_ssh("lshmc", body), "_src": "test"})
         assert tok.leaks(json.dumps([record]))
+
+
+@pytest.mark.parametrize("slashes", [1, 2, 3, 4])
+@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES[1:4]])
+def test_literal_u_before_a_free_text_identifier_is_reported(
+    slashes: int, value: str
+) -> None:
+    """#1684: raw backslash-u is not necessarily a Unicode escape."""
+    tok = export.Tokenizer({}, set())
+    body = "hdr " + "\\" * slashes + "u" + value + " x"
+    with pytest.raises(export.LeakError, match="nothing written"):
+        tok.tokenize(body)
+
+
+@pytest.mark.parametrize("kind", ["ssh", "rest", "tool"])
+@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES[1:4]])
+def test_literal_u_identifier_refuses_export(kind: str, value: str) -> None:
+    body = "hdr \\u" + value + " x"
+    record = {
+        "ssh": _ssh("lshwres", body),
+        "rest": _rest("/e", body),
+        "tool": {"kind": "tool", "step": "t", "data": {"raw": body}},
+    }[kind]
+    with pytest.raises(export.LeakError, match="nothing written"):
+        export.tokenize_records(_records(record))
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "<other>{}</MACAddress>",
+        "<MACAddress {}",
+        "<MACAddress><![CDATA[{}]]></MACAddress>",
+        "<MACAddress><child/>{}</MACAddress>",
+        "<MACAddress/> {}</MACAddress>",
+        '<MACAddress note="{}">ALL</MACAddress>',
+    ],
+)
+@pytest.mark.parametrize(
+    "value", ["0001000000000000", "0a-1b-2c-3d-4e-5f", "0a1b.2c3d.4e5f"]
+)
+def test_literal_u_identifier_outside_mac_scrub_text_refuses(
+    template: str, value: str
+) -> None:
+    """Only text matched by the actual MAC scrubber can use its escape exemptions."""
+    body = template.format("\\u" + value)
+    with pytest.raises(export.LeakError, match="nothing written"):
+        export.Tokenizer({}, set()).tokenize(body)
+    with pytest.raises(export.LeakError, match="nothing written"):
+        export.tokenize_records(_records(_rest("/e", body)))
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "<MACAddress>{}",
+        "<MACAddress>{}</MA",
+        "<MACAddress>{}</other>",
+        "<MACAddress>{}</?MACAddress>",
+    ],
+)
+@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES[1:4]])
+def test_literal_u_mac_scrub_text_stays_safe_without_a_valid_closing_tag(
+    template: str, value: str
+) -> None:
+    body = template.format("\\u" + value)
+    tok = export.Tokenizer({}, set())
+    out = tok.tokenize(body)
+    assert out is not None
+    assert value not in out
+    assert tok.leaks(out) == []
+    corpus = export.tokenize_records(_records(_rest("/e", body)))
+    assert corpus[-1]["body"] == out
+
+
+@pytest.mark.parametrize("layout", ["streams", "records", "nested"])
+@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES[1:4]])
+def test_mac_value_exemption_does_not_cross_capture_strings(
+    layout: str, value: str
+) -> None:
+    opener = _ssh("lshmc", "<MACAddress>ALL")
+    survivor = "hdr \\u" + value + " x"
+    if layout == "streams":
+        opener["stderr"] = survivor
+        records = [opener]
+    else:
+        if layout == "nested":
+            survivor = json.dumps({"raw": survivor})
+        records = [opener, _ssh("lshmc", survivor)]
+    with pytest.raises(export.LeakError, match="nothing written"):
+        export.tokenize_records(_records(*records))
+
+
+@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES[1:4]])
+def test_raw_guard_uses_the_mac_scrubbers_actual_json_representation(
+    value: str,
+) -> None:
+    record = {
+        "kind": "tool",
+        "step": "t",
+        "data": {"raw": "<éMACAddress>ALL \\u" + value + " x"},
+    }
+    with pytest.raises(export.LeakError, match="nothing written"):
+        export.tokenize_records(_records(record))
+
+
+@pytest.mark.parametrize("slot", ["firmware", "source", "key", "corpus"])
+@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES[1:4]])
+def test_derived_output_raw_identifier_is_refused_without_mac_exemptions(
+    tmp_path: Path, slot: str, value: str
+) -> None:
+    candidate = "<MACAddress>ALL \\u" + value + " x"
+    data = {
+        "firmware": {"firmware": candidate},
+        "source": {"sources": [candidate]},
+        "key": {candidate: "safe"},
+        "corpus": {"types": {"Example": [candidate]}},
+    }[slot]
+    out = tmp_path / "derived.json"
+    with pytest.raises(export.LeakError, match="nothing written"):
+        export._write_scanned(data, out, ())
+    assert not out.exists()
+
+
+@pytest.mark.parametrize("before", ["\x0b", "é"])
+def test_derived_output_preserves_actual_unicode_scalars(
+    tmp_path: Path, before: str
+) -> None:
+    data = {"firmware": before, "sources": [f"<MACAddress>{before}000000000000"]}
+    out = tmp_path / "derived.json"
+    export._write_scanned(data, out, ())
+    assert json.loads(out.read_text()) == data
+
+
+def test_derived_raw_guard_checks_late_values_in_large_nested_data(
+    tmp_path: Path,
+) -> None:
+    data: Any = {
+        "sources": ["<MACAddress>ALL", *(["safe"] * 10_000), r"\u0123456789abcdef"]
+    }
+    for _ in range(200):
+        data = [data]
+    out = tmp_path / "derived.json"
+    with pytest.raises(export.LeakError, match="nothing written"):
+        export._write_scanned(data, out, ())
+    assert not out.exists()
+
+
+@pytest.mark.parametrize("path", ["tool", "direct"])
+@pytest.mark.parametrize("slashes", [0, 1, 2, 3])
+@pytest.mark.parametrize(
+    "value", ["é" + "0" * 12, "\x0b" + "0" * 12, "\x01" + "0" * 12, "é.0000.0000"]
+)
+def test_known_json_preserves_actual_unicode_before_hex_suffix(
+    path: str, slashes: int, value: str
+) -> None:
+    value = "\\" * slashes + value
+    if path == "direct":
+        text = json.dumps({"raw": value})
+        out = export.Tokenizer({}, set()).tokenize(text, json_encoded=True)
+        assert out == text
+        assert json.loads(out) == {"raw": value}
+    else:
+        record = {"kind": "tool", "step": "t", "data": {"raw": value}}
+        corpus = export.tokenize_records(_records(record))
+        assert corpus[-1]["record"]["data"]["raw"] == value
+
+
+@pytest.mark.parametrize("kind", ["ssh", "rest", "tool"])
+@pytest.mark.parametrize("slashes", [0, 1, 2, 3])
+@pytest.mark.parametrize(
+    "value",
+    [
+        r"\u00e9" + "0" * 12,
+        r"\u000b" + "0" * 12,
+        r"\u0001" + "0" * 12,
+        r"\u00e9.0000.0000",
+    ],
+)
+def test_literal_u_unicode_lookalikes_still_refuse(
+    kind: str, slashes: int, value: str
+) -> None:
+    value = "\\" * slashes + value
+    record = {
+        "ssh": _ssh("lshmc", value),
+        "rest": _rest("/e", value),
+        "tool": {"kind": "tool", "step": "t", "data": {"raw": value}},
+    }[kind]
+    with pytest.raises(export.LeakError, match="nothing written"):
+        export.tokenize_records(_records(record))
+
+
+@pytest.mark.parametrize(
+    ("kind", "field"),
+    [
+        ("rest", "content_type"),
+        ("rest", "method"),
+        ("rest", "accept"),
+        ("rest", "status"),
+        ("ssh", "exit_status"),
+        ("tool", "step"),
+        ("rest", "_src"),
+        ("tool", "kind"),
+    ],
+)
+@pytest.mark.parametrize("layout", ["value", "nested", "key"])
+@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES[1:4]])
+def test_retained_metadata_raw_identifiers_refuse(
+    kind: str, field: str, layout: str, value: str
+) -> None:
+    candidate = "<MACAddress>ALL \\u" + value + " x"
+    metadata: Any = {
+        "value": candidate,
+        "nested": ["safe", {"last": candidate}],
+        "key": {candidate: "safe"},
+    }[layout]
+    record = {
+        "rest": _rest("/e", "safe"),
+        "ssh": _ssh("lshmc", "safe"),
+        "tool": {"kind": "tool", "data": "safe"},
+    }[kind]
+    record["_src"] = "sample#1"
+    if field == "content_type":
+        record["response_headers"] = {"content-type": metadata}
+    else:
+        record[field] = metadata
+    with pytest.raises(export.LeakError, match="nothing written"):
+        export.tokenize_records([record])
+
+
+@pytest.mark.parametrize("before", ["é", "\x01", "\x0b"])
+def test_retained_metadata_actual_unicode_stays_valid(before: str) -> None:
+    value = before + "0" * 12
+    metadata = {value: [value]}
+    record = {
+        "kind": "rest",
+        "_src": metadata,
+        "step": metadata,
+        "body": "safe",
+        "response_headers": {"content-type": metadata},
+        "accept": metadata,
+    }
+    out = export.tokenize_records([record])[0]
+    for field in ("capture", "step", "content_type", "accept"):
+        assert out[field] == metadata
+    assert json.loads(json.dumps(out)) == out
+
+
+@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES[1:4]])
+def test_actual_response_header_raw_identifier_refuses_cli(
+    tmp_path: Path, value: str
+) -> None:
+    import httpx
+
+    spec = importlib.util.spec_from_file_location(
+        "capture_metadata_probe", MODULE_PATH.parent / "live_test" / "capture.py"
+    )
+    assert spec is not None and spec.loader is not None
+    capture = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(capture)
+
+    candidate = "text/plain; note=\\u" + value
+    record = capture.Capture(tmp_path / "unused", -1)._rest_record(
+        "GET",
+        "/e",
+        {},
+        httpx.Response(200, text="safe", headers={"content-type": candidate}),
+    )
+    assert record["response_headers"]["content-type"] == candidate
+    raw = tmp_path / "capture.jsonl"
+    raw.write_text(json.dumps({"step": "t", **record}) + "\n")
+    out = tmp_path / "out.json"
+    assert export.main(["tokenize", str(raw), "--out", str(out)]) == 1
+    assert not out.exists()

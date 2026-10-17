@@ -514,7 +514,7 @@ def test_descendant_holding_output_open_cannot_report_clean(tmp_path, monkeypatc
 def test_candidate_refusals_never_start_hardware(window, condition):
     root, claims, output, _ = window
     if condition == "main":
-        git(root, "switch", "-c", "main")
+        git(root, "switch", "-C", "main")
     elif condition == "detached":
         git(root, "checkout", "--detach")
     elif condition == "dirty":

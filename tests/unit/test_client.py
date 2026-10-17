@@ -8,6 +8,7 @@ import threading
 import traceback
 import warnings
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
@@ -738,7 +739,14 @@ def test_tls_audit_record_names_where_the_setting_came_from(
     }
     config_kwargs.update(kwargs)
     caught = _capture_audit()
-    HMCClient(HMCConfig(**config_kwargs))
+    # Field-default cases deliberately exercise ADR 0224's startup warning too.
+    expectation = (
+        pytest.warns(HMCVerifySSLDefaultWarning)
+        if expected_source == "field-default"
+        else nullcontext()
+    )
+    with expectation:
+        HMCClient(HMCConfig(**config_kwargs))
 
     assert len(caught) == 1
     assert caught[0]["source"] == expected_source
@@ -792,16 +800,23 @@ def test_tls_audit_record_ignores_the_environment_for_an_isolated_config(
     monkeypatch.setenv("HMC_VERIFY_SSL", "true")
     caught = _capture_audit()
 
-    HMCClient(
-        HMCConfig.from_mapping(
-            {
-                "host": "hmc.test",
-                "user": "hscroot",
-                "password": "abc123",  # pragma: allowlist secret
-                **kwargs,
-            }
-        )
+    # Field-default cases deliberately exercise ADR 0224's startup warning too.
+    expectation = (
+        pytest.warns(HMCVerifySSLDefaultWarning)
+        if expected_source == "field-default"
+        else nullcontext()
     )
+    with expectation:
+        HMCClient(
+            HMCConfig.from_mapping(
+                {
+                    "host": "hmc.test",
+                    "user": "hscroot",
+                    "password": "abc123",  # pragma: allowlist secret
+                    **kwargs,
+                }
+            )
+        )
 
     assert len(caught) == 1
     assert caught[0]["source"] == expected_source
