@@ -1033,6 +1033,21 @@ def redact_identifier_keys(value: Any) -> Any:
     return value
 
 
+def _has_raw_identifier(data: Any) -> bool:
+    """Check actual unsanitized strings and keys without scrub-span exemptions."""
+    pending = [data]
+    while pending:
+        value = pending.pop()
+        if isinstance(value, dict):
+            pending.extend(value)
+            pending.extend(value.values())
+        elif isinstance(value, (list, tuple)):
+            pending.extend(value)
+        elif isinstance(value, str) and _RAW_IDENTIFIER_LEAK.search(value):
+            return True
+    return False
+
+
 def _tokenize_record(tok: Tokenizer, record: dict[str, Any]) -> dict[str, Any]:
     kind = record.get("kind")
     out: dict[str, Any] = {
@@ -1044,19 +1059,27 @@ def _tokenize_record(tok: Tokenizer, record: dict[str, Any]) -> dict[str, Any]:
         headers = {
             k.lower(): v for k, v in (record.get("response_headers") or {}).items()
         }
+        # Reserve the scrubbed field's position to preserve serialized output order.
         out.update(
             method=record.get("method"),
-            path=tok.tokenize(record.get("path")),
+            path=None,
             accept=record.get("accept"),
             status=record.get("status"),
             content_type=headers.get("content-type"),
+        )
+    elif kind == "ssh":
+        out.update(command=None, exit_status=record.get("exit_status"))
+    if _has_raw_identifier(out):
+        raise LeakError("a raw identifier is in capture metadata; nothing written")
+    if kind == "rest":
+        out.update(
+            path=tok.tokenize(record.get("path")),
             body=tok.tokenize(record.get("body")),
             exception=tok.tokenize(record.get("exception")),
         )
     elif kind == "ssh":
         out.update(
             command=tok.tokenize(record.get("command")),
-            exit_status=record.get("exit_status"),
             stdout=tok.tokenize(record.get("stdout")),
             stderr=tok.tokenize(record.get("stderr")),
             exception=tok.tokenize(record.get("exception")),
@@ -1505,19 +1528,8 @@ def _write_scanned(data: Any, out: Path, private: Sequence[str]) -> None:
         raise LeakError(
             f"{len(leaks)} private value(s) in the derived output; nothing written"
         )
-    # Derived metadata has no MAC-scrub ownership. Check each supplied string and key.
-    pending = [data]
-    while pending:
-        value = pending.pop()
-        if isinstance(value, dict):
-            pending.extend(value)
-            pending.extend(value.values())
-        elif isinstance(value, (list, tuple)):
-            pending.extend(value)
-        elif isinstance(value, str) and _RAW_IDENTIFIER_LEAK.search(value):
-            raise LeakError(
-                "a raw identifier is in the derived output; nothing written"
-            )
+    if _has_raw_identifier(data):
+        raise LeakError("a raw identifier is in the derived output; nothing written")
     out.write_text(text, encoding="utf-8")
 
 

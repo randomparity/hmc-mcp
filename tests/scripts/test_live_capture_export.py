@@ -3342,3 +3342,87 @@ def test_literal_u_unicode_lookalikes_still_refuse(
     }[kind]
     with pytest.raises(export.LeakError, match="nothing written"):
         export.tokenize_records(_records(record))
+
+
+@pytest.mark.parametrize(
+    ("kind", "field"),
+    [
+        ("rest", "content_type"),
+        ("rest", "method"),
+        ("rest", "accept"),
+        ("rest", "status"),
+        ("ssh", "exit_status"),
+        ("tool", "step"),
+        ("rest", "_src"),
+        ("tool", "kind"),
+    ],
+)
+@pytest.mark.parametrize("layout", ["value", "nested", "key"])
+@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES[1:4]])
+def test_retained_metadata_raw_identifiers_refuse(
+    kind: str, field: str, layout: str, value: str
+) -> None:
+    candidate = "<MACAddress>ALL \\u" + value + " x"
+    metadata: Any = {
+        "value": candidate,
+        "nested": ["safe", {"last": candidate}],
+        "key": {candidate: "safe"},
+    }[layout]
+    record = {
+        "rest": _rest("/e", "safe"),
+        "ssh": _ssh("lshmc", "safe"),
+        "tool": {"kind": "tool", "data": "safe"},
+    }[kind]
+    record["_src"] = "sample#1"
+    if field == "content_type":
+        record["response_headers"] = {"content-type": metadata}
+    else:
+        record[field] = metadata
+    with pytest.raises(export.LeakError, match="nothing written"):
+        export.tokenize_records([record])
+
+
+@pytest.mark.parametrize("before", ["é", "\x01", "\x0b"])
+def test_retained_metadata_actual_unicode_stays_valid(before: str) -> None:
+    value = before + "0" * 12
+    metadata = {value: [value]}
+    record = {
+        "kind": "rest",
+        "_src": metadata,
+        "step": metadata,
+        "body": "safe",
+        "response_headers": {"content-type": metadata},
+        "accept": metadata,
+    }
+    out = export.tokenize_records([record])[0]
+    for field in ("capture", "step", "content_type", "accept"):
+        assert out[field] == metadata
+    assert json.loads(json.dumps(out)) == out
+
+
+@pytest.mark.parametrize("value", [value for value, _ in FREE_TEXT_VALUES[1:4]])
+def test_actual_response_header_raw_identifier_refuses_cli(
+    tmp_path: Path, value: str
+) -> None:
+    import httpx
+
+    spec = importlib.util.spec_from_file_location(
+        "capture_metadata_probe", MODULE_PATH.parent / "live_test" / "capture.py"
+    )
+    assert spec is not None and spec.loader is not None
+    capture = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(capture)
+
+    candidate = "text/plain; note=\\u" + value
+    record = capture.Capture(tmp_path / "unused", -1)._rest_record(
+        "GET",
+        "/e",
+        {},
+        httpx.Response(200, text="safe", headers={"content-type": candidate}),
+    )
+    assert record["response_headers"]["content-type"] == candidate
+    raw = tmp_path / "capture.jsonl"
+    raw.write_text(json.dumps({"step": "t", **record}) + "\n")
+    out = tmp_path / "out.json"
+    assert export.main(["tokenize", str(raw), "--out", str(out)]) == 1
+    assert not out.exists()
