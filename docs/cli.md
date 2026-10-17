@@ -9,6 +9,21 @@ used over SSH; this guide covers the `hmcpctl` application.
 The [bare-CEC LPAR recipe](recipes/bare-cec-lpar.md) walks a dedicated-I/O partition from
 create to delete.
 
+## Terminal text and machine streams
+
+Human terminal fields display nonprintable characters as visible escapes: an ESC becomes
+`\x1b`, a field newline becomes `\n`, and a bidi override becomes `\u202e`.
+Printable Unicode and literal brackets remain unchanged. Application layout and colors remain;
+stdout and stderr use their own actual terminal state, independently of color preferences.
+Explicit human tables use the same field encoding even when redirected.
+
+Raw REST responses use this protection on a terminal; redirected raw responses retain their
+original text and existing trailing newline. Captured console bytes remain unchanged. JSON
+escapes terminal controls through JSON encoding, so decoded values are unchanged. Explicit
+TSV retains its documented reversible delimiter encoding even on a terminal; choose a table
+for human display. Raw/capture files and explicit machine streams can contain controls, so
+consumers displaying those bytes later must apply their own display policy (ADR 0229).
+
 ## CLI usage
 
 ```bash
@@ -21,7 +36,7 @@ hmcpctl report utilization --csv fleet.csv   # CPU/memory/disk/adapter allocatio
 hmcpctl report utilization --html fleet.html # the same survey as one offline HTML page
 hmcpctl lpars list                   # all LPARs
 hmcpctl lpars list --system <uuid>   # LPARs of one system
-hmcpctl lpars show mylpar --system <uuid>  # scoped name or UUID (JSON)
+hmcpctl lpars show mylpar --system <uuid> --json  # scoped name or UUID
 hmcpctl lpars state mylpar --system <uuid> # just "running", "not activated", ...
 hmcpctl lpars summary mylpar         # one-call summary: state, RMC, memory, CPU, OS, adapters
 hmcpctl lpars get-minimum-affinity-policy mylpar sys1 --json
@@ -45,7 +60,8 @@ hmcpctl jobs show <job-id>
 hmcpctl raw get /rest/api/uom/VirtualSwitch   # escape hatch, prints XML
 ```
 
-Add `--json` to list commands for machine-readable output. Composite workflows
+Add `--json` to inventory commands for their full JSON result. The inventory
+commands below default to lossless TSV when redirected and tables on a terminal. Composite workflows
 such as `hmcpctl lpars decommission` and `hmcpctl lpars provision` return a
 stable envelope with `workflow_completed`, ordered `steps`, `warnings`, and the
 blast-radius or provisioning summary, which is friendlier for automation than
@@ -152,6 +168,122 @@ hmcpctl lpars power-on web01
 > **Cluster / SSP Logical Unit** model are wrapped. Once a disk is mapped,
 > partitioning it into filesystems is the guest OS's job (NIM, cloud-init,
 > `mkfs`), not the HMC's.
+
+## Inventory output and migration
+
+These commands accept `--format table|tsv|json` and the JSON alias `--json`/`-j`:
+`systems list`, `show`, `summary`, `health`, `capacity`, `find-placement`;
+`lpars list`, `show`, `summary`, `refcodes`; `vios list`; and
+`storage list-vgs`, `get-media-repo`, `list-optical-media`, `list-mappings`.
+Selection defaults to `table` when stdout is a terminal, `tsv` otherwise.
+An explicit format wins. `--json --format json` agrees; combining `--json` or
+`-j` with `table` or `tsv` fails with exit 2 before connecting. As with other
+single-value CLI options, repeating `--format` uses its last value.
+
+```bash
+hmcpctl lpars list > lpars.tsv                 # full, unwrapped identifiers
+hmcpctl lpars list --format table             # explicitly formatted for people
+hmcpctl lpars show mylpar --json > lpar.json   # full original document
+hmcpctl storage list-mappings vios1 -j > mappings.json
+```
+
+`lpars show --no-json` has been removed: it previously had no effect. Replace it
+with `--format table` or `--format tsv`. Scripts that relied on implicit JSON
+from `lpars show` or `systems show` must add `--json`. Scripts scraping Rich
+borders should consume TSV or explicitly request `--format table`; tables can
+still fold identifiers at narrow widths. The JSON mode keeps existing documents,
+typed projections, and `entries`/`unreadable_systems` envelopes; it does not add a
+second compact JSON schema. Existing JSON capture recipes already select `--json`.
+
+TSV uses the following headers in this order, with literal tabs separating columns:
+
+| Command | Columns |
+| --- | --- |
+| `systems list` | Name, UUID, State, MTMS, IP Address |
+| `systems capacity` | System, UUID, Total Mem (MiB), Assigned Mem (MiB), Free Mem (MiB), Total Procs, Assigned Procs, Free Procs, Running LPARs, Total LPARs |
+| `systems find-placement` | System, UUID, Free Mem (MiB), Free Procs, Running LPARs |
+| `systems health` | Category, Name, UUID, State, RMC, System, System UUID |
+| `lpars list` | System, System UUID, Name, ID, UUID, State, Type, OS, RMC |
+| `vios list` | System, System UUID, Name, ID, UUID, State, Version |
+| `lpars refcodes` | Partition, Timestamp, Code, Definition |
+| `storage list-vgs` | Name, UUID, Free (GiB), Capacity (GiB), Diagnostic |
+| `storage list-optical-media` | Media Name, Size (MiB) |
+| `storage list-mappings` | Mapping ID, Client LPAR, Backing Storage, Type |
+| `systems show`, `systems summary`, `lpars show`, `lpars summary`, `storage get-media-repo` | Field, Value |
+
+Single-object commands emit one row for each top-level field, in document order.
+Nested values use compact JSON within the cell; decode TSV escaping before parsing
+that JSON. `Resource.RepositorySize` in `get-media-repo` is measured in GiB;
+summary field names identify memory units as MiB. Tables show the same projection.
+
+TSV always emits its header, including for zero results, and terminates each record
+with LF. It emits no titles or presentation styling, and does not wrap with terminal
+width. Empty strings are empty cells; absent or null values are the exact token
+`\N`. Literal backslashes are doubled, then tab, LF and CR become `\t`, `\n`
+and `\r`. Thus a literal `\N` value is encoded as `\\N`, distinct from null.
+Decode `\N` as null first, then scan other cells once left-to-right, replacing
+`\\`, `\t`, `\n`, `\r` with their single-character values. Do not repeatedly
+apply replacements: a literal backslash followed by `n` is not a newline.
+Zero and false are values, not missing; Unicode and brackets are retained.
+
+Empty collections exit 0, with an informative notice on stderr for table/TSV;
+JSON retains its original empty collection or envelope. Missing named systems or
+LPARs still exit 1. Partial fleet reads also exit 0 and warn on stderr. Retain
+stderr with TSV to distinguish empty successful inventory from skipped systems;
+JSON additionally retains `unreadable_systems`. Health and summary warnings go to
+stderr even when selecting JSON.
+
+Unscoped LPAR/VIOS results add `ManagedSystem: {"UUID": ..., "SystemName": ...}`
+to each entry. This metadata comes from the parent inventory already fetched,
+without an extra request per row, and does not alter `Resource`. State filtering
+retains it. Scoped listings keep their prior JSON entries; their parent columns
+are missing when the entry lacks this metadata. `systems health` uses categories
+`systems`, `vios`, `lpars`; system rows have missing parent/RMC cells.
+
+`lpars state` remains one scalar state line. Refcode JSON retains raw code and
+definition data; its table path keeps terminal sanitation. Console capture and
+raw REST streams keep their existing byte-stream contracts. Storage mutations use the result convention below; decommission output is unchanged.
+
+## Storage mutation output migration
+
+The thirteen mutations in `storage` (`create-vg`, `create-disk`, `delete-disk`,
+`attach-disk`, `map`, `create-media-repo`, `create-media`, `delete-media-repo`,
+`delete-media`, `mount-optical-media`, `unmount-optical-media`, `detach-mapping`,
+`upload-iso`) use concise results: tables on a terminal, lossless `Field`/`Value`
+TSV when redirected, or explicit `--format table|tsv|json`. `--json/-j` selects
+JSON; conflicting format choices fail before contacting the HMC.
+
+Results identify the operation, target and provided parent scope. Most storage
+operations discard HTTP completion status, so `request_succeeded` means the
+operation returned without error, **not that final hardware state was verified**.
+This includes accepted requests and idempotent no-ops; inspect inventory to verify
+final state. A returned job reports `submitted`, `completed`, or `failed` from
+its status, retaining its identifier/status/error. Failed jobs exit nonzero.
+`upload-iso` reports `uploaded` only after its existing repository visibility check.
+`attach-disk` distinguishes validation-only `dry_run` and `incomplete` workflows;
+incomplete attachment remains exit 1 and shows step/error evidence.
+
+Mapping results retain change-location information: a successful request does not
+mean its changes reached a profile. Unmount/detach explicitly retain backing
+storage. Existing confirmations write their prompt to stderr; the confirmation
+options and safety rules are unchanged. Backend exceptions retain stderr and a
+nonzero exit, rather than introducing a new JSON error envelope.
+
+Old implicit raw VG/VIOS documents are no longer printed. Use `--details` for the
+original operation value as one JSON document, including null or scalar returns;
+it conflicts with table/TSV. **Detailed output may contain hardware identifiers.**
+`attach-disk --json` and `upload-iso --json` deliberately retain their established
+full result envelopes and fields (also via `--format json`), which may likewise
+include hardware identifiers. Their human/TSV forms omit successful raw resources.
+
+```bash
+# Earlier: prose followed by a whole VG document. Now: one concise JSON result.
+hmcpctl storage delete-disk vios-a --vg datavg --name disk01 --yes --json > result.json
+# Explicit original result, only when required for diagnosis or an existing reader.
+hmcpctl storage create-disk vios-a --vg datavg --name disk02 --capacity-mib 1024 --yes --details > details.json
+# Preserve the established attach workflow envelope, including partial failures.
+hmcpctl storage attach-disk web01 --vios vios-a --vg datavg --name disk03 --capacity-mib 1024 --yes --json
+```
 
 ## Storage selector migration
 

@@ -196,8 +196,12 @@ hmcpctl storage map "$VIOS" --lpar "$LPAR" --name "$DISK_NAME" --system "$SYSTEM
 hmcpctl storage list-mappings "$VIOS" --lpar "$LPAR" --system "$SYSTEM" --json
 ```
 
-Expected: `add-network` and `storage map` each end with a `CurrentProfileSync is ...` line that
-says whether the new adapter lives only in the current configuration; step 5 depends on it.
+Expected: `add-network` ends with a `CurrentProfileSync is ...` line. `storage map`
+includes the same information in `change_location_summary` and structured `change_location`
+fields. These say whether the new adapter lives only in the current configuration; step 5
+depends on them. Storage mutations now show a concise operation/target/outcome result;
+`request_succeeded` leaves final state unverified, so retain the inventory checks below.
+See [storage output migration](../cli.md#storage-mutation-output-migration) for JSON and details.
 `adapters list` shows the new network adapter on `VLAN_ID`. `--capacity-mib` must be
 a positive multiple of 1024; the CLI converts it to the whole GiB the HMC takes. The second
 `list-vgs` shows the new disk in `VG`. `storage map` creates its own vSCSI client and server
@@ -242,8 +246,8 @@ before retrying` (V10R3 M1060, #1085). One `power-on --partition-profile` follow
 
 Expected: `upload-iso` reports `uploaded` with the size and the `source_sha256` it computed from the download. It refuses a
 `MEDIA_NAME` that already exists in the repository. `list-optical-media` lists `MEDIA_NAME`; its
-`size_mib` may be `null`. `mount-optical-media` prints the new optical mapping and creates
-another vSCSI adapter pair for it. The last `list-mappings` shows the disk mapping from step 3
+`size_mib` may be `null`. `mount-optical-media` reports the media target, outcome and change
+location; it creates another vSCSI adapter pair for the new optical mapping. The last `list-mappings` shows the disk mapping from step 3
 and the new optical mapping, and nothing else changed.
 
 ## 5. Boot from the ISO and observe

@@ -6,6 +6,9 @@ Capture one managed system before considering a later change. Every HMC command 
 
 ## 1. Prepare a protected local capture directory
 
+Inventory captures explicitly select `--json`: redirected inventory now defaults to
+TSV. Keep these flags when copying the recipe; see [output formats](../cli.md#inventory-output-and-migration).
+
 ```bash
 export HMC_PROFILE=operator-profile
 export SYSTEM_NAME=example-system
