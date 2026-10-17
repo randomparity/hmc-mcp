@@ -420,6 +420,9 @@ def test_interrupted_outcome_retains_bytes(capture, tmp_path, released, code):
     result = RUNNER.invoke(cli.app, [*COMMAND, "--output", str(target)])
     assert result.exit_code == code
     assert target.read_bytes() == DATA
+    if not released:
+        assert "rmvterm" not in result.stderr
+        assert "check console ownership" in result.stderr
 
 
 @pytest.mark.parametrize("released,code", [(True, 130), (False, 3)])

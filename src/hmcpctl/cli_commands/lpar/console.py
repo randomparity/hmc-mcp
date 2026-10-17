@@ -78,6 +78,11 @@ def _report(capture: ConsoleCapture) -> None:
             "; the HMC reported that another client ended this hold, so no rmvterm "
             "was issued: leave that client's session alone"
         )
+    elif not capture.released and capture.stop_reason == "interrupted":
+        line += (
+            "; check console ownership before another capture; "
+            "do not end another client's session"
+        )
     elif not capture.released:
         line += (
             "; the console may still be held: run 'rmvterm -m "

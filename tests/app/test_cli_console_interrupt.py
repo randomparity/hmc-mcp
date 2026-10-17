@@ -106,3 +106,6 @@ def test_sigint_retains_flushed_file_after_real_release(tmp_path, proven, late):
     assert target.stat().st_mode & 0o777 == 0o600
     assert b"stop reason: interrupted" in stderr
     assert f"released: {str(proven).lower()}".encode() in stderr
+    if not proven:
+        assert b"rmvterm" not in stderr
+        assert b"check console ownership" in stderr

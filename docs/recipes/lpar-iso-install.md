@@ -364,10 +364,13 @@ sequences: read them with `less -R` or a log viewer. The capture holds the parti
 console session while it runs. Press **Ctrl-C (SIGINT)** to stop early, then wait
 for cleanup to finish before opening an interactive console. The flushed partial
 `CONSOLE_LOG` is retained. Exit 130 proves release; exit 3 means release is unproven
-and takes precedence even on interrupt or write failure. Any write failure is
-reported, so the retained file may be incomplete. SIGTERM/SIGHUP are not covered.
+and takes precedence even on interrupt or write failure. Check console ownership
+before retrying an interrupted, unproven release; never end another client's session.
+Any write failure is reported, so the retained file may be incomplete. SIGTERM/SIGHUP
+are not covered.
 Exit status 1 with a message that the console is held means
-another session has it open; the command leaves that session alone. Exit status 3 means
+another session has it open; the command leaves that session alone. For an uninterrupted
+capture, exit status 3 means
 `released: false`: the console may still be held, so run the `rmvterm` command the line names
 on the HMC before another capture. If the line instead says another client ended the hold
 (`ConsoleHoldLostError`), leave that client's session alone. Repeat the capture, each time to a new file, to follow the
