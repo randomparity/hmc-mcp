@@ -6,11 +6,11 @@ from dataclasses import asdict
 from typing import Any
 
 import typer
-from rich.text import Text
 
 from hmcpctl.client.core import HMCClient
 
 from ...documents.storage import StorageKind, validate_virtual_disk
+from ...jobs import job_outcome
 from ...operations.lpar.profile_sync import ChangeLocation
 from ...operations.lpar.provision import (
     AttachDiskResult,
@@ -40,15 +40,43 @@ from ...operations.storage.resources import (
 from ...resource_identity import resolve_vios_uuid
 from ..output import (
     InventoryFormat,
-    VerbatimTable,
-    console,
+    confirm_on_stderr,
     print_inventory,
-    print_json,
     resolve_inventory_format,
     terminal_field,
     usage_error,
 )
 from ..runtime import with_client
+
+
+def _print_mutation(
+    summary: dict[str, Any],
+    raw: Any,
+    selected: InventoryFormat,
+    details: bool,
+    *,
+    location: ChangeLocation | None = None,
+) -> None:
+    summary = {
+        "outcome": "request_succeeded",
+        "verification": "final state not verified",
+        **summary,
+    }
+    if location is not None:
+        summary["change_location"] = asdict(location)
+        summary["change_location_summary"] = location.summary()
+    source = raw.get("resource", raw) if isinstance(raw, dict) else None
+    resource = source.get("Resource") if isinstance(source, dict) else None
+    if isinstance(resource, dict) and resource.get("JobID"):
+        job = job_outcome(summary["operation"], source)
+        summary.update(job_id=job.job_id, job_status=job.status, error=job.error)
+        summary["outcome"] = (
+            "failed" if job.error else ("submitted" if job.timed_out else "completed")
+        )
+        summary["verification"] = "returned job status"
+    print_inventory(raw if details else summary, selected, title="Storage result")
+    if summary["outcome"] == "failed":
+        raise typer.Exit(1)
 
 
 def storage_list_vgs(
@@ -91,14 +119,26 @@ def storage_create_vg(
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
+    as_json: bool = typer.Option(False, "--json", "-j", help="Output JSON"),
+    format: InventoryFormat | None = typer.Option(
+        None,
+        "--format",
+        help="Output format (default: table on TTY, tsv when redirected)",
+    ),
+    details: bool = typer.Option(
+        False,
+        "--details",
+        help="Original result as JSON; may contain hardware identifiers",
+    ),
 ) -> None:
     """Create a Volume Group on a VIOS from physical volumes."""
+    selected = resolve_inventory_format(as_json or details, format)
     pv_list = [p.strip() for p in pvs.split(",") if p.strip()]
     if not pv_list:
         usage_error("Provide at least one physical volume via --pvs")
-    if not yes and not typer.confirm(
-        f"Create VG '{terminal_field(name)}' from {terminal_field(pv_list)} on VIOS "
-        f"{terminal_field(vios)}?"
+    if not yes and not confirm_on_stderr(
+        f"Create VG '{terminal_field(name, err=True)}' from {terminal_field(pv_list, err=True)} on VIOS "
+        f"{terminal_field(vios, err=True)}?",
     ):
         raise typer.Abort()
 
@@ -108,10 +148,19 @@ def storage_create_vg(
         )
     )
 
-    console.print(
-        f"Created Volume Group '{terminal_field(name)}'", style="green", markup=False
+    _print_mutation(
+        {
+            "operation": "create-vg",
+            "target": name,
+            "vios": vios,
+            "system": system,
+            "physical_volumes": pv_list,
+        },
+        vg,
+        selected,
+        details,
+        location=None,
     )
-    print_json(vg)
 
 
 def storage_create_disk(
@@ -127,11 +176,23 @@ def storage_create_disk(
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
+    as_json: bool = typer.Option(False, "--json", "-j", help="Output JSON"),
+    format: InventoryFormat | None = typer.Option(
+        None,
+        "--format",
+        help="Output format (default: table on TTY, tsv when redirected)",
+    ),
+    details: bool = typer.Option(
+        False,
+        "--details",
+        help="Original result as JSON; may contain hardware identifiers",
+    ),
 ) -> None:
     """Create a Virtual Disk (logical volume) in a Volume Group."""
-    if not yes and not typer.confirm(
-        f"Create {terminal_field(capacity_mib)} MiB virtual disk '"
-        f"{terminal_field(name)}' in VG {terminal_field(vg)}?"
+    selected = resolve_inventory_format(as_json or details, format)
+    if not yes and not confirm_on_stderr(
+        f"Create {terminal_field(capacity_mib, err=True)} MiB virtual disk '"
+        f"{terminal_field(name, err=True)}' in VG {terminal_field(vg, err=True)}?",
     ):
         raise typer.Abort()
 
@@ -141,12 +202,20 @@ def storage_create_disk(
         )
     )
 
-    console.print(
-        f"Created virtual disk '{terminal_field(name)}' ({terminal_field(capacity_mib)} MiB)",
-        style="green",
-        markup=False,
+    _print_mutation(
+        {
+            "operation": "create-disk",
+            "target": name,
+            "vios": vios,
+            "system": system,
+            "vg": vg,
+            "capacity_mib": capacity_mib,
+        },
+        disk,
+        selected,
+        details,
+        location=None,
     )
-    print_json(disk)
 
 
 def storage_delete_disk(
@@ -157,13 +226,25 @@ def storage_delete_disk(
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
+    as_json: bool = typer.Option(False, "--json", "-j", help="Output JSON"),
+    format: InventoryFormat | None = typer.Option(
+        None,
+        "--format",
+        help="Output format (default: table on TTY, tsv when redirected)",
+    ),
+    details: bool = typer.Option(
+        False,
+        "--details",
+        help="Original result as JSON; may contain hardware identifiers",
+    ),
 ) -> None:
     """Delete a Virtual Disk from a Volume Group.
 
     Validates that the disk is not mapped to any LPAR before deletion.
     """
-    if not yes and not typer.confirm(
-        f"Delete virtual disk '{terminal_field(name)}' from VG {terminal_field(vg)}?"
+    selected = resolve_inventory_format(as_json or details, format)
+    if not yes and not confirm_on_stderr(
+        f"Delete virtual disk '{terminal_field(name, err=True)}' from VG {terminal_field(vg, err=True)}?",
     ):
         raise typer.Abort()
 
@@ -171,10 +252,19 @@ def storage_delete_disk(
         lambda hmc: delete_virtual_disk(hmc, vios, vg, name, system_name_or_uuid=system)
     )
 
-    console.print(
-        f"Deleted virtual disk '{terminal_field(name)}'", style="green", markup=False
+    _print_mutation(
+        {
+            "operation": "delete-disk",
+            "target": name,
+            "vios": vios,
+            "system": system,
+            "vg": vg,
+        },
+        disk,
+        selected,
+        details,
+        location=None,
     )
-    print_json(disk)
 
 
 def storage_attach_disk(
@@ -188,20 +278,33 @@ def storage_attach_disk(
         ..., "--capacity-mib", help="Disk capacity in MiB"
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without mutation"),
-    as_json: bool = typer.Option(False, "--json", help="Output raw JSON"),
+    as_json: bool = typer.Option(
+        False, "--json", "-j", help="Output JSON (existing result envelope)"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
     ownership_override: bool = typer.Option(False, "--ownership-override"),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
+    format: InventoryFormat | None = typer.Option(
+        None,
+        "--format",
+        help="Output format (default: table on TTY, tsv when redirected)",
+    ),
+    details: bool = typer.Option(
+        False,
+        "--details",
+        help="Original result as JSON; may contain hardware identifiers",
+    ),
 ) -> None:
     """Create a virtual disk and attach it to an existing LPAR."""
+    selected = resolve_inventory_format(as_json or details, format)
     if (
         not dry_run
         and not yes
-        and not typer.confirm(
-            f"Create {terminal_field(capacity_mib)} MiB disk '{terminal_field(name)}"
-            f"' and attach it to LPAR '{terminal_field(lpar)}'?"
+        and not confirm_on_stderr(
+            f"Create {terminal_field(capacity_mib, err=True)} MiB disk '{terminal_field(name, err=True)}"
+            f"' and attach it to LPAR '{terminal_field(lpar, err=True)}'?",
         )
     ):
         raise typer.Abort()
@@ -221,46 +324,52 @@ def storage_attach_disk(
         )
 
     result = with_client(_go)
-    if as_json:
-        print_json(asdict(result))
-        if not dry_run and not result.workflow_completed:
-            raise typer.Exit(1)
-        return
-    if dry_run:
-        console.print("[yellow]DRY RUN — preconditions validated[/yellow]")
-        return
-    if result.workflow_completed:
-        console.print(
-            f"Attached virtual disk '{terminal_field(name)}' to {terminal_field(lpar)}",
-            style="green",
-            markup=False,
+    raw = asdict(result)
+    summary = {
+        "operation": "attach-disk",
+        "target": name,
+        "vios": vios,
+        "vg": vg,
+        "lpar": lpar,
+        "lpar_uuid": result.lpar_uuid,
+        "system": system,
+        "outcome": "dry_run"
+        if result.dry_run
+        else ("request_succeeded" if result.workflow_completed else "incomplete"),
+        "steps": [
+            {
+                "step": step.step,
+                "status": step.status,
+                **(
+                    {"detail": step.result}
+                    if step.status != "ok" and step.result is not None
+                    else {}
+                ),
+            }
+            for step in result.steps
+        ],
+        "warnings": result.warnings,
+    }
+    for step_summary, step in zip(summary["steps"], result.steps, strict=True):
+        resource = (
+            step.result.get("Resource") if isinstance(step.result, dict) else None
         )
-        _print_attach_location(result)
-        return
-
-    console.print("[yellow]Disk attachment incomplete[/yellow]")
-    table = VerbatimTable(title=f"Attach-disk steps: {name}")
-    table.add_column("Step")
-    table.add_column("Status")
-    table.add_column("Detail")
-    for step in result.steps:
-        table.add_row(
-            step.step,
-            step.status,
-            "" if step.result is None else str(step.result),
-        )
-    console.print(table)
-    _print_attach_location(result)
-    raise typer.Exit(1)
-
-
-def _print_attach_location(result: AttachDiskResult) -> None:
-    for warning in result.warnings:
-        console.print(
-            f"Warning: {terminal_field(warning)}", style="yellow", markup=False
-        )
-    if result.change_location is not None:
-        console.print(terminal_field(result.change_location.summary()), markup=False)
+        if isinstance(resource, dict) and resource.get("JobID"):
+            job = job_outcome(step.step, step.result)
+            step_summary.update(
+                job_id=job.job_id, job_status=job.status, error=job.error
+            )
+    if result.dry_run:
+        summary["verification"] = "preconditions validated; no mutation"
+    _print_mutation(
+        summary,
+        raw,
+        selected,
+        details or selected == InventoryFormat.json,
+        location=result.change_location,
+    )
+    if not result.dry_run and not result.workflow_completed:
+        raise typer.Exit(1)
 
 
 def storage_map(
@@ -280,11 +389,23 @@ def storage_map(
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
+    as_json: bool = typer.Option(False, "--json", "-j", help="Output JSON"),
+    format: InventoryFormat | None = typer.Option(
+        None,
+        "--format",
+        help="Output format (default: table on TTY, tsv when redirected)",
+    ),
+    details: bool = typer.Option(
+        False,
+        "--details",
+        help="Original result as JSON; may contain hardware identifiers",
+    ),
 ) -> None:
     """Map backing storage to an LPAR via a vSCSI mapping on a VIOS."""
-    if not yes and not typer.confirm(
-        f"Map {terminal_field(kind)} '{terminal_field(disk)}' on VIOS "
-        f"{terminal_field(vios)} to LPAR '{terminal_field(lpar)}'?"
+    selected = resolve_inventory_format(as_json or details, format)
+    if not yes and not confirm_on_stderr(
+        f"Map {terminal_field(kind, err=True)} '{terminal_field(disk, err=True)}' on VIOS "
+        f"{terminal_field(vios, err=True)} to LPAR '{terminal_field(lpar, err=True)}'?",
     ):
         raise typer.Abort()
 
@@ -301,14 +422,22 @@ def storage_map(
         )
     )
 
-    console.print(
-        Text.assemble(
-            (f"Mapped '{terminal_field(disk)}'", "green"),
-            f" to {terminal_field(result.lpar_uuid)}",
-        )
+    _print_mutation(
+        {
+            "operation": "map",
+            "target": disk,
+            "vios": vios,
+            "system": system,
+            "lpar": lpar,
+            "lpar_uuid": result.lpar_uuid,
+            "kind": kind,
+            "target_device": target,
+        },
+        asdict(result),
+        selected,
+        details,
+        location=result.change_location,
     )
-    print_json(asdict(result))
-    console.print(terminal_field(result.change_location.summary()), markup=False)
 
 
 def storage_create_media_repo(
@@ -323,11 +452,23 @@ def storage_create_media_repo(
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
+    as_json: bool = typer.Option(False, "--json", "-j", help="Output JSON"),
+    format: InventoryFormat | None = typer.Option(
+        None,
+        "--format",
+        help="Output format (default: table on TTY, tsv when redirected)",
+    ),
+    details: bool = typer.Option(
+        False,
+        "--details",
+        help="Original result as JSON; may contain hardware identifiers",
+    ),
 ) -> None:
     """Create the Virtual Media Repository (VMLibrary) on a volume group."""
-    if not yes and not typer.confirm(
-        f"Create {terminal_field(size_mib)} MiB media repository on VG "
-        f"{terminal_field(vg)} (VIOS {terminal_field(vios)})?"
+    selected = resolve_inventory_format(as_json or details, format)
+    if not yes and not confirm_on_stderr(
+        f"Create {terminal_field(size_mib, err=True)} MiB media repository on VG "
+        f"{terminal_field(vg, err=True)} (VIOS {terminal_field(vios, err=True)})?",
     ):
         raise typer.Abort()
 
@@ -337,10 +478,20 @@ def storage_create_media_repo(
         )
     )
 
-    console.print(
-        f"Created media repository on {terminal_field(vg)}", style="green", markup=False
+    _print_mutation(
+        {
+            "operation": "create-media-repo",
+            "target": vg,
+            "vios": vios,
+            "system": system,
+            "vg": vg,
+            "size_mib": size_mib,
+        },
+        result,
+        selected,
+        details,
+        location=None,
     )
-    print_json(result)
 
 
 def storage_create_media(
@@ -358,11 +509,23 @@ def storage_create_media(
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
+    as_json: bool = typer.Option(False, "--json", "-j", help="Output JSON"),
+    format: InventoryFormat | None = typer.Option(
+        None,
+        "--format",
+        help="Output format (default: table on TTY, tsv when redirected)",
+    ),
+    details: bool = typer.Option(
+        False,
+        "--details",
+        help="Original result as JSON; may contain hardware identifiers",
+    ),
 ) -> None:
     """Create a blank optical media (ISO container) in the media repository."""
-    if not yes and not typer.confirm(
-        f"Create media '{terminal_field(name)}' ({terminal_field(size_mib)}"
-        f" MiB) on VG {terminal_field(vg)} (VIOS {terminal_field(vios)})?"
+    selected = resolve_inventory_format(as_json or details, format)
+    if not yes and not confirm_on_stderr(
+        f"Create media '{terminal_field(name, err=True)}' ({terminal_field(size_mib, err=True)}"
+        f" MiB) on VG {terminal_field(vg, err=True)} (VIOS {terminal_field(vios, err=True)})?",
     ):
         raise typer.Abort()
 
@@ -372,12 +535,20 @@ def storage_create_media(
         )
     )
 
-    console.print(
-        f"Created media '{terminal_field(name)}' on {terminal_field(vg)}",
-        style="green",
-        markup=False,
+    _print_mutation(
+        {
+            "operation": "create-media",
+            "target": name,
+            "vios": vios,
+            "system": system,
+            "vg": vg,
+            "size_mib": size_mib,
+        },
+        result,
+        selected,
+        details,
+        location=None,
     )
-    print_json(result)
 
 
 def storage_delete_media_repo(
@@ -387,18 +558,40 @@ def storage_delete_media_repo(
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
+    as_json: bool = typer.Option(False, "--json", "-j", help="Output JSON"),
+    format: InventoryFormat | None = typer.Option(
+        None,
+        "--format",
+        help="Output format (default: table on TTY, tsv when redirected)",
+    ),
+    details: bool = typer.Option(
+        False,
+        "--details",
+        help="Original result as JSON; may contain hardware identifiers",
+    ),
 ) -> None:
     """Delete the Virtual Media Repository from a volume group."""
-    if not yes and not typer.confirm(
-        f"Delete media repository on VG {terminal_field(vg)} (VIOS {terminal_field(vios)})?"
+    selected = resolve_inventory_format(as_json or details, format)
+    if not yes and not confirm_on_stderr(
+        f"Delete media repository on VG {terminal_field(vg, err=True)} (VIOS {terminal_field(vios, err=True)})?",
     ):
         raise typer.Abort()
 
-    with_client(
+    result = with_client(
         lambda hmc: delete_media_repository(hmc, vios, vg, system_name_or_uuid=system)
     )
-    console.print(
-        f"Deleted media repository on {terminal_field(vg)}", style="green", markup=False
+    _print_mutation(
+        {
+            "operation": "delete-media-repo",
+            "target": vg,
+            "vios": vios,
+            "system": system,
+            "vg": vg,
+        },
+        result,
+        selected,
+        details,
+        location=None,
     )
 
 
@@ -412,23 +605,43 @@ def storage_delete_media(
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
+    as_json: bool = typer.Option(False, "--json", "-j", help="Output JSON"),
+    format: InventoryFormat | None = typer.Option(
+        None,
+        "--format",
+        help="Output format (default: table on TTY, tsv when redirected)",
+    ),
+    details: bool = typer.Option(
+        False,
+        "--details",
+        help="Original result as JSON; may contain hardware identifiers",
+    ),
 ) -> None:
     """Delete an ISO image from the media repository."""
-    if not yes and not typer.confirm(
-        f"Delete media '{terminal_field(media_name)}' on VG {terminal_field(vg)}"
-        f" (VIOS {terminal_field(vios)})?"
+    selected = resolve_inventory_format(as_json or details, format)
+    if not yes and not confirm_on_stderr(
+        f"Delete media '{terminal_field(media_name, err=True)}' on VG {terminal_field(vg, err=True)}"
+        f" (VIOS {terminal_field(vios, err=True)})?",
     ):
         raise typer.Abort()
 
-    with_client(
+    result = with_client(
         lambda hmc: delete_optical_media(
             hmc, vios, vg, media_name, system_name_or_uuid=system
         )
     )
-    console.print(
-        f"Deleted media '{terminal_field(media_name)}' on {terminal_field(vg)}",
-        style="green",
-        markup=False,
+    _print_mutation(
+        {
+            "operation": "delete-media",
+            "target": media_name,
+            "vios": vios,
+            "system": system,
+            "vg": vg,
+        },
+        result,
+        selected,
+        details,
+        location=None,
     )
 
 
@@ -502,6 +715,17 @@ def storage_mount_optical_media(
         help="Bypass LPAR ownership protection after operator approval",
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+    as_json: bool = typer.Option(False, "--json", "-j", help="Output JSON"),
+    format: InventoryFormat | None = typer.Option(
+        None,
+        "--format",
+        help="Output format (default: table on TTY, tsv when redirected)",
+    ),
+    details: bool = typer.Option(
+        False,
+        "--details",
+        help="Original result as JSON; may contain hardware identifiers",
+    ),
 ) -> None:
     """Mount an ISO from a VIOS media repository to an LPAR.
 
@@ -510,12 +734,13 @@ def storage_mount_optical_media(
     leave a VIOS server adapter with no mapping; the error names the lshwres
     listing that shows it.
     """
+    selected = resolve_inventory_format(as_json or details, format)
     target = f"; target device {target_device}" if target_device else ""
     selected_system = f" in managed system {system}" if system else ""
-    if not yes and not typer.confirm(
-        f"Mount optical media '{terminal_field(media_name)}' from VIOS "
-        f"{terminal_field(vios)} to LPAR {terminal_field(lpar)}"
-        f"{terminal_field(selected_system)}{terminal_field(target)}?"
+    if not yes and not confirm_on_stderr(
+        f"Mount optical media '{terminal_field(media_name, err=True)}' from VIOS "
+        f"{terminal_field(vios, err=True)} to LPAR {terminal_field(lpar, err=True)}"
+        f"{terminal_field(selected_system, err=True)}{terminal_field(target, err=True)}?",
     ):
         raise typer.Abort()
 
@@ -530,13 +755,21 @@ def storage_mount_optical_media(
             system_name_or_uuid=system,
         )
     )
-    console.print(
-        f"Mounted optical media '{terminal_field(media_name)}' on LPAR {terminal_field(lpar)}",
-        style="green",
-        markup=False,
+    _print_mutation(
+        {
+            "operation": "mount-optical-media",
+            "target": media_name,
+            "vios": vios,
+            "system": system,
+            "lpar": lpar,
+            "lpar_uuid": result.lpar_uuid,
+            "target_device": target_device,
+        },
+        asdict(result),
+        selected,
+        details,
+        location=result.change_location,
     )
-    print_json(result.resource)
-    console.print(terminal_field(result.change_location.summary()), markup=False)
 
 
 def storage_unmount_optical_media(
@@ -556,12 +789,24 @@ def storage_unmount_optical_media(
     confirm: bool = typer.Option(
         False, "--confirm", "-y", help="Skip confirmation prompt"
     ),
+    as_json: bool = typer.Option(False, "--json", "-j", help="Output JSON"),
+    format: InventoryFormat | None = typer.Option(
+        None,
+        "--format",
+        help="Output format (default: table on TTY, tsv when redirected)",
+    ),
+    details: bool = typer.Option(
+        False,
+        "--details",
+        help="Original result as JSON; may contain hardware identifiers",
+    ),
 ) -> None:
     """Unmount an ISO mapping while preserving the backing ISO."""
-    if not confirm and not typer.confirm(
-        f"Unmount optical media '{terminal_field(media_name)}' from LPAR "
-        f"{terminal_field(lpar)} on VIOS {terminal_field(vios)}"
-        f"? The backing ISO remains available."
+    selected = resolve_inventory_format(as_json or details, format)
+    if not confirm and not confirm_on_stderr(
+        f"Unmount optical media '{terminal_field(media_name, err=True)}' from LPAR "
+        f"{terminal_field(lpar, err=True)} on VIOS {terminal_field(vios, err=True)}"
+        f"? The backing ISO remains available.",
     ):
         raise typer.Abort()
 
@@ -576,15 +821,20 @@ def storage_unmount_optical_media(
         )
 
     location = with_client(_go)
-    console.print(
-        (
-            f"Unmounted optical media '{terminal_field(media_name)}' from LPAR "
-            f"{terminal_field(lpar)}; backing ISO remains"
-        ),
-        style="green",
-        markup=False,
+    _print_mutation(
+        {
+            "operation": "unmount-optical-media",
+            "target": media_name,
+            "vios": vios,
+            "system": system,
+            "lpar": lpar,
+            "backing_storage": "retained",
+        },
+        asdict(location),
+        selected,
+        details,
+        location=location,
     )
-    console.print(terminal_field(location.summary()), markup=False)
 
 
 def storage_list_mappings(
@@ -634,13 +884,25 @@ def storage_detach_mapping(
     confirm: bool = typer.Option(
         False, "--confirm", "-y", help="Skip confirmation prompt"
     ),
+    as_json: bool = typer.Option(False, "--json", "-j", help="Output JSON"),
+    format: InventoryFormat | None = typer.Option(
+        None,
+        "--format",
+        help="Output format (default: table on TTY, tsv when redirected)",
+    ),
+    details: bool = typer.Option(
+        False,
+        "--details",
+        help="Original result as JSON; may contain hardware identifiers",
+    ),
 ) -> None:
     """Detach a VirtualSCSIMapping while preserving its backing storage."""
+    selected = resolve_inventory_format(as_json or details, format)
     if not confirm:
-        typer.confirm(
+        confirm_on_stderr(
             (
-                f"Delete storage mapping {terminal_field(mapping_id)} on VIOS "
-                f"{terminal_field(vios)}? The backing storage (PhysicalVolume or "
+                f"Delete storage mapping {terminal_field(mapping_id, err=True)} on VIOS "
+                f"{terminal_field(vios, err=True)}? The backing storage (PhysicalVolume or "
                 f"VirtualDisk) will be preserved."
             ),
             abort=True,
@@ -656,12 +918,19 @@ def storage_detach_mapping(
         )
 
     location = with_client(_go)
-    console.print(
-        f"Deleted storage mapping {terminal_field(mapping_id)}",
-        style="green",
-        markup=False,
+    _print_mutation(
+        {
+            "operation": "detach-mapping",
+            "target": mapping_id,
+            "vios": vios,
+            "system": system,
+            "backing_storage": "retained",
+        },
+        asdict(location),
+        selected,
+        details,
+        location=location,
     )
-    console.print(terminal_field(location.summary()), markup=False)
 
 
 def storage_upload_iso(
@@ -675,9 +944,21 @@ def storage_upload_iso(
         help="http(s) URL to download the ISO from; its host must be on "
         "HMC_ISO_URL_ALLOWLIST",
     ),
-    as_json: bool = typer.Option(False, "--json", "-j", help="Output as raw JSON"),
+    as_json: bool = typer.Option(
+        False, "--json", "-j", help="Output JSON (existing result envelope)"
+    ),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
+    ),
+    format: InventoryFormat | None = typer.Option(
+        None,
+        "--format",
+        help="Output format (default: table on TTY, tsv when redirected)",
+    ),
+    details: bool = typer.Option(
+        False,
+        "--details",
+        help="Original result as JSON; may contain hardware identifiers",
     ),
 ) -> None:
     """Upload an ISO to a VIOS media repository via the HMC web File API.
@@ -690,6 +971,7 @@ def storage_upload_iso(
     only once the repository lists the media, and releases the HMC upload handle
     on every outcome.
     """
+    selected = resolve_inventory_format(as_json or details, format)
 
     async def _go(hmc: HMCClient) -> dict[str, Any]:
         return await upload_iso(
@@ -703,31 +985,24 @@ def storage_upload_iso(
 
     result = with_client(_go)
 
-    if as_json:
-        print_json(result)
-    else:
-        console.print(
-            f"Upload status: {terminal_field(result.get('status', 'unknown'))}",
-            style="green",
-            markup=False,
-        )
-        console.print(
-            f"  Media name: {terminal_field(result.get('media_name', 'N/A'))}",
-            markup=False,
-        )
-        console.print(
-            f"  Size: {terminal_field(format(result.get('media_size_bytes', 0), ','))} bytes",
-            markup=False,
-        )
-        console.print(
-            f"  Source SHA-256: {terminal_field(result.get('source_sha256', 'N/A'))}",
-            markup=False,
-        )
-        if result.get("media"):
-            console.print(
-                f"  Media entry: {terminal_field(result['media'].get('MediaName', 'N/A'))}",
-                markup=False,
-            )
+    summary = {
+        "operation": "upload-iso",
+        "target": media_name,
+        "vios": vios,
+        "vg": vg,
+        "system": system,
+        "outcome": result.get("status", "unknown"),
+        "media_size_bytes": result.get("media_size_bytes"),
+        "source_sha256": result.get("source_sha256"),
+        "verification": "repository entry observed"
+        if result.get("status") == "uploaded"
+        else "final state not verified",
+    }
+    _print_mutation(
+        summary, result, selected, details or selected == InventoryFormat.json
+    )
+    if result.get("status") != "uploaded":
+        raise typer.Exit(1)
 
 
 def register_commands(group: typer.Typer) -> None:

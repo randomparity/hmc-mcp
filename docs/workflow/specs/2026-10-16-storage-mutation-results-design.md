@@ -21,6 +21,9 @@ accept HTTP 202 while discarding status; this is not completion evidence. Do not
 claim creation/deletion from that return alone. Exceptions retain stderr/exit1.
 Existing confirmation prompts go to stderr (including their destination-aware
 field encoding), preserving consent flags/timing while keeping JSON/TSV clean.
+An output-owned confirm_on_stderr wrapper uses stdlib redirect_stdout around
+existing typer.confirm: Typer sends the final prompt character through input()
+even with err=True. Extend the terminal AST guard for this named stderr sink.
 A returned JobID resource uses existing job_outcome classification: preserve job
 ID/status/error, report submitted for pending/unknown and failed for errors, with
 nonzero failure exit; no new polling or backend requests.

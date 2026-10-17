@@ -283,12 +283,13 @@ def terminal_violations(source: str, filename: str) -> list[str]:
             found.append(f"{filename}:{node.lineno}: unowned text output")
         elif _is_console_print(node) or target in (
             "typer.confirm",
+            "confirm_on_stderr",
             "typer.prompt",
             "typer.BadParameter",
         ):
             err = (
                 "err_console" in target.split(".")[:-1]
-                or target == "typer.BadParameter"
+                or target in ("typer.BadParameter", "confirm_on_stderr")
                 or any(
                     k.arg == "err"
                     and isinstance(k.value, ast.Constant)
@@ -537,6 +538,8 @@ def test_raw_commands_print_the_body_as_received(monkeypatch, value, argv):
         "console.print(name, markup=False)",
         'err_console.print(Text.assemble(("Error", "red"), name))',
         'typer.confirm(f"Delete {name}?")',
+        'confirm_on_stderr(f"Delete {name}?")',
+        "confirm_on_stderr(terminal_field(name))",
         "typer.echo(body, color=True)",
         "console.print_json(json.dumps(data))",
         'console.print(f"Value: {name}", markup=False)',
@@ -554,6 +557,7 @@ def test_terminal_guard_rejects_unencoded_fields(source):
         'console.print(f"Value: {terminal_field(name)}", markup=False)',
         "err_console.print(terminal_field(name, err=True), markup=False)",
         'typer.confirm(f"Delete {terminal_field(name)}?")',
+        'confirm_on_stderr(f"Delete {terminal_field(name, err=True)}?")',
         'console.print(Text.assemble(("Error", "red"), terminal_field(name)))',
         'console.print("[green]Done[/green]")',
         'table.add_row(Text(escape_controls(name), style="red"))',
