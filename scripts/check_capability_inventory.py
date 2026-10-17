@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, TypeGuard, cast
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INVENTORY = ROOT / "docs" / "capabilities"
@@ -455,8 +455,8 @@ def _validate_rows(
                 errors.append(
                     f"source unit {identity}: unknown accounting row {row_id!r}"
                 )
-            elif accounted[identity] != 1 or identity not in rows[str(row_id)].get(
-                "source_units", []
+            elif accounted[identity] != 1 or identity not in cast(
+                list[object], rows[str(row_id)].get("source_units", [])
             ):
                 errors.append(
                     f"source unit {identity}: accounting does not match row {row_id}"
@@ -499,7 +499,7 @@ def _validate_operations(
                 errors.append(
                     f"operation evidence {tool}: {field} does not match registry"
                 )
-        if tuple(record.get("surfaces", ())) != found.surfaces:
+        if tuple(cast(Sequence[object], record.get("surfaces", ()))) != found.surfaces:
             errors.append(f"operation evidence {tool}: surfaces do not match registry")
         row_ids = record.get("row_ids")
         if not isinstance(row_ids, list):
@@ -538,7 +538,7 @@ def _exact_keys(value: object, keys: set[str], label: str, errors: list[str]) ->
     return True
 
 
-def _nonempty(value: object) -> bool:
+def _nonempty(value: object) -> TypeGuard[str]:
     return isinstance(value, str) and bool(value.strip())
 
 
@@ -610,8 +610,8 @@ def _validate_implementation(
     missing_ids = {
         _scope_identity(scope, label, errors, missing=True) for scope in missing
     }
-    implemented_ids.discard(None)
-    missing_ids.discard(None)
+    implemented_ids = {identity for identity in implemented_ids if identity is not None}
+    missing_ids = {identity for identity in missing_ids if identity is not None}
     if len(implemented_ids) != len(implemented) or len(missing_ids) != len(missing):
         errors.append(f"{label}: scope entries must be unique and valid")
     valid_lists = {
@@ -997,9 +997,13 @@ def derive_states(
                 "unevidenced", implementation=implementation_state
             )
             continue
-        # An operation carries at most one live observation, because re-validation
-        # replaces it; ordering by time keeps a hand-edited catalog deterministic.
-        latest = max(observations, key=lambda item: str(item.get("observed_at")))
+        # An operation keeps one live row per producing observation (ADR 0212).
+        # The newest row decides its state, ordered by the key promotion selects
+        # with, so a timestamp tie between producers resolves the same way.
+        latest = max(
+            observations,
+            key=lambda item: (str(item.get("observed_at")), str(item.get("id"))),
+        )
         key = (repo_root, _handler_module(tool.handler))
         if key not in fingerprints:
             fingerprints[key] = closure_fingerprint(*key)
@@ -1257,7 +1261,7 @@ def _module_observation_sites(module: ModuleType | None) -> set[tuple[str, int, 
             raise InventoryError(
                 "observation row and scenario must resolve from source constants"
             )
-        sites.add((operation.value, row, scenario))
+        sites.add((operation.value, row, cast(str, scenario)))
     return sites
 
 
@@ -1320,7 +1324,7 @@ def load_release_claims(
     routes = _release_routes()
     seen: set[str] = set()
     result: list[dict[str, str]] = []
-    for row in document["operations"]:
+    for row in cast(list[object], document["operations"]):
         if (
             not isinstance(row, dict)
             or set(row) != {"operation", "arm", "scenario"}
@@ -1534,9 +1538,9 @@ def validate_inventory(
     unknown, proposed, pending = _validate_rows(rows, units, errors)
     _validate_operations(operation_records, rows, registry, repo_root, errors)
     operation_ids = {
-        record.get("operation")
+        operation
         for record in operation_records
-        if isinstance(record.get("operation"), str)
+        if isinstance(operation := record.get("operation"), str)
     }
     _validate_maturity(maturity_records, operation_ids, errors)
     errors.extend(_release_claim_errors(root, operation_ids))
@@ -1560,22 +1564,18 @@ def verify_corpora(root: Path, sources: Mapping[str, Path]) -> list[str]:
         return [str(error)]
     local_errors: list[str] = []
     corpus_records = _objects(
-        document.get("corpora", [])
-        if isinstance(document.get("corpora"), list)
-        else [],
+        values if isinstance(values := document.get("corpora"), list) else [],
         "corpora",
         local_errors,
     )
     corpus_ids = {str(record.get("id")) for record in corpus_records}
     topics = _objects(
-        document.get("topics", []) if isinstance(document.get("topics"), list) else [],
+        values if isinstance(values := document.get("topics"), list) else [],
         "topics",
         local_errors,
     )
     units = _objects(
-        document.get("source_units", [])
-        if isinstance(document.get("source_units"), list)
-        else [],
+        values if isinstance(values := document.get("source_units"), list) else [],
         "source_units",
         local_errors,
     )
