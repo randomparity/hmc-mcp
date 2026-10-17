@@ -102,7 +102,7 @@ BUILT_IN_ACCOUNTS = {"root", "hscroot", "hscpe", "admin"}
 Replacement = str | Callable[[re.Match[str]], str]
 
 #: A 16-hex WWN, other than a LUN address: two digits and fourteen zeros. Its start is
-#: the rule's: `_SCRUB_START` or `_LEAK_START`.
+#: supplied by each scrub rule or survivor guard.
 _WWN_16 = r"(?![0-9a-fA-F]{2}0{14}\b)[0-9a-fA-F]{16}\b"
 
 #: Elements whose whole text is a device identifier.
@@ -419,6 +419,21 @@ _MAC_LEAK = re.compile(
 )
 
 
+#: Share the MAC scrubber's exact value spans with the raw-text backstop: an actual
+#: Unicode escape before zeroed MAC digits can otherwise look like a live identifier.
+_MAC_ELEMENT = re.compile(
+    rf"(<(?>{_NS_PREFIX}(?i:\w*MACAddress\w*+)){_TAG_TAIL})([^<]+)"
+)
+_RAW_IDENTIFIER_VALUE = (
+    rf"(?:{_WWN_16}|"
+    + "|".join(rf"{guard}(?!{zeroed}){run}" for guard, run, zeroed in _MAC_FORMS[1:])
+    + ")"
+)
+_RAW_IDENTIFIER_LEAK = re.compile(rf"(?<=\\u){_RAW_IDENTIFIER_VALUE}")
+#: Only an even slash run is a literal backslash-u in JSON produced by the caller.
+_JSON_RAW_IDENTIFIER_LEAK = re.compile(rf"(?<!\\)(?:\\\\)++u{_RAW_IDENTIFIER_VALUE}")
+
+
 #: An IPv6 address, or a colon-separated HMC record `_ipv6` keeps, up to a word boundary.
 _IPV6_CANDIDATE = r"(?:fe80|[0-9a-f]{1,4})(?::[0-9a-f]{0,4}){2,7}\b"
 #: A JSON escape and the candidate directly after it, or a candidate at a word boundary.
@@ -647,7 +662,7 @@ IDENTIFIER_RULES: tuple[tuple[re.Pattern[str], Replacement], ...] = (
     # value: text after it belongs to its parent. This rule leaves it, and `_MAC_LEAK`
     # reports it only when it ends at a closing MAC tag.
     (
-        re.compile(rf"(<(?>{_NS_PREFIX}(?i:\w*MACAddress\w*+)){_TAG_TAIL})([^<]+)"),
+        _MAC_ELEMENT,
         _mac_element,
     ),
     *(
@@ -913,7 +928,8 @@ class Tokenizer:
             return self.names[word[:-1]] + "."
         return word
 
-    def tokenize(self, text: str | None) -> str | None:
+    def tokenize(self, text: str | None, *, json_encoded: bool = False) -> str | None:
+        """Scrub raw text; json_encoded opts in only for JSON made by the caller."""
         if text is None:
             return None
         xml = text.lstrip().startswith("<")
@@ -934,6 +950,15 @@ class Tokenizer:
         if xml:
             # The token must not open an element, or the body would stop parsing.
             text = re.sub(r"<(REDACTED-[A-Z]+)>", r"&lt;\1&gt;", text)
+        # Check this call's exact representation before fields are serialized together.
+        mac_values = iter(_MAC_ELEMENT.finditer(text))
+        mac_value = next(mac_values, None)
+        raw_rule = _JSON_RAW_IDENTIFIER_LEAK if json_encoded else _RAW_IDENTIFIER_LEAK
+        for match in raw_rule.finditer(text):
+            while mac_value is not None and mac_value.end(2) <= match.start():
+                mac_value = next(mac_values, None)
+            if mac_value is None or match.start() < mac_value.start(2):
+                raise LeakError("a raw identifier survived tokenizing; nothing written")
         return text
 
     def leaks(self, text: str) -> list[str]:
@@ -1008,6 +1033,21 @@ def redact_identifier_keys(value: Any) -> Any:
     return value
 
 
+def _has_raw_identifier(data: Any) -> bool:
+    """Check actual unsanitized strings and keys without scrub-span exemptions."""
+    pending = [data]
+    while pending:
+        value = pending.pop()
+        if isinstance(value, dict):
+            pending.extend(value)
+            pending.extend(value.values())
+        elif isinstance(value, (list, tuple)):
+            pending.extend(value)
+        elif isinstance(value, str) and _RAW_IDENTIFIER_LEAK.search(value):
+            return True
+    return False
+
+
 def _tokenize_record(tok: Tokenizer, record: dict[str, Any]) -> dict[str, Any]:
     kind = record.get("kind")
     out: dict[str, Any] = {
@@ -1019,19 +1059,27 @@ def _tokenize_record(tok: Tokenizer, record: dict[str, Any]) -> dict[str, Any]:
         headers = {
             k.lower(): v for k, v in (record.get("response_headers") or {}).items()
         }
+        # Reserve the scrubbed field's position to preserve serialized output order.
         out.update(
             method=record.get("method"),
-            path=tok.tokenize(record.get("path")),
+            path=None,
             accept=record.get("accept"),
             status=record.get("status"),
             content_type=headers.get("content-type"),
+        )
+    elif kind == "ssh":
+        out.update(command=None, exit_status=record.get("exit_status"))
+    if _has_raw_identifier(out):
+        raise LeakError("a raw identifier is in capture metadata; nothing written")
+    if kind == "rest":
+        out.update(
+            path=tok.tokenize(record.get("path")),
             body=tok.tokenize(record.get("body")),
             exception=tok.tokenize(record.get("exception")),
         )
     elif kind == "ssh":
         out.update(
             command=tok.tokenize(record.get("command")),
-            exit_status=record.get("exit_status"),
             stdout=tok.tokenize(record.get("stdout")),
             stderr=tok.tokenize(record.get("stderr")),
             exception=tok.tokenize(record.get("exception")),
@@ -1043,7 +1091,7 @@ def _tokenize_record(tok: Tokenizer, record: dict[str, Any]) -> dict[str, Any]:
         rest = redact_identifier_keys(rest)
         try:
             out["record"] = json.loads(
-                tok.tokenize(json.dumps(rest, default=str)) or "{}"
+                tok.tokenize(json.dumps(rest, default=str), json_encoded=True) or "{}"
             )
         except json.JSONDecodeError as exc:
             raise BrokenBodyError(
@@ -1480,6 +1528,8 @@ def _write_scanned(data: Any, out: Path, private: Sequence[str]) -> None:
         raise LeakError(
             f"{len(leaks)} private value(s) in the derived output; nothing written"
         )
+    if _has_raw_identifier(data):
+        raise LeakError("a raw identifier is in the derived output; nothing written")
     out.write_text(text, encoding="utf-8")
 
 
