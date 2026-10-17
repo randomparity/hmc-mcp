@@ -28,6 +28,7 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 import pytest
+from click import unstyle
 from conftest import live_fixture
 from typer.testing import CliRunner
 
@@ -703,6 +704,8 @@ def cleanup_cli(mock_hmc, tmp_path):
         HMCPCTL_STATE_DIR=str(tmp_path / "state"),
         NO_PROXY="127.0.0.1",
         COLUMNS="40",
+        TERM="xterm",
+        GITHUB_ACTIONS="1",
     )
 
     def invoke(*args, code=0, width=40, input_text=""):
@@ -717,7 +720,9 @@ def cleanup_cli(mock_hmc, tmp_path):
             check=False,
         )
         assert result.returncode == code, f"{args}\n{result.stdout}\n{result.stderr}"
-        assert len(result.stdout) < 20000, args
+        # CI styles help despite NO_COLOR; machine output must remain byte-clean.
+        bounded = unstyle(result.stdout) if "--help" in args else result.stdout
+        assert len(bounded) < 20000, args
         assert len(result.stderr) < 20000, args
         return result
 
@@ -738,7 +743,7 @@ def _mutations(server):
 def test_cleanup_journey(cleanup_cli):
     run, server = cleanup_cli
     for group in ("systems", "lpars", "vios", "storage"):
-        assert "Usage:" in run(group, "--help").stdout
+        assert "Usage:" in unstyle(run(group, "--help").stdout)
     assert not server.request_log
     systems = json.loads(run("systems", "list", "--json").stdout)
     system = next(
