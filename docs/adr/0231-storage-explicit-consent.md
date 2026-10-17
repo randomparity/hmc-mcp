@@ -15,7 +15,8 @@ input without that flag. Existing storage operations own the safety guards.
 Keep consent policy in the storage CLI adapter. Its twelve existing consent
 boundaries use --yes/-y; remove --confirm. Non-TTY stdin without consent fails
 before dispatch with a shell-quoted storage retry command retaining supplied
-scope and target. Root connection options must be reused separately, avoiding
+scope and target. Nonprintable arguments use reversible Bash/Zsh ANSI-C quoting
+before terminal encoding; printable arguments use ordinary shell quoting. Root connection options must be reused separately, avoiding
 password disclosure. Interactive prompts show that scope/target using existing
 stderr terminal encoding. Decline and EOF cannot dispatch. Attach-disk dry-run
 remains exempt; upload-iso retains its existing no-prompt behavior.

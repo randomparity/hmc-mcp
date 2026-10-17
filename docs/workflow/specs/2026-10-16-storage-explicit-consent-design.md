@@ -22,6 +22,10 @@ storage invocation from the current Typer command's parsed parameters using its
 existing argument/option metadata. Include supplied scope, target and operation
 parameters, omit false/None values and yes, encode enum values, place arguments
 after `--`, and append `--yes` before that separator. Use canonical long options.
+Printable values use shlex.quote; nonprintable values use Bash/Zsh ANSI-C quotes
+with escaped backslash/apostrophe and Unicode escapes for controls. Thus terminal
+encoding cannot change the executable argument. Label the retry as Bash/Zsh.
+Round-trip tests execute only a synthetic argv recorder, never a live CLI mutation.
 Do not reconstruct root credentials: say to reuse the same connection options.
 The displayed invocation is `hmcpctl storage COMMAND OPTIONS --yes -- ARGUMENTS`.
 This preserves the scope/target without echoing root passwords into diagnostics.
