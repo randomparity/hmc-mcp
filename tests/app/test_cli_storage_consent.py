@@ -235,3 +235,17 @@ def test_real_closed_stdin_with_explicit_yes(flag):
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["operation"] == "delete-disk"
     assert b"DISPATCH" in result.stderr and b"[y/N]" not in result.stderr
+
+
+def test_real_absent_stdin_refuses_with_retry():
+    result = subprocess.run(
+        [sys.executable, "-c", SOURCE],
+        preexec_fn=lambda: os.close(0),
+        capture_output=True,
+        timeout=20,
+        check=False,
+    )
+    assert result.returncode == 2, result.stderr
+    assert result.stdout == b"" and b"DISPATCH" not in result.stderr
+    assert b"--yes" in result.stderr and b"sys-test" in result.stderr
+    assert b"[y/N]" not in result.stderr and b"Traceback" not in result.stderr

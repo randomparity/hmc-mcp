@@ -88,7 +88,7 @@ def _confirm_storage(yes: bool, text: str) -> None:
                     escaped.extend(f"\\x{byte:02x}" for byte in os.fsencode(char))
             tokens.append("$'" + "".join(escaped) + "'")
     invocation = terminal_field(" ".join(tokens), err=True)
-    if not sys.stdin.isatty():
+    if sys.stdin is None or not sys.stdin.isatty():
         typer.echo(
             "Error: noninteractive storage mutation requires --yes/-y.", err=True
         )
