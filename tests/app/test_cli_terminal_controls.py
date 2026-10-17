@@ -68,8 +68,9 @@ def _drain_pty(master, finished):
     # Drain while the child writes; macOS drops unread data on the last slave close.
     chunks = []
     while True:
+        child_finished = finished.is_set()
         if not select.select([master], [], [], 0.1)[0]:
-            if finished.is_set():
+            if child_finished:
                 break
             continue
         try:
@@ -82,6 +83,31 @@ def _drain_pty(master, finished):
             break
         chunks.append(chunk)
     return b"".join(chunks)
+
+
+def test_pty_drains_final_write_when_completion_follows_empty_select(monkeypatch):
+    import pty
+
+    master, slave = pty.openpty()
+    finished = threading.Event()
+    original_select = select.select
+    first = True
+
+    def completing_select(*args):
+        nonlocal first
+        if first:
+            first = False
+            os.write(slave, b"final output")
+            finished.set()
+            return [], [], []
+        return original_select(*args)
+
+    monkeypatch.setattr(select, "select", completing_select)
+    try:
+        assert _drain_pty(master, finished) == b"final output"
+    finally:
+        os.close(slave)
+        os.close(master)
 
 
 def test_child_drains_both_terminals_before_exit():
