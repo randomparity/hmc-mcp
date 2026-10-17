@@ -521,3 +521,16 @@ to shared LPAR/VIOS selectors used by lifecycle and storage commands.
 and cleanup checks. `lpars capture-console` requires it to select the console
 host. A UUID or `--ownership-override` does not remove those requirements.
 An unreadable system is reported as unavailable, rather than as an empty system.
+
+
+### Stop a console capture early
+
+Press Ctrl-C (SIGINT) during `hmcpctl lpars capture-console LPAR --system SYSTEM
+--output FILE` and wait for cleanup. The command retains the flushed partial file;
+it still refuses to overwrite an existing path. Exit 130 means the interrupted
+capture's console release was proven. Exit 3 means release was not proven and
+outranks 130 and write errors: inspect stderr before attempting another capture.
+A reported write failure means the retained file is incomplete. Bytes remain raw,
+including terminal escapes; outcome diagnostics go to stderr. If another client
+ended the hold, leave that client's session alone. SIGTERM/SIGHUP and a standalone
+release command are outside this contract. See [ADR 0235](adr/0235-console-interrupt-contract.md).

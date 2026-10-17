@@ -29,6 +29,7 @@ async def capture_lpar_console_by_selector(
     max_bytes: int,
     idle_timeout_seconds: float,
     on_chunk: Callable[[bytes], None] | None = None,
+    stop_on_cancel: bool = False,
 ) -> ConsoleCapture:
     """Resolve the selectors to HMC CLI names and capture the partition console.
 
@@ -58,4 +59,5 @@ async def capture_lpar_console_by_selector(
         max_bytes=max_bytes,
         idle_timeout_seconds=idle_timeout_seconds,
         on_chunk=on_chunk,
+        stop_on_cancel=stop_on_cancel,
     )
