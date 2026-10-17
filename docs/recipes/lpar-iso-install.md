@@ -39,9 +39,10 @@ Run it only against an HMC, managed system, and VIOS you own.
   `delete-media`, and `delete-media-repo` read the volume group, change it, and write it back,
   so a concurrent change to that group is lost. Serialize every writer on `MEDIA_VG` for the
   run, and compare `storage list-vgs` and `storage list-optical-media` before and after each.
-- **Confirmations.** Most mutating commands prompt unless you pass `--yes` (or `--confirm` for
-  `unmount-optical-media` and `detach-mapping`). The examples pass it so they copy cleanly. Remove
-  it when you run the recipe by hand. `--yes` is not a dry run. `storage upload-iso` never
+- **Confirmations.** Most mutating commands prompt on terminal stdin unless you pass `--yes`/`-y`.
+  Storage mutations with confirmation require this flag when stdin is not a terminal; piping
+  `y` does not grant consent. The examples pass it so they copy cleanly. Remove
+  it when you run the recipe interactively. `--yes` is not a dry run. `storage upload-iso` never
   prompts: it writes as soon as you run it, so check the listing first. The HMC CLI commands
   below never prompt either.
 - **Dry runs.** No global dry-run mode exists. Only commands that advertise `--dry-run` support
@@ -382,7 +383,7 @@ Do not continue until the state reads `not activated`. Then unmount the ISO:
 
 ```bash
 hmcpctl storage list-mappings "$VIOS" --lpar "$LPAR" --system "$SYSTEM" --json
-hmcpctl storage unmount-optical-media "$VIOS" --lpar "$LPAR" --name "$MEDIA_NAME" --system "$SYSTEM" --confirm
+hmcpctl storage unmount-optical-media "$VIOS" --lpar "$LPAR" --name "$MEDIA_NAME" --system "$SYSTEM" --yes
 hmcpctl storage list-mappings "$VIOS" --lpar "$LPAR" --system "$SYSTEM" --json
 ```
 
@@ -413,7 +414,7 @@ hmcpctl lpars get-description "$LPAR_NAME" "$SYSTEM_NAME"
 ```bash
 hmcpctl storage list-mappings "$VIOS" --lpar "$LPAR" --system "$SYSTEM" --json
 MAPPING_ID=<identity-of-the-DISK_NAME-mapping-from-list-mappings>
-hmcpctl storage detach-mapping "$VIOS" "$MAPPING_ID" --system "$SYSTEM" --confirm
+hmcpctl storage detach-mapping "$VIOS" "$MAPPING_ID" --system "$SYSTEM" --yes
 hmcpctl storage list-mappings "$VIOS" --lpar "$LPAR" --system "$SYSTEM" --json
 ```
 

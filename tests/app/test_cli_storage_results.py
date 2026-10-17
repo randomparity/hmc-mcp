@@ -125,13 +125,13 @@ CASES = [
     ),
     (
         "unmount-optical-media",
-        ["vi-test", "--lpar", "lp-test", "--name", "media-test", "--confirm"],
+        ["vi-test", "--lpar", "lp-test", "--name", "media-test", "--yes"],
         LOCATION,
         "media-test",
     ),
     (
         "detach-mapping",
-        ["vi-test", "vhost0/vtscsi0", "--confirm"],
+        ["vi-test", "vhost0/vtscsi0", "--yes"],
         LOCATION,
         "vhost0/vtscsi0",
     ),
@@ -212,7 +212,7 @@ def test_confirmed_machine_output_keeps_prompt_on_stderr(
     command, args, data, target, selected
 ):
     # CliRunner echoes prompt input to stdout; use actual stdin/stdout for this contract.
-    args = [arg for arg in args if arg not in {"--yes", "--confirm"}]
+    args = [arg for arg in args if arg != "--yes"]
     source = f"""
 from hmcpctl import cli
 from hmcpctl.cli_commands.storage import resources
@@ -223,14 +223,31 @@ from hmcpctl.operations.storage.resources import StorageMapResult
 resources.with_client = lambda op: {data!r}
 cli.app(prog_name='hmcpctl')
 """
-    result = subprocess.run(
-        [sys.executable, "-c", source, "storage", command, *args, "--format", selected],
-        input="y\n",
-        capture_output=True,
-        text=True,
-        timeout=20,
-        check=False,
-    )
+    import pty
+
+    master, slave = pty.openpty()
+    try:
+        with os.fdopen(slave, "rb") as terminal:
+            os.write(master, b"y\n")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    source,
+                    "storage",
+                    command,
+                    *args,
+                    "--format",
+                    selected,
+                ],
+                stdin=terminal,
+                capture_output=True,
+                text=True,
+                timeout=20,
+                check=False,
+            )
+    finally:
+        os.close(master)
     assert result.returncode == 0, result.stderr
     if selected == "json":
         json.loads(result.stdout)
