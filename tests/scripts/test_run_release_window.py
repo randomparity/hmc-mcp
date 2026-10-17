@@ -32,7 +32,7 @@ def window(tmp_path):
     git(root, "config", "user.email", "fixture@example.test")
     git(root, "update-ref", "refs/remotes/origin/main", "HEAD")
     git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
-    git(root, "branch", "-m", "fixture-window")
+    git(root, "switch", "-c", "fixture-window")
     shutil.copyfile(
         ROOT / "scripts/live_test/cli.py", root / "scripts/live_test/cli.py"
     )
@@ -514,7 +514,7 @@ def test_descendant_holding_output_open_cannot_report_clean(tmp_path, monkeypatc
 def test_candidate_refusals_never_start_hardware(window, condition):
     root, claims, output, _ = window
     if condition == "main":
-        git(root, "switch", "-c", "main")
+        git(root, "switch", "-C", "main")
     elif condition == "detached":
         git(root, "checkout", "--detach")
     elif condition == "dirty":
