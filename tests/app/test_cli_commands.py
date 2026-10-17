@@ -820,7 +820,7 @@ def test_connection_options_do_not_leak_between_invocations(monkeypatch):
                 (VIOS_UUID, "VirtualDisk", "bootvol", LPAR_UUID, "vtscsi0"),
                 {},
             ),
-            "Mapped 'bootvol'",
+            "operation\tmap",
         ),
         (
             [
@@ -834,12 +834,12 @@ def test_connection_options_do_not_leak_between_invocations(monkeypatch):
                 "--yes",
             ],
             ("create_media_repository", (VIOS_UUID, VG_UUID, 2048), {}),
-            "Created media repository",
+            "operation\tcreate-media-repo",
         ),
         (
             ["storage", "delete-media-repo", VIOS_UUID, "--vg", VG_UUID, "--yes"],
             ("delete_media_repository", (VIOS_UUID, VG_UUID), {}),
-            "Deleted media repository",
+            "operation\tdelete-media-repo",
         ),
     ],
 )
@@ -2050,7 +2050,7 @@ def test_adapters_reject_invalid_type_before_client_call(fake_hmc, command):
                 "1024",
                 "--dry-run",
             ],
-            None,
+            AttachDiskResult(False, LPAR_UUID, True, (), ()),
         ),
         (
             "lpar.inventory",
@@ -2166,7 +2166,7 @@ def test_storage_create_vg(fake_hmc):
     )
 
     assert result.exit_code == 0
-    assert "Created Volume Group 'datavg'" in result.stdout
+    assert "target\tdatavg" in result.stdout
     name, args, _ = fake_hmc.calls[0]
     assert name == "create_volume_group"
     assert args[0] == VIOS_UUID
@@ -2212,7 +2212,7 @@ def test_storage_create_disk(fake_hmc):
     )
 
     assert result.exit_code == 0
-    assert "Created virtual disk 'bootvol' (1024 MiB)" in result.stdout
+    assert "capacity_mib\t1024" in result.stdout
     assert fake_hmc.calls[0] == ("list_volume_groups", (VIOS_UUID,), {})
     name, args, _ = fake_hmc.calls[1]
     assert name == "create_virtual_disk"
@@ -2240,7 +2240,7 @@ def test_storage_attach_disk_runs_workflow(fake_hmc):
     )
 
     assert result.exit_code == 0, result.output
-    assert "Attached virtual disk 'bootvol'" in result.stdout
+    assert "target\tbootvol" in result.stdout
     mutations = [
         name
         for name, _, _ in fake_hmc.calls
@@ -2269,7 +2269,7 @@ def test_storage_attach_disk_dry_run_does_not_mutate(fake_hmc):
     )
 
     assert result.exit_code == 0, result.output
-    assert "DRY RUN" in result.stdout
+    assert "outcome\tdry_run" in result.stdout
     mutations = {"create_virtual_disk", "add_vscsi_adapter", "map_storage_to_lpar"}
     assert not any(name in mutations for name, _, _ in fake_hmc.calls)
 
@@ -2517,7 +2517,7 @@ def test_storage_delete_disk_deletes_when_confirmed(fake_hmc, monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert "Deleted virtual disk 'bootvol'" in result.stdout
+    assert "target\tbootvol" in result.stdout
     assert seen == {"vios": VIOS_UUID, "vg": VG_UUID, "name": "bootvol"}
 
 
@@ -2618,7 +2618,7 @@ def test_storage_create_media_creates_when_confirmed(fake_hmc, monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert "Created media 'aix.iso'" in result.stdout
+    assert "target\taix.iso" in result.stdout
     assert seen == {
         "vios": VIOS_UUID,
         "vg": VG_UUID,
@@ -2683,7 +2683,7 @@ def test_storage_delete_media_deletes_when_confirmed(fake_hmc, monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert "Deleted media 'aix.iso'" in result.stdout
+    assert "target\taix.iso" in result.stdout
     assert seen == {"vios": VIOS_UUID, "vg": VG_UUID, "media_name": "aix.iso"}
 
 
@@ -2747,10 +2747,10 @@ def test_storage_mount_optical_media_forwards_selectors(fake_hmc, monkeypatch):
         ownership_override=True,
         system_name_or_uuid=SYSTEM_UUID,
     )
-    assert "Mounted optical media 'install.iso'" in result.stdout
+    assert "target\tinstall.iso" in result.stdout
     assert SYSTEM_UUID in result.stdout
     assert "vtopt0" in result.stdout
-    assert '"mapping-1"' in result.stdout
+    assert '"mapping-1"' not in result.stdout
     assert "CurrentProfileSync is Disabled" in result.stdout
 
 
@@ -2786,8 +2786,8 @@ def test_storage_unmount_optical_media_forwards_selectors(fake_hmc, monkeypatch)
         ownership_override=True,
         system_name_or_uuid=SYSTEM_UUID,
     )
-    assert "Unmounted optical media 'install.iso'" in result.stdout
-    assert "backing ISO remains" in result.stdout
+    assert "target\tinstall.iso" in result.stdout
+    assert "backing_storage\tretained" in result.stdout
     assert "CurrentProfileSync is Disabled" in result.stdout
 
 
@@ -3065,7 +3065,7 @@ def test_storage_detach_mapping_deletes_when_confirmed(fake_hmc, monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert "Deleted storage mapping vhost0/vtscsi0" in result.stdout
+    assert "target\tvhost0/vtscsi0" in result.stdout
     assert "CurrentProfileSync is Disabled" in result.stdout
     assert seen == {
         "system": None,
@@ -3174,9 +3174,9 @@ def test_storage_upload_iso_reports_uploaded_media(fake_hmc, monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert "Upload status: uploaded" in result.stdout
-    assert "Media entry: aix.iso" in result.stdout
-    assert "1,048,576 bytes" in result.stdout
+    assert "outcome\tuploaded" in result.stdout
+    assert "target\taix.iso" in result.stdout
+    assert "media_size_bytes\t1048576" in result.stdout
 
 
 def test_storage_upload_iso_json(fake_hmc, monkeypatch):

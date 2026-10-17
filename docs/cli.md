@@ -242,8 +242,48 @@ are missing when the entry lacks this metadata. `systems health` uses categories
 
 `lpars state` remains one scalar state line. Refcode JSON retains raw code and
 definition data; its table path keeps terminal sanitation. Console capture and
-raw REST streams keep their existing byte-stream contracts. These inventory
-format options do not change storage mutation or decommission output.
+raw REST streams keep their existing byte-stream contracts. Storage mutations use the result convention below; decommission output is unchanged.
+
+## Storage mutation output migration
+
+The thirteen mutations in `storage` (`create-vg`, `create-disk`, `delete-disk`,
+`attach-disk`, `map`, `create-media-repo`, `create-media`, `delete-media-repo`,
+`delete-media`, `mount-optical-media`, `unmount-optical-media`, `detach-mapping`,
+`upload-iso`) use concise results: tables on a terminal, lossless `Field`/`Value`
+TSV when redirected, or explicit `--format table|tsv|json`. `--json/-j` selects
+JSON; conflicting format choices fail before contacting the HMC.
+
+Results identify the operation, target and provided parent scope. Most storage
+operations discard HTTP completion status, so `request_succeeded` means the
+operation returned without error, **not that final hardware state was verified**.
+This includes accepted requests and idempotent no-ops; inspect inventory to verify
+final state. A returned job reports `submitted`, `completed`, or `failed` from
+its status, retaining its identifier/status/error. Failed jobs exit nonzero.
+`upload-iso` reports `uploaded` only after its existing repository visibility check.
+`attach-disk` distinguishes validation-only `dry_run` and `incomplete` workflows;
+incomplete attachment remains exit 1 and shows step/error evidence.
+
+Mapping results retain change-location information: a successful request does not
+mean its changes reached a profile. Unmount/detach explicitly retain backing
+storage. Existing confirmations write their prompt to stderr; the confirmation
+options and safety rules are unchanged. Backend exceptions retain stderr and a
+nonzero exit, rather than introducing a new JSON error envelope.
+
+Old implicit raw VG/VIOS documents are no longer printed. Use `--details` for the
+original operation value as one JSON document, including null or scalar returns;
+it conflicts with table/TSV. **Detailed output may contain hardware identifiers.**
+`attach-disk --json` and `upload-iso --json` deliberately retain their established
+full result envelopes and fields (also via `--format json`), which may likewise
+include hardware identifiers. Their human/TSV forms omit successful raw resources.
+
+```bash
+# Earlier: prose followed by a whole VG document. Now: one concise JSON result.
+hmcpctl storage delete-disk vios-a --vg datavg --name disk01 --yes --json > result.json
+# Explicit original result, only when required for diagnosis or an existing reader.
+hmcpctl storage create-disk vios-a --vg datavg --name disk02 --capacity-mib 1024 --yes --details > details.json
+# Preserve the established attach workflow envelope, including partial failures.
+hmcpctl storage attach-disk web01 --vios vios-a --vg datavg --name disk03 --capacity-mib 1024 --yes --json
+```
 
 ## Storage selector migration
 

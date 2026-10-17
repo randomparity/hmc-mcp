@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 from collections.abc import Iterable, Sequence
+from contextlib import redirect_stdout
 from enum import Enum
 from typing import TYPE_CHECKING, Any, NoReturn, TypeVar
 
@@ -77,6 +78,12 @@ def terminal_field(value: object, *, err: bool = False) -> str:
     return (
         escape_controls(text) if (sys.stderr if err else sys.stdout).isatty() else text
     )
+
+
+def confirm_on_stderr(text: str, *, abort: bool = False) -> bool:
+    """Keep input()'s final prompt character off the machine output stream."""
+    with redirect_stdout(sys.stderr):
+        return typer.confirm(text, abort=abort, err=True)
 
 
 def print_raw(body: str) -> None:

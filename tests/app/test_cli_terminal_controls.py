@@ -245,3 +245,18 @@ def test_terminal_field_keeps_printable_and_empty_values(monkeypatch):
     assert output.terminal_field("") == ""
     assert output.terminal_field("雪[é]:smile: \\") == "雪[é]:smile: \\"
     assert output.terminal_field(0) == "0"
+
+
+@pytest.mark.parametrize("environment", [{}, {"FORCE_COLOR": "1"}, {"NO_COLOR": "1"}])
+def test_storage_confirmation_uses_stderr_terminal_policy(environment):
+    source = f"""
+from hmcpctl import cli
+cli.app(["storage", "delete-disk", "vio-test", "--vg", "vg-test", "--name", {PAYLOAD!r}])
+"""
+    code, stdout, stderr = _child(
+        source, stderr_tty=True, environment=environment, input="n\n"
+    )
+    assert code != 0
+    assert stdout == ""
+    assert VISIBLE in click.unstyle(stderr)
+    assert "\x1b]0;title" not in stderr and "\u202e" not in stderr
