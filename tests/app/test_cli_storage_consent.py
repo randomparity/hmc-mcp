@@ -11,6 +11,7 @@ from unittest.mock import Mock
 
 import pytest
 import typer.testing
+from click import unstyle
 from test_cli_storage_results import CASES
 from typer.testing import CliRunner
 
@@ -78,14 +79,19 @@ def test_interactive_decline_and_eof(monkeypatch, command, args, data, target, a
 
 
 @pytest.mark.parametrize("command,args,data,target", CASES[10:12])
-def test_confirm_removed(monkeypatch, command, args, data, target):
+@pytest.mark.parametrize("force_color", [False, True])
+def test_confirm_removed(monkeypatch, command, args, data, target, force_color):
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("TERM", "xterm")
+    monkeypatch.setattr("typer.rich_utils.FORCE_TERMINAL", force_color)
     call = Mock()
     monkeypatch.setattr(storage, "with_client", call)
     result = RUNNER.invoke(cli.app, [*_args(command, args), "--confirm"])
     assert result.exit_code == 2
     call.assert_not_called()
     help_result = RUNNER.invoke(cli.app, ["storage", command, "--help"])
-    assert "--yes" in help_result.stdout and "--confirm" not in help_result.stdout
+    help_text = unstyle(help_result.stdout)
+    assert "--yes" in help_text and "--confirm" not in help_text
 
 
 def test_dry_run_needs_no_consent(monkeypatch):
