@@ -74,6 +74,17 @@ from hmcpctl.ssh import profiles as ssh_profiles
 from hmcpctl.ssh import refcodes as ssh_refcodes
 from hmcpctl.xmlutil import parse_feed
 
+
+@pytest.fixture
+def storage_terminal_input(monkeypatch):
+    """Prompt tests represent terminal stdin; real pipes are tested separately."""
+    import typer.testing
+
+    monkeypatch.setattr(
+        typer.testing._NamedTextIOWrapper, "isatty", lambda self: self.name == "<stdin>"
+    )
+
+
 LPAR_NAME = "lpar1"
 
 # Shaped like the ownership stamp ``hmcpctl.ssh.lpar`` writes -- a bracketed
@@ -910,6 +921,7 @@ def test_network_cli_refuses_an_unknown_switch_id_before_the_create(fake_hmc):
         ["storage", "delete-media-repo", VIOS_UUID, "--vg", VG_UUID],
     ],
 )
+@pytest.mark.usefixtures("storage_terminal_input")
 def test_destructive_cli_commands_abort_without_confirmation(fake_hmc, args):
     result = RUNNER.invoke(cli.app, args, input="n\n")
 
@@ -2425,7 +2437,7 @@ def _storage_app() -> typer.Typer:
             [StorageMapping("vhost0/vtscsi0", None, None, None)],
         ),
         (
-            ["detach-mapping", VIOS_UUID, "vhost0/vtscsi0", "--confirm"],
+            ["detach-mapping", VIOS_UUID, "vhost0/vtscsi0", "--yes"],
             "detach_storage_mapping",
             UNSYNCED,
         ),
@@ -2521,6 +2533,7 @@ def test_storage_delete_disk_deletes_when_confirmed(fake_hmc, monkeypatch):
     assert seen == {"vios": VIOS_UUID, "vg": VG_UUID, "name": "bootvol"}
 
 
+@pytest.mark.usefixtures("storage_terminal_input")
 def test_storage_delete_disk_declined_confirmation_aborts(fake_hmc, monkeypatch):
     called = []
 
@@ -2542,6 +2555,7 @@ def test_storage_delete_disk_declined_confirmation_aborts(fake_hmc, monkeypatch)
     assert called == []
 
 
+@pytest.mark.usefixtures("storage_terminal_input")
 def test_storage_map_declined_confirmation_aborts(fake_hmc, monkeypatch):
     called = []
 
@@ -2561,6 +2575,7 @@ def test_storage_map_declined_confirmation_aborts(fake_hmc, monkeypatch):
     assert called == []
 
 
+@pytest.mark.usefixtures("storage_terminal_input")
 def test_storage_create_media_repo_declined_confirmation_aborts(fake_hmc, monkeypatch):
     called = []
 
@@ -2627,6 +2642,7 @@ def test_storage_create_media_creates_when_confirmed(fake_hmc, monkeypatch):
     }
 
 
+@pytest.mark.usefixtures("storage_terminal_input")
 def test_storage_create_media_declined_confirmation_aborts(fake_hmc, monkeypatch):
     called = []
 
@@ -2687,6 +2703,7 @@ def test_storage_delete_media_deletes_when_confirmed(fake_hmc, monkeypatch):
     assert seen == {"vios": VIOS_UUID, "vg": VG_UUID, "media_name": "aix.iso"}
 
 
+@pytest.mark.usefixtures("storage_terminal_input")
 def test_storage_delete_media_declined_confirmation_aborts(fake_hmc, monkeypatch):
     called = []
 
@@ -2708,6 +2725,7 @@ def test_storage_delete_media_declined_confirmation_aborts(fake_hmc, monkeypatch
     assert called == []
 
 
+@pytest.mark.usefixtures("storage_terminal_input")
 def test_storage_mount_optical_media_forwards_selectors(fake_hmc, monkeypatch):
     mount = AsyncMock(
         return_value=StorageMapResult(
@@ -2773,7 +2791,7 @@ def test_storage_unmount_optical_media_forwards_selectors(fake_hmc, monkeypatch)
             "--system",
             SYSTEM_UUID,
             "--ownership-override",
-            "--confirm",
+            "--yes",
         ],
     )
 
@@ -2791,6 +2809,7 @@ def test_storage_unmount_optical_media_forwards_selectors(fake_hmc, monkeypatch)
     assert "CurrentProfileSync is Disabled" in result.stdout
 
 
+@pytest.mark.usefixtures("storage_terminal_input")
 def test_storage_mount_optical_media_decline_does_not_mutate(fake_hmc, monkeypatch):
     mount = AsyncMock()
     monkeypatch.setattr(
@@ -2816,6 +2835,7 @@ def test_storage_mount_optical_media_decline_does_not_mutate(fake_hmc, monkeypat
     mount.assert_not_awaited()
 
 
+@pytest.mark.usefixtures("storage_terminal_input")
 def test_storage_unmount_optical_media_decline_does_not_mutate(fake_hmc, monkeypatch):
     unmount = AsyncMock()
     monkeypatch.setattr(
@@ -2855,7 +2875,7 @@ def test_storage_optical_media_command_help():
     help_text = click.unstyle(result.stdout)
     assert "--system" in help_text
     assert "--ownership-override" in help_text
-    assert "--confirm" in help_text
+    assert "--yes" in help_text
 
 
 def test_storage_get_media_repo_renders_name_and_size(fake_hmc, monkeypatch):
@@ -3061,7 +3081,7 @@ def test_storage_detach_mapping_deletes_when_confirmed(fake_hmc, monkeypatch):
     )
 
     result = RUNNER.invoke(
-        cli.app, ["storage", "detach-mapping", VIOS_UUID, "vhost0/vtscsi0", "--confirm"]
+        cli.app, ["storage", "detach-mapping", VIOS_UUID, "vhost0/vtscsi0", "--yes"]
     )
 
     assert result.exit_code == 0
@@ -3099,7 +3119,7 @@ def test_storage_detach_mapping_reports_one_failure_and_exits_1(fake_hmc, monkey
     )
 
     result = RUNNER.invoke(
-        cli.app, ["storage", "detach-mapping", VIOS_UUID, "vhost0/vtscsi0", "--confirm"]
+        cli.app, ["storage", "detach-mapping", VIOS_UUID, "vhost0/vtscsi0", "--yes"]
     )
 
     assert result.exit_code == 1

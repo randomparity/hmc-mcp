@@ -18,11 +18,20 @@ PAYLOAD = "雪[bold]:smile:\\\x00\x07\x08\t\n\r\x1b]0;title\x7f\x85\x9b\u202e\u2
 VISIBLE = "雪[bold]:smile:\\\\x00\\x07\\x08\\t\\n\\r\\x1b]0;title\\x7f\\x85\\x9b\\u202e\\u2066"
 
 
-def _child(source, *, stdout_tty=False, stderr_tty=False, environment=None, input=""):
+def _child(
+    source,
+    *,
+    stdout_tty=False,
+    stderr_tty=False,
+    environment=None,
+    input="",
+    stdin_tty=False,
+):
     """Run bounded offline output through actual PTYs/pipes, draining and closing them."""
     import pty
 
     pairs = [pty.openpty() if tty else None for tty in (stdout_tty, stderr_tty)]
+    input_pair = pty.openpty() if stdin_tty else None
     env = dict(os.environ)
     for key in ("FORCE_COLOR", "NO_COLOR", "TTY_COMPATIBLE"):
         env.pop(key, None)
@@ -30,9 +39,12 @@ def _child(source, *, stdout_tty=False, stderr_tty=False, environment=None, inpu
     env["COLUMNS"] = "240"
     env["TERM"] = "xterm-256color"
     try:
+        if input_pair:
+            os.write(input_pair[0], input.encode())
         result = subprocess.run(
             [sys.executable, "-c", source],
-            input=input.encode(),
+            input=None if input_pair else input.encode(),
+            stdin=input_pair[1] if input_pair else None,
             stdout=pairs[0][1] if pairs[0] else subprocess.PIPE,
             stderr=pairs[1][1] if pairs[1] else subprocess.PIPE,
             env=env,
@@ -60,7 +72,7 @@ def _child(source, *, stdout_tty=False, stderr_tty=False, environment=None, inpu
             streams[index] = b"".join(chunks).replace(b"\r\n", b"\n")
         return result.returncode, *(stream.decode() for stream in streams)
     finally:
-        for pair in pairs:
+        for pair in [*pairs, input_pair]:
             if pair:
                 for descriptor in pair:
                     if descriptor >= 0:
@@ -254,7 +266,7 @@ from hmcpctl import cli
 cli.app(["storage", "delete-disk", "vio-test", "--vg", "vg-test", "--name", {PAYLOAD!r}])
 """
     code, stdout, stderr = _child(
-        source, stderr_tty=True, environment=environment, input="n\n"
+        source, stderr_tty=True, environment=environment, input="n\n", stdin_tty=True
     )
     assert code != 0
     assert stdout == ""

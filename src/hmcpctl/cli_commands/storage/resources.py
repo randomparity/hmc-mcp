@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import os
+import shlex
+import sys
 from dataclasses import asdict
+from enum import Enum
 from typing import Any
 
 import typer
+from typer._click.globals import get_current_context
 
 from hmcpctl.client.core import HMCClient
 
@@ -47,6 +52,50 @@ from ..output import (
     usage_error,
 )
 from ..runtime import with_client
+
+
+def _confirm_storage(yes: bool, text: str) -> None:
+    if yes:
+        return
+    ctx = get_current_context()
+    options = ["hmcpctl", "storage", str(ctx.info_name)]
+    arguments: list[str] = []
+    for parameter in ctx.command.params:
+        value = ctx.params.get(parameter.name)
+        if parameter.name == "yes" or value is None or value is False:
+            continue
+        if isinstance(value, Enum):
+            value = value.value
+        if parameter.param_type_name == "argument":
+            arguments.append(str(value))
+        else:
+            options.append(parameter.opts[0])
+            if value is not True:
+                options.append(str(value))
+    tokens = []
+    for value in [*options, "--yes", "--", *arguments]:
+        if value.isprintable():
+            tokens.append(shlex.quote(value))
+        else:
+            # ANSI-C quotes preserve control characters without emitting terminal controls.
+            escaped = []
+            for char in value:
+                if char in "\\'":
+                    escaped.append("\\" + char)
+                elif char.isprintable():
+                    escaped.append(char)
+                else:
+                    escaped.extend(f"\\x{byte:02x}" for byte in os.fsencode(char))
+            tokens.append("$'" + "".join(escaped) + "'")
+    invocation = terminal_field(" ".join(tokens), err=True)
+    if not sys.stdin.isatty():
+        typer.echo(
+            "Error: noninteractive storage mutation requires --yes/-y.", err=True
+        )
+        typer.echo("With the same connection options, run in Bash/Zsh:", err=True)
+        typer.echo(invocation, err=True, color=True)
+        raise typer.Exit(2)
+    confirm_on_stderr(f"{text}\nCommand (Bash/Zsh): {invocation}", abort=True)
 
 
 def _print_mutation(
@@ -117,7 +166,12 @@ def storage_create_vg(
     pvs: str = typer.Option(
         ..., "--pvs", help="Comma-separated physical volumes, e.g. hdisk10,hdisk11"
     ),
-    yes: bool = typer.Option(False, "--yes", "-y"),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Confirm this mutation; required without terminal stdin",
+    ),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
@@ -138,11 +192,11 @@ def storage_create_vg(
     pv_list = [p.strip() for p in pvs.split(",") if p.strip()]
     if not pv_list:
         usage_error("Provide at least one physical volume via --pvs")
-    if not yes and not confirm_on_stderr(
+    _confirm_storage(
+        yes,
         f"Create VG '{terminal_field(name, err=True)}' from {terminal_field(pv_list, err=True)} on VIOS "
         f"{terminal_field(vios, err=True)}?",
-    ):
-        raise typer.Abort()
+    )
 
     vg = with_client(
         lambda hmc: create_volume_group(
@@ -173,7 +227,12 @@ def storage_create_disk(
     capacity_mib: int = typer.Option(
         ..., "--capacity-mib", help="Virtual disk capacity in MiB"
     ),
-    yes: bool = typer.Option(False, "--yes", "-y"),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Confirm this mutation; required without terminal stdin",
+    ),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
@@ -191,11 +250,11 @@ def storage_create_disk(
 ) -> None:
     """Create a Virtual Disk (logical volume) in a Volume Group."""
     selected = resolve_inventory_format(as_json or details, format)
-    if not yes and not confirm_on_stderr(
+    _confirm_storage(
+        yes,
         f"Create {terminal_field(capacity_mib, err=True)} MiB virtual disk '"
         f"{terminal_field(name, err=True)}' in VG {terminal_field(vg, err=True)}?",
-    ):
-        raise typer.Abort()
+    )
 
     disk = with_client(
         lambda hmc: create_virtual_disk(
@@ -222,7 +281,12 @@ def storage_delete_disk(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Option(..., "--vg", help="Volume Group name or UUID"),
     name: str = typer.Option(..., "--name", "-n", help="Virtual disk name"),
-    yes: bool = typer.Option(False, "--yes", "-y"),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Confirm this mutation; required without terminal stdin",
+    ),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
@@ -243,10 +307,10 @@ def storage_delete_disk(
     Validates that the disk is not mapped to any LPAR before deletion.
     """
     selected = resolve_inventory_format(as_json or details, format)
-    if not yes and not confirm_on_stderr(
+    _confirm_storage(
+        yes,
         f"Delete virtual disk '{terminal_field(name, err=True)}' from VG {terminal_field(vg, err=True)}?",
-    ):
-        raise typer.Abort()
+    )
 
     disk = with_client(
         lambda hmc: delete_virtual_disk(hmc, vios, vg, name, system_name_or_uuid=system)
@@ -280,7 +344,12 @@ def storage_attach_disk(
     as_json: bool = typer.Option(
         False, "--json", "-j", help="Output JSON (existing result envelope)"
     ),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Confirm this mutation; required without terminal stdin",
+    ),
     ownership_override: bool = typer.Option(False, "--ownership-override"),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
@@ -298,15 +367,12 @@ def storage_attach_disk(
 ) -> None:
     """Create a virtual disk and attach it to an existing LPAR."""
     selected = resolve_inventory_format(as_json or details, format)
-    if (
-        not dry_run
-        and not yes
-        and not confirm_on_stderr(
+    if not dry_run:
+        _confirm_storage(
+            yes,
             f"Create {terminal_field(capacity_mib, err=True)} MiB disk '{terminal_field(name, err=True)}"
             f"' and attach it to LPAR '{terminal_field(lpar, err=True)}'?",
         )
-    ):
-        raise typer.Abort()
 
     async def _go(hmc: HMCClient) -> AttachDiskResult:
         validate_virtual_disk(name, capacity_mib)
@@ -386,7 +452,12 @@ def storage_map(
     target: str | None = typer.Option(
         None, "--target", help="Pin the vtscsi device name"
     ),
-    yes: bool = typer.Option(False, "--yes", "-y"),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Confirm this mutation; required without terminal stdin",
+    ),
     ownership_override: bool = typer.Option(False, "--ownership-override"),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
@@ -405,11 +476,11 @@ def storage_map(
 ) -> None:
     """Map backing storage to an LPAR via a vSCSI mapping on a VIOS."""
     selected = resolve_inventory_format(as_json or details, format)
-    if not yes and not confirm_on_stderr(
+    _confirm_storage(
+        yes,
         f"Map {terminal_field(kind, err=True)} '{terminal_field(disk, err=True)}' on VIOS "
         f"{terminal_field(vios, err=True)} to LPAR '{terminal_field(lpar, err=True)}'?",
-    ):
-        raise typer.Abort()
+    )
 
     result: StorageMapResult = with_client(
         lambda hmc: map_storage(
@@ -450,7 +521,12 @@ def storage_create_media_repo(
         "--size-mib",
         help="Repository size in MiB, a multiple of 1024 (sent to the HMC as whole GiB)",
     ),
-    yes: bool = typer.Option(False, "--yes", "-y"),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Confirm this mutation; required without terminal stdin",
+    ),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
@@ -468,11 +544,11 @@ def storage_create_media_repo(
 ) -> None:
     """Create the Virtual Media Repository (VMLibrary) on a volume group."""
     selected = resolve_inventory_format(as_json or details, format)
-    if not yes and not confirm_on_stderr(
+    _confirm_storage(
+        yes,
         f"Create {terminal_field(size_mib, err=True)} MiB media repository on VG "
         f"{terminal_field(vg, err=True)} (VIOS {terminal_field(vios, err=True)})?",
-    ):
-        raise typer.Abort()
+    )
 
     result = with_client(
         lambda hmc: create_media_repository(
@@ -506,7 +582,12 @@ def storage_create_media(
         "--size-mib",
         help="Media size in MiB, a multiple of 1024 (sent to the HMC as whole GiB)",
     ),
-    yes: bool = typer.Option(False, "--yes", "-y"),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Confirm this mutation; required without terminal stdin",
+    ),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
@@ -524,11 +605,11 @@ def storage_create_media(
 ) -> None:
     """Create a blank optical media (ISO container) in the media repository."""
     selected = resolve_inventory_format(as_json or details, format)
-    if not yes and not confirm_on_stderr(
+    _confirm_storage(
+        yes,
         f"Create media '{terminal_field(name, err=True)}' ({terminal_field(size_mib, err=True)}"
         f" MiB) on VG {terminal_field(vg, err=True)} (VIOS {terminal_field(vios, err=True)})?",
-    ):
-        raise typer.Abort()
+    )
 
     result = with_client(
         lambda hmc: create_optical_media(
@@ -554,7 +635,12 @@ def storage_create_media(
 def storage_delete_media_repo(
     vios: str = typer.Argument(..., help="VIOS name or UUID"),
     vg: str = typer.Option(..., "--vg", help="Volume Group name or UUID"),
-    yes: bool = typer.Option(False, "--yes", "-y"),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Confirm this mutation; required without terminal stdin",
+    ),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
@@ -572,10 +658,10 @@ def storage_delete_media_repo(
 ) -> None:
     """Delete the Virtual Media Repository from a volume group."""
     selected = resolve_inventory_format(as_json or details, format)
-    if not yes and not confirm_on_stderr(
+    _confirm_storage(
+        yes,
         f"Delete media repository on VG {terminal_field(vg, err=True)} (VIOS {terminal_field(vios, err=True)})?",
-    ):
-        raise typer.Abort()
+    )
 
     result = with_client(
         lambda hmc: delete_media_repository(hmc, vios, vg, system_name_or_uuid=system)
@@ -600,7 +686,12 @@ def storage_delete_media(
     media_name: str = typer.Option(
         ..., "--name", "-n", help="ISO image name to delete"
     ),
-    yes: bool = typer.Option(False, "--yes", "-y"),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Confirm this mutation; required without terminal stdin",
+    ),
     system: str | None = typer.Option(
         None, "--system", "-s", help="Managed system name or UUID"
     ),
@@ -618,11 +709,11 @@ def storage_delete_media(
 ) -> None:
     """Delete an ISO image from the media repository."""
     selected = resolve_inventory_format(as_json or details, format)
-    if not yes and not confirm_on_stderr(
+    _confirm_storage(
+        yes,
         f"Delete media '{terminal_field(media_name, err=True)}' on VG {terminal_field(vg, err=True)}"
         f" (VIOS {terminal_field(vios, err=True)})?",
-    ):
-        raise typer.Abort()
+    )
 
     result = with_client(
         lambda hmc: delete_optical_media(
@@ -712,7 +803,12 @@ def storage_mount_optical_media(
         "--ownership-override",
         help="Bypass LPAR ownership protection after operator approval",
     ),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Confirm this mutation; required without terminal stdin",
+    ),
     as_json: bool = typer.Option(False, "--json", "-j", help="Output JSON"),
     format: InventoryFormat | None = typer.Option(
         None,
@@ -735,12 +831,12 @@ def storage_mount_optical_media(
     selected = resolve_inventory_format(as_json or details, format)
     target = f"; target device {target_device}" if target_device else ""
     selected_system = f" in managed system {system}" if system else ""
-    if not yes and not confirm_on_stderr(
+    _confirm_storage(
+        yes,
         f"Mount optical media '{terminal_field(media_name, err=True)}' from VIOS "
         f"{terminal_field(vios, err=True)} to LPAR {terminal_field(lpar, err=True)}"
         f"{terminal_field(selected_system, err=True)}{terminal_field(target, err=True)}?",
-    ):
-        raise typer.Abort()
+    )
 
     result = with_client(
         lambda hmc: mount_optical_media(
@@ -784,8 +880,11 @@ def storage_unmount_optical_media(
         "--ownership-override",
         help="Bypass LPAR ownership protection after operator approval",
     ),
-    confirm: bool = typer.Option(
-        False, "--confirm", "-y", help="Skip confirmation prompt"
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Confirm this mutation; required without terminal stdin",
     ),
     as_json: bool = typer.Option(False, "--json", "-j", help="Output JSON"),
     format: InventoryFormat | None = typer.Option(
@@ -801,12 +900,12 @@ def storage_unmount_optical_media(
 ) -> None:
     """Unmount an ISO mapping while preserving the backing ISO."""
     selected = resolve_inventory_format(as_json or details, format)
-    if not confirm and not confirm_on_stderr(
+    _confirm_storage(
+        yes,
         f"Unmount optical media '{terminal_field(media_name, err=True)}' from LPAR "
         f"{terminal_field(lpar, err=True)} on VIOS {terminal_field(vios, err=True)}"
         f"? The backing ISO remains available.",
-    ):
-        raise typer.Abort()
+    )
 
     async def _go(hmc: HMCClient) -> ChangeLocation:
         return await unmount_optical_media(
@@ -879,8 +978,11 @@ def storage_detach_mapping(
         "--ownership-override",
         help="Bypass LPAR ownership protection after operator approval",
     ),
-    confirm: bool = typer.Option(
-        False, "--confirm", "-y", help="Skip confirmation prompt"
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Confirm this mutation; required without terminal stdin",
     ),
     as_json: bool = typer.Option(False, "--json", "-j", help="Output JSON"),
     format: InventoryFormat | None = typer.Option(
@@ -896,15 +998,12 @@ def storage_detach_mapping(
 ) -> None:
     """Detach a VirtualSCSIMapping while preserving its backing storage."""
     selected = resolve_inventory_format(as_json or details, format)
-    if not confirm:
-        confirm_on_stderr(
-            (
-                f"Delete storage mapping {terminal_field(mapping_id, err=True)} on VIOS "
-                f"{terminal_field(vios, err=True)}? The backing storage (PhysicalVolume or "
-                f"VirtualDisk) will be preserved."
-            ),
-            abort=True,
-        )
+    _confirm_storage(
+        yes,
+        f"Delete storage mapping {terminal_field(mapping_id, err=True)} on VIOS "
+        f"{terminal_field(vios, err=True)}? The backing storage (PhysicalVolume or "
+        f"VirtualDisk) will be preserved.",
+    )
 
     async def _go(hmc: HMCClient) -> ChangeLocation:
         return await detach_storage_mapping(

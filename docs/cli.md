@@ -24,6 +24,30 @@ TSV retains its documented reversible delimiter encoding even on a terminal; cho
 for human display. Raw/capture files and explicit machine streams can contain controls, so
 consumers displaying those bytes later must apply their own display policy (ADR 0229).
 
+## Storage consent migration
+
+The existing confirmation boundaries in `storage` use `--yes`/`-y` consistently.
+`unmount-optical-media` and `detach-mapping` no longer accept `--confirm`:
+
+```bash
+hmcpctl storage unmount-optical-media vios1 --lpar aix1 --name install.iso --system sys1 --yes
+hmcpctl storage detach-mapping vios1 vhost0/vtscsi0 --system sys1 --yes
+```
+
+Without `--yes`, these commands and the other prompted storage mutations require
+terminal stdin. Piping `y`, closed stdin, JSON and redirected output do not grant
+consent: noninteractive stdin exits 2 before dispatch and prints a Bash/Zsh retry
+command retaining the supplied scope and target. Reuse the same root connection
+options before `storage` (for example, `hmcpctl --profile lab storage ...`);
+the diagnostic deliberately does not echo connection credentials. Nonprintable
+arguments use shell ANSI-C quoting so the retry selects the original value safely.
+
+On terminal stdin, the prompt identifies the supplied scope and target on stderr;
+decline or EOF exits 1 without dispatch. `--yes` skips only confirmation: ownership,
+containment, mapped-disk and mounted-media guards still apply. `--ownership-override`
+remains a separate option. `attach-disk --dry-run` validates without consent or
+mutation. `upload-iso` retains its existing no-prompt contract.
+
 ## CLI usage
 
 ```bash
