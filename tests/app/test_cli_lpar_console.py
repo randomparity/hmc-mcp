@@ -463,15 +463,16 @@ def test_interrupted_write_failure_keeps_flushed_bytes(
     assert "output unavailable" in result.stderr
 
 
+@pytest.mark.parametrize("buffered", [False, True])
 def test_interrupt_without_capture_proof_reports_write_failure(
-    capture, monkeypatch, tmp_path
+    capture, monkeypatch, tmp_path, buffered
 ):
     target = tmp_path / "partial.bin"
     create = cli_console._create_exclusive
 
     def full_disk(path):
         create(path).close()
-        return io.BufferedWriter(_FullDisk())
+        return io.BufferedWriter(_FullDisk()) if buffered else _FullDisk()
 
     monkeypatch.setattr(cli_console, "_create_exclusive", full_disk)
 

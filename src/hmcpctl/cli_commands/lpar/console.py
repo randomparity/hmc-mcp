@@ -168,6 +168,11 @@ def lpars_capture_console(
             )
         )
     except KeyboardInterrupt:
+        if write_error:
+            err_console.print(
+                f"Error: could not write console bytes: {terminal_field(write_error[0], err=True)}",
+                markup=False,
+            )
         if output is not None:
             try:
                 sink.close()
