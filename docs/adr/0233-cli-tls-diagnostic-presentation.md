@@ -20,8 +20,9 @@ categories, warning filters, and client throttle ownership remain unchanged.
 
 The audit sink owner supplies a scoped fallback handler only when the reserved
 logger has no reachable configured handler. It retains the logger's level and
-propagation policy. The handler uses the existing bounded sink and is removed
-and flushed on exit. For actual stderr TTYs, the known TLS event becomes a
+propagation policy. The handler uses synchronous stderr delivery, like the previous
+`lastResort`,
+and is removed and closed on exit. It adds no queue or drop policy. For actual stderr TTYs, the known TLS event becomes a
 compact audit line containing its event identity, timestamp, host and source.
 For redirected stderr, unknown shapes and other events, preserve the original
 JSON message. The emitted LogRecord remains unchanged; configured sinks retain

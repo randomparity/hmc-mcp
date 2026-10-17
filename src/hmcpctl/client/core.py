@@ -432,7 +432,7 @@ class HMCClient(
                 "HMC_VERIFY_SSL defaults to false, but that default will change "
                 "to true in the 1.0 release. To keep verification off for this "
                 "HMC, set HMC_VERIFY_SSL=false explicitly (or pass "
-                "--verify-ssl=false). To verify instead, trust the HMC's "
+                "--no-verify-ssl). To verify instead, trust the HMC's "
                 "certificate: set HMC_TRUST_SYSTEM_STORE=true (the default) and "
                 "HMC_VERIFY_SSL=true, set HMC_CA_BUNDLE to a PEM file, or set "
                 "SSL_CERT_FILE/SSL_CERT_DIR. See docs/configuration.md#tls-trust.",

@@ -34,8 +34,8 @@ quiet switch or generic error/help redesign. No live HMC execution.
 - Invariants and assets: warning visibility, per-host/source throttling, full
   audit event emission, collector JSON, stdout results, subsequent real errors.
 - Accepted failure classes: concurrent embedded CLI invocation is outside the
-  synchronous command model; existing bounded sink drops remain ADR 0043's
-  explicit availability tradeoff, with its existing accounting unchanged.
+  synchronous command model; broken or closed stderr retains the standard logging error behavior;
+  presentation adds no queue or event-drop policy.
 - Covered elsewhere: TLS default and pinning ADR 0224/#1614; generic errors
   #1702; logging destination retention remains deployment-owned ADR 0040.
 
