@@ -14,7 +14,11 @@ import pytest
 
 from hmcpctl.audit import records as audit
 from hmcpctl.audit import sink as audit_sink
-from hmcpctl.config import validate_agent_id
+from hmcpctl.config import (
+    _AGENT_ID_FORBIDDEN,
+    _AGENT_ID_FORBIDDEN_DESCRIPTION,
+    validate_agent_id,
+)
 from hmcpctl.operations.lpar import core as operations_lpar
 from hmcpctl.operations.lpar import ownership as lpar_ownership
 from hmcpctl.operations.lpar.ownership import (
@@ -34,6 +38,16 @@ def test_validate_agent_id_valid():
     validate_agent_id("agent-1")  # hyphens ok
     validate_agent_id("agent.1")  # dots ok
     validate_agent_id("a" * 64)  # max length
+
+
+def test_agent_id_description_lists_every_forbidden_character():
+    """The public help text stays aligned with the validator's rule table."""
+    description = HMCConfig.model_fields["agent_id"].description
+
+    assert description is not None
+    assert _AGENT_ID_FORBIDDEN_DESCRIPTION in description
+    for _, label, _ in _AGENT_ID_FORBIDDEN:
+        assert label in description
 
 
 def test_validate_agent_id_reserved():
