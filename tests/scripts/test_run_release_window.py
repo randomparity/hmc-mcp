@@ -32,7 +32,7 @@ def window(tmp_path):
     git(root, "config", "user.email", "fixture@example.test")
     git(root, "update-ref", "refs/remotes/origin/main", "HEAD")
     git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
-    git(root, "switch", "-c", "fixture-window")
+    git(root, "branch", "-m", "fixture-window")
     shutil.copyfile(
         ROOT / "scripts/live_test/cli.py", root / "scripts/live_test/cli.py"
     )
